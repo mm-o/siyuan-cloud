@@ -1,0 +1,43 @@
+{
+  "name": "siyuan-cloud",
+  "author": "mm-o",
+  "url": "https://github.com/mm-o/siyuan-cloud",
+  "version": "0.3.0",
+  "minAppVersion": "2.10.14",
+  "disabledInPublish": true,
+  "kernels": [
+    "all"
+  ],
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "displayName": {
+    "default": "Siyuan Cloud",
+    "en_US": "Siyuan Cloud",
+    "zh_CN": "思盘"
+  },
+  "description": {
+    "default": "Multi-storage file list and cloud drive manager inside SiYuan.",
+    "en_US": "Multi-storage file list and cloud drive manager inside SiYuan.",
+    "zh_CN": "思源中的多存储文件列表与网盘管理插件。"
+  },
+  "readme": {
+    "default": "README.md",
+    "en_US": "README.md",
+    "zh_CN": "README_zh_CN.md"
+  },
+  "funding": {
+    "custom": []
+  },
+  "keywords": [
+    "siyuan cloud",
+    "思盘",
+    "cloud drive",
+    "file manager",
+    "kernel plugin",
+    "webdav"
+  ]
+}

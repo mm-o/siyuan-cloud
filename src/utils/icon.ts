@@ -1,0 +1,226 @@
+import type { Plugin } from 'siyuan'
+
+export const OPENLIST_ICON_ID_APP = 'iconSiyuanCloud'
+
+const OPENLIST_ICONS = `
+  <symbol id="iconSiyuanCloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+    <path d="M13.8 9.8h-3a1.55 1.55 0 0 0 0 3.1h1.9a1.55 1.55 0 0 1 0 3.1H9.7"/>
+  </symbol>
+  <symbol id="iconOpenListApple" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M11.182.008C11.148-.03 9.923.023 8.857 1.18c-1.066 1.156-.902 2.482-.878 2.516.024.034 1.52.087 2.475-1.258.955-1.345.762-2.391.728-2.43Zm3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422.212-2.189 1.675-2.789 1.698-2.854.023-.065-.597-.79-1.254-1.157a3.692 3.692 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.125-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56.244.729.625 1.924 1.273 2.796.576.984 1.34 1.667 1.659 1.899.319.232 1.219.386 1.843.067.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758.347-.79.505-1.217.473-1.282Z"/>
+    <path d="M11.182.008C11.148-.03 9.923.023 8.857 1.18c-1.066 1.156-.902 2.482-.878 2.516.024.034 1.52.087 2.475-1.258.955-1.345.762-2.391.728-2.43Zm3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422.212-2.189 1.675-2.789 1.698-2.854.023-.065-.597-.79-1.254-1.157a3.692 3.692 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.125-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56.244.729.625 1.924 1.273 2.796.576.984 1.34 1.667 1.659 1.899.319.232 1.219.386 1.843.067.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758.347-.79.505-1.217.473-1.282Z"/>
+  </symbol>
+  <symbol id="iconOpenListWindows" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M6.555 1.375 0 2.237v5.45h6.555V1.375zM0 13.795l6.555.933V8.313H0v5.482zm7.278-5.4.026 6.378L16 16V8.395H7.278zM16 0 7.33 1.244v6.414H16V0z"/>
+  </symbol>
+  <symbol id="iconOpenListAndroid" viewBox="0 0 16 16">
+    <path fill="currentColor" d="M14 6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7c0-.55-.45-1-1-1zM2 6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7c0-.55-.45-1-1-1zm1.5 5.5A1.5 1.5 0 0 0 5 13v2c0 .55.45 1 1 1s1-.45 1-1v-2h2v2c0 .55.45 1 1 1s1-.45 1-1v-2a1.5 1.5 0 0 0 1.5-1.5V6h-9v5.5zM12.472 5a4.5 4.5 0 0 0-2.025-3.276l.5-1.001a.5.5 0 0 0-.895-.447L9.55 1.28l-.13-.052a4.504 4.504 0 0 0-2.84 0l-.13.052L5.948.276a.5.5 0 0 0-.895.447l.5 1.001A4.499 4.499 0 0 0 3.528 5v.5H12.5V5h-.028zM6.5 4a.5.5 0 0 1-.001-1h.002A.5.5 0 0 1 6.5 4zm3 0a.5.5 0 0 1-.001-1h.003a.5.5 0 0 1-.001 1z"/>
+  </symbol>
+  <symbol id="iconOpenListDatabase" fill="currentColor" viewBox="0 0 448 512">
+    <path d="M448 80v48c0 44.2-100.3 80-224 80S0 172.2 0 128V80C0 35.8 100.3 0 224 0s224 35.8 224 80zm-54.8 134.7c20.8-7.4 39.9-16.9 54.8-28.6V288c0 44.2-100.3 80-224 80S0 332.2 0 288V186.1c14.9 11.8 34 21.2 54.8 28.6C99.7 230.7 159.5 240 224 240s124.3-9.3 169.2-25.3zM0 346.1c14.9 11.8 34 21.2 54.8 28.6C99.7 390.7 159.5 400 224 400s124.3-9.3 169.2-25.3c20.8-7.4 39.9-16.9 54.8-28.6V432c0 44.2-100.3 80-224 80S0 476.2 0 432v-85.9z"/>
+  </symbol>
+  <symbol id="iconOpenListBook" fill="currentColor" viewBox="0 0 448 512">
+    <path d="M96 0C43 0 0 43 0 96v320c0 53 43 96 96 96h320c17.7 0 32-14.3 32-32s-14.3-32-32-32v-64c17.7 0 32-14.3 32-32V32c0-17.7-14.3-32-32-32H96zm0 384h256v64H96c-17.7 0-32-14.3-32-32s14.3-32 32-32zm32-240c0-8.8 7.2-16 16-16h192c8.8 0 16 7.2 16 16s-7.2 16-16 16H144c-8.8 0-16-7.2-16-16zm16 48h192c8.8 0 16 7.2 16 16s-7.2 16-16 16H144c-8.8 0-16-7.2-16-16s7.2-16 16-16z"/>
+  </symbol>
+  <symbol id="iconOpenListDisc" fill="currentColor" viewBox="0 0 512 512">
+    <path d="M0 256a256 256 0 1 1 512 0 256 256 0 1 1-512 0zm256 32a32 32 0 1 1 0-64 32 32 0 1 1 0 64zm-96-32a96 96 0 1 0 192 0 96 96 0 1 0-192 0zm-64-16c0-35 17.5-71.1 45.2-98.8S205 96 240 96c8.8 0 16-7.2 16-16s-7.2-16-16-16c-45.4 0-89.2 22.3-121.5 54.5S64 194.6 64 240c0 8.8 7.2 16 16 16s16-7.2 16-16z"/>
+  </symbol>
+  <symbol id="iconOpenListFolder" fill="currentColor" viewBox="0 0 512 512">
+    <path d="M496 152a56 56 0 0 0-56-56H220.11a23.89 23.89 0 0 1-13.31-4L179 73.41A55.77 55.77 0 0 0 147.89 64H72a56 56 0 0 0-56 56v48a8 8 0 0 0 8 8h464a8 8 0 0 0 8-8ZM16 392a56 56 0 0 0 56 56h368a56 56 0 0 0 56-56V216a8 8 0 0 0-8-8H24a8 8 0 0 0-8 8Z"/>
+  </symbol>
+  <symbol id="iconOpenListMarkdown" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm11.5 1a.5.5 0 0 0-.5.5v3.793L9.854 8.146a.5.5 0 1 0-.708.708l2 2a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L12 9.293V5.5a.5.5 0 0 0-.5-.5zM3.56 7.01h.056l1.428 3.239h.774l1.42-3.24h.056V11h1.073V5.001h-1.2l-1.71 3.894h-.039l-1.71-3.894H2.5V11h1.06V7.01z"/>
+  </symbol>
+  <symbol id="iconOpenListCast" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M1.61 0v24l20.78-12L1.61 0m4.15 7.2 4.3 2.48-4.3 2.48V7.2m6.79 3.92 1.53.88-8.32 4.8v-1.76l6.79-3.92Z"/>
+  </symbol>
+  <symbol id="iconOpenListPdf" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M5.523 12.424c.14-.082.293-.162.459-.238a7.878 7.878 0 0 1-.45.606c-.28.337-.498.516-.635.572a.266.266 0 0 1-.035.012.282.282 0 0 1-.026-.044c-.056-.11-.054-.216.04-.36.106-.165.319-.354.647-.548zm2.455-1.647c-.119.025-.237.05-.356.078a21.148 21.148 0 0 0 .5-1.05 12.045 12.045 0 0 0 .51.858c-.217.032-.436.07-.654.114zm2.525.939a3.881 3.881 0 0 1-.435-.41c.228.005.434.022.612.054.317.057.466.147.518.209a.095.095 0 0 1 .026.064.436.436 0 0 1-.06.2.307.307 0 0 1-.094.124.107.107 0 0 1-.069.015c-.09-.003-.258-.066-.498-.256zM8.278 6.97c-.04.244-.108.524-.2.829a4.86 4.86 0 0 1-.089-.346c-.076-.353-.087-.63-.046-.822.038-.177.11-.248.196-.283a.517.517 0 0 1 .145-.04c.013.03.028.092.032.198.005.122-.007.277-.038.465z"/>
+    <path fill-rule="evenodd" d="M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5.5 1.5v2a1 1 0 0 0 1 1h2l-3-3zM4.165 13.668c.09.18.23.343.438.419.207.075.412.04.58-.03.318-.13.635-.436.926-.786.333-.401.683-.927 1.021-1.51a11.651 11.651 0 0 1 1.997-.406c.3.383.61.713.91.95.28.22.603.403.934.417a.856.856 0 0 0 .51-.138c.155-.101.27-.247.354-.416.09-.181.145-.37.138-.563a.844.844 0 0 0-.2-.518c-.226-.27-.596-.4-.96-.465a5.76 5.76 0 0 0-1.335-.05 10.954 10.954 0 0 1-.98-1.686c.25-.66.437-1.284.52-1.794.036-.218.055-.426.048-.614a1.238 1.238 0 0 0-.127-.538.7.7 0 0 0-.477-.365c-.202-.043-.41 0-.601.077-.377.15-.576.47-.651.823-.073.34-.04.736.046 1.136.088.406.238.848.43 1.295a19.697 19.697 0 0 1-1.062 2.227 7.662 7.662 0 0 0-1.482.645c-.37.22-.699.48-.897.787-.21.326-.275.714-.08 1.103z"/>
+  </symbol>
+  <symbol id="iconOpenListZip" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M5.5 9.438V8.5h1v.938a1 1 0 0 0 .03.243l.4 1.598-.93.62-.93-.62.4-1.598a1 1 0 0 0 .03-.243z"/>
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zm-4-.5V2h-1V1H6v1h1v1H6v1h1v1H6v1h1v1H5.5V6h-1V5h1V4h-1V3h1zm0 4.5h1a1 1 0 0 1 1 1v.938l.4 1.599a1 1 0 0 1-.416 1.074l-.93.62a1 1 0 0 1-1.109 0l-.93-.62a1 1 0 0 1-.415-1.074l.4-1.599V8.5a1 1 0 0 1 1-1z"/>
+  </symbol>
+  <symbol id="iconOpenListWord" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM5.485 6.879l1.036 4.144.997-3.655a.5.5 0 0 1 .964 0l.997 3.655 1.036-4.144a.5.5 0 0 1 .97.242l-1.5 6a.5.5 0 0 1-.967.01L8 9.402l-1.018 3.73a.5.5 0 0 1-.967-.01l-1.5-6a.5.5 0 1 1 .97-.242z"/>
+  </symbol>
+  <symbol id="iconOpenListExcel" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM5.884 6.68 8 9.219l2.116-2.54a.5.5 0 1 1 .768.641L8.651 10l2.233 2.68a.5.5 0 0 1-.768.64L8 10.781l-2.116 2.54a.5.5 0 0 1-.768-.641L7.349 10 5.116 7.32a.5.5 0 1 1 .768-.64z"/>
+  </symbol>
+  <symbol id="iconOpenListPpt" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M8.188 10H7V6.5h1.188a1.75 1.75 0 1 1 0 3.5z"/>
+    <path d="M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5.5 1.5v2a1 1 0 0 0 1 1h2l-3-3zM7 5.5a1 1 0 0 0-1 1V13a.5.5 0 0 0 1 0v-2h1.188a2.75 2.75 0 0 0 0-5.5H7z"/>
+  </symbol>
+  <symbol id="iconOpenListText" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM5.057 6h5.886L11 8h-.5c-.18-1.096-.356-1.192-1.694-1.235l-.298-.01v5.09c0 .47.1.582.903.655v.5H6.59v-.5c.799-.073.898-.184.898-.654V6.755l-.293.01C5.856 6.808 5.68 6.905 5.5 8H5l.057-2z"/>
+  </symbol>
+  <symbol id="iconOpenListPsd" viewBox="0 0 32 32">
+    <path fill="#070444" d="M24.099 2H8.837v28h20.91V7.888l-5.579-5.816L24.099 2"/>
+    <path fill="#5bc3f6" d="M2.253 3.493H22.56v7.844H2.253zM24.099 2v5.888h5.648L24.099 2z"/>
+    <path fill="#070444" d="M7.1 4.987a6 6 0 0 1 1.242-.1a1.576 1.576 0 0 1 1.187.392a1.714 1.714 0 0 1 .429 1.207A1.946 1.946 0 0 1 9.6 7.712a1.565 1.565 0 0 1-1.254.518a2.084 2.084 0 0 1-.246-.015v1.7h-1Zm1 2.206a1.61 1.61 0 0 0 .228.015a.621.621 0 0 0 .641-.7a.546.546 0 0 0-.569-.618a1.166 1.166 0 0 0-.3.03Zm2.983 1.385a1.845 1.845 0 0 0 .975.311c.345 0 .513-.156.513-.407S12.4 8.1 11.98 7.9a1.594 1.594 0 0 1-1.053-1.5a1.454 1.454 0 0 1 1.5-1.562a1.925 1.925 0 0 1 1.02.259l-.207 1.067a1.576 1.576 0 0 0-.819-.237c-.306 0-.474.148-.474.37c0 .252.2.355.674.592a1.543 1.543 0 0 1 .981 1.5a1.494 1.494 0 0 1-1.6 1.6a2.117 2.117 0 0 1-1.1-.311Zm4.537.402h-.1V5.755h.014a1.117 1.117 0 0 1 .629.113a1.262 1.262 0 0 1 .341.422a1.369 1.369 0 0 1 .149.553c.01.231 0 .417 0 .578a3.079 3.079 0 0 1-.035.539a1.846 1.846 0 0 1-.178.529a1.187 1.187 0 0 1-.382.379a.707.707 0 0 1-.437.111m.192-4.141c-.117 0-.23.009-.31.012l-.247.007h-.82v5.054h.964a2.815 2.815 0 0 0 1.082-.184a1.8 1.8 0 0 0 .718-.517a2.04 2.04 0 0 0 .392-.788a3.921 3.921 0 0 0 .12-1a4.644 4.644 0 0 0-.092-1.186a1.868 1.868 0 0 0-.425-.771a1.712 1.712 0 0 0-.563-.422a2.537 2.537 0 0 0-.577-.188a1.349 1.349 0 0 0-.24-.018"/>
+    <path fill="#5bc3f6" d="M16 19.651a7.218 7.218 0 0 1-.9-.031v-3.49c.111-.016.5-.031 1.04-.031c1.3 0 1.873.546 1.873 1.791c0 1.556-.916 1.761-2.012 1.761m.139-5.031c-1.054 0-2.095.016-2.622.031c-.069 0-.083.031-.083.109v9.93c0 .078.028.109.1.109H15c.069 0 .1-.031.1-.125V21.13h.86c2.039 0 3.718-.658 3.718-3.132c-.014-1.805-.818-3.378-3.538-3.378m6.935 2.598a2.266 2.266 0 0 0-2.539 2.257c0 1.136.5 1.743 1.928 2.4c1 .451 1.249.685 1.249 1.089c0 .342-.222.7-.86.7a4.067 4.067 0 0 1-2.247-.841a.056.056 0 0 0-.034-.012c-.033 0-.063.032-.063.09v1.432a.159.159 0 0 0 .083.156a3.942 3.942 0 0 0 2.15.607a2.317 2.317 0 0 0 2.594-2.4c0-1.121-.61-1.7-2.039-2.35c-1.04-.467-1.221-.669-1.221-1.043c0-.3.18-.654.86-.654a3.8 3.8 0 0 1 1.928.591a.094.094 0 0 0 .052.018c.043 0 .073-.043.073-.112v-1.274a.224.224 0 0 0-.083-.2a3.365 3.365 0 0 0-1.831-.451"/>
+  </symbol>
+  <symbol id="iconOpenListAi" viewBox="0 0 32 32">
+    <path fill="#909090" d="m24.037 2.072l5.564 5.8v22.056H8.814V30H29.67V7.945l-5.633-5.873"/>
+    <path fill="#231612" d="M23.965 2H8.742v27.928H29.6V7.873L23.965 2"/>
+    <path fill="#4c4442" d="M23.893 2.072v5.874h5.633l-5.633-5.874"/>
+    <path fill="#f36617" d="M23.965 2v5.873H29.6L23.965 2Z"/>
+    <path fill="#909090" d="M2.384 10.264h6.359V3.432H2.384v6.832Z"/>
+    <path fill="#4c4442" d="M8.743 10.264h13.718V3.432H8.743v6.832Z"/>
+    <path fill="#f36617" d="M22.407 10.211H2.33V3.379h20.077v6.832"/>
+    <path fill="#f46c25" d="M18.1 20.619c-.275-1.07-.948-3.226-1.223-4.344h-.014c-.206 1.054-.769 2.859-1.181 4.344H18.1Zm-2.775 1.566l-.838 2.779c-.014.1-.055.128-.137.128h-1.4c-.1 0-.124-.048-.1-.16a858.912 858.912 0 0 1 2.871-9.279a3.686 3.686 0 0 0 .11-.878a.086.086 0 0 1 .082-.1h1.9c.069 0 .082.016.11.08c1.016 3.274 2.129 6.884 3.173 10.19q.041.144-.082.144h-1.542c-.069 0-.1-.032-.124-.1l-.879-2.811h-3.146m6.967-4.631c0-.1.027-.128.094-.128h1.431c.081 0 .108.016.108.128v7.506c0 .08-.027.128-.108.128h-1.4c-.081 0-.121-.032-.121-.144v-7.49Zm-.09-2.173a.918.918 0 0 1 .918-.99a.884.884 0 0 1 .891.99a.908.908 0 1 1-1.809 0"/>
+    <path fill="#231612" d="M11.238 5.279h-.013L10.9 7.352h.652ZM9.5 9.3l1.06-4.86h1.355l1.033 4.86H11.81l-.15-1.133h-.882L10.634 9.3H9.5m3.938 0V4.44h1.086V9.3h-1.086"/>
+  </symbol>
+  <symbol id="iconOpenListLink" fill="currentColor" viewBox="0 0 640 512">
+    <path d="M579.8 267.7c56.5-56.5 56.5-148 0-204.5-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6 31.5 31.5 31.5 82.5 0 114L422.3 334.8c-31.5 31.5-82.5 31.5-114 0-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C206.5 251.2 213 330 263 380c56.5 56.5 148 56.5 204.5 0l112.3-112.3zM60.2 244.3c-56.5 56.5-56.5 148 0 204.5 50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C74 372 74 321 105.5 289.5l112.2-112.3c31.5-31.5 82.5-31.5 114 0 27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C433.5 260.8 427 182 377 132c-56.5-56.5-148-56.5-204.5 0L60.2 244.3z"/>
+  </symbol>
+  <symbol id="iconOpenListMusic" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM11 6.64v1.75l-2 .5v3.61c0 .495-.301.883-.662 1.123C7.974 13.866 7.499 14 7 14c-.5 0-.974-.134-1.338-.377-.36-.24-.662-.628-.662-1.123s.301-.883.662-1.123C6.026 11.134 6.501 11 7 11c.356 0 .7.068 1 .196V6.89a1 1 0 0 1 .757-.97l1-.25A1 1 0 0 1 11 6.64z"/>
+  </symbol>
+  <symbol id="iconOpenListPlay" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM6 6.883a.5.5 0 0 1 .757-.429l3.528 2.117a.5.5 0 0 1 0 .858l-3.528 2.117a.5.5 0 0 1-.757-.43V6.884z"/>
+  </symbol>
+  <symbol id="iconOpenListImage" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707v5.586l-2.73-2.73a1 1 0 0 0-1.52.127l-1.889 2.644-1.769-1.062a1 1 0 0 0-1.222.15L2 12.292V2a2 2 0 0 1 2-2zm5.5 1.5v2a1 1 0 0 0 1 1h2l-3-3zm-1.498 4a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0z"/>
+    <path d="M10.564 8.27 14 11.708V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-.293l3.578-3.577 2.56 1.536 2.426-3.395z"/>
+  </symbol>
+  <symbol id="iconOpenListMinus" fill="currentColor" viewBox="0 0 16 16">
+    <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM6 8.5h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1z"/>
+  </symbol>
+`
+
+export const registerOpenListIcons = (plugin: Plugin) => plugin.addIcons(OPENLIST_ICONS)
+
+export const OPENLIST_APP_ICON_SVG = '<svg><use xlink:href="#iconSiyuanCloud"></use></svg>'
+
+export type OpenListFileIconName =
+  | 'folder'
+  | 'minus'
+  | 'apple'
+  | 'windows'
+  | 'android'
+  | 'database'
+  | 'book'
+  | 'disc'
+  | 'markdown'
+  | 'cast'
+  | 'pdf'
+  | 'zip'
+  | 'word'
+  | 'excel'
+  | 'ppt'
+  | 'text'
+  | 'psd'
+  | 'ai'
+  | 'link'
+  | 'music'
+  | 'play'
+  | 'image'
+
+const archiveSuffixes = ['.zip', '.rar', '.7z', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.tbz2', '.txz']
+const appleExts = new Set('dmg,ipa,plist,tipa'.split(','))
+const windowsExts = new Set('exe,msi'.split(','))
+const androidExts = new Set('apk'.split(','))
+const databaseExts = new Set('db,sqlite,sqlite3,sql'.split(','))
+const bookExts = new Set('epub'.split(','))
+const markdownExts = new Set('md,markdown'.split(','))
+const textExts = new Set('txt,log,ini,conf,json,xml,yml,yaml,toml,sh,bat,cmd,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,cpp,c,h,rs,rb,php,swift,kt,kts'.split(','))
+const pdfExts = new Set('pdf'.split(','))
+const docExts = new Set('doc,docx'.split(','))
+const xlsExts = new Set('xls,xlsx,csv'.split(','))
+const pptExts = new Set('ppt,pptx'.split(','))
+const psdExts = new Set('psd'.split(','))
+const aiExts = new Set('ai'.split(','))
+const linkExts = new Set('url,webloc'.split(','))
+const castExts = new Set('cast'.split(','))
+const musicExts = new Set('mp3,flac,ogg,m4a,wav,opus,wma'.split(','))
+const playExts = new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8'.split(','))
+const imageExts = new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(','))
+
+const fileIconHrefs: Record<OpenListFileIconName, `#${string}`> = {
+  folder: '#iconOpenListFolder',
+  minus: '#iconOpenListMinus',
+  apple: '#iconOpenListApple',
+  windows: '#iconOpenListWindows',
+  android: '#iconOpenListAndroid',
+  database: '#iconOpenListDatabase',
+  book: '#iconOpenListBook',
+  disc: '#iconOpenListDisc',
+  markdown: '#iconOpenListMarkdown',
+  cast: '#iconOpenListCast',
+  pdf: '#iconOpenListPdf',
+  zip: '#iconOpenListZip',
+  word: '#iconOpenListWord',
+  excel: '#iconOpenListExcel',
+  ppt: '#iconOpenListPpt',
+  text: '#iconOpenListText',
+  psd: '#iconOpenListPsd',
+  ai: '#iconOpenListAi',
+  link: '#iconOpenListLink',
+  music: '#iconOpenListMusic',
+  play: '#iconOpenListPlay',
+  image: '#iconOpenListImage',
+}
+
+function extensionOf(name: string) {
+  return name.split('.').pop()?.toLowerCase() || ''
+}
+
+function hasSuffix(name: string, suffixes: string[]) {
+  const lower = name.toLowerCase()
+  return suffixes.some(suffix => lower.endsWith(suffix))
+}
+
+export function openListFileIconName(name: string, isDir = false): OpenListFileIconName {
+  if (isDir)
+    return 'folder'
+
+  const ext = extensionOf(name)
+  if (appleExts.has(ext))
+    return 'apple'
+  if (windowsExts.has(ext))
+    return 'windows'
+  if (androidExts.has(ext))
+    return 'android'
+  if (databaseExts.has(ext))
+    return 'database'
+  if (bookExts.has(ext))
+    return 'book'
+  if (hasSuffix(name, ['.iso', '.img', '.bin']))
+    return 'disc'
+  if (markdownExts.has(ext))
+    return 'markdown'
+  if (pdfExts.has(ext))
+    return 'pdf'
+  if (docExts.has(ext))
+    return 'word'
+  if (xlsExts.has(ext))
+    return 'excel'
+  if (pptExts.has(ext))
+    return 'ppt'
+  if (psdExts.has(ext))
+    return 'psd'
+  if (aiExts.has(ext))
+    return 'ai'
+  if (linkExts.has(ext))
+    return 'link'
+  if (castExts.has(ext))
+    return 'cast'
+  if (hasSuffix(name, archiveSuffixes))
+    return 'zip'
+  if (musicExts.has(ext))
+    return 'music'
+  if (playExts.has(ext))
+    return 'play'
+  if (imageExts.has(ext))
+    return 'image'
+  if (textExts.has(ext))
+    return 'text'
+  return 'minus'
+}
+
+export function openListFileIconHref(name: string, isDir = false) {
+  return fileIconHrefs[openListFileIconName(name, isDir)]
+}
