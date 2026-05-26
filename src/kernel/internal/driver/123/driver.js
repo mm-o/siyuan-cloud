@@ -264,6 +264,13 @@ const downloadUrlFor = async (client, storage, file) => {
   });
   const raw = payload?.data?.DownloadUrl || payload?.data?.downloadUrl || "";
   if (!raw) throw new Error("get download url failed");
+  let referer = "https://www.123pan.com/";
+  try {
+    const original = new URL(raw);
+    referer = `${original.protocol}//${original.host}/`;
+  } catch (_) {
+    // Keep the web referer fallback used by the upstream request flow.
+  }
   let candidate = raw;
   try {
     const url = new URL(raw);
@@ -281,10 +288,26 @@ const downloadUrlFor = async (client, storage, file) => {
       responseEncoding: "text",
     });
     const data = JSON.parse(resolved.body || "{}");
-    return data?.data?.redirect_url || data?.data?.redirectUrl || candidate;
+    return {
+      url: data?.data?.redirect_url || data?.data?.redirectUrl || candidate,
+      referer,
+    };
   } catch (_) {
-    return candidate;
+    return { url: candidate, referer };
   }
+};
+
+const linkFor = async (client, storage, file) => {
+  const { url, referer } = await downloadUrlFor(client, storage, file);
+  return {
+    link: {
+      url,
+      header: {
+        Referer: [referer],
+      },
+      content_length: Number(file?.Size ?? file?.size ?? 0),
+    },
+  };
 };
 
 export const create123PanDriver = ({ client }) => ({
@@ -303,7 +326,7 @@ export const create123PanDriver = ({ client }) => ({
     };
   },
 
-  async get(storage, relPath) {
+  async get(storage, relPath, options = {}) {
     const target = await resolveFile(client, storage, relPath);
     if (target.isRoot) {
       return {
@@ -318,8 +341,8 @@ export const create123PanDriver = ({ client }) => ({
       };
     }
     const obj = objFromFile(target.file, relPath, storage);
-    if (!obj.is_dir) {
-      obj.raw_url = await downloadUrlFor(client, storage, target.file);
+    if (!obj.is_dir && !options.skipLink) {
+      obj.raw_url = (await linkFor(client, storage, target.file)).link.url;
     }
     return {
       ...obj,
@@ -332,14 +355,7 @@ export const create123PanDriver = ({ client }) => ({
   async read(storage, relPath) {
     const target = await resolveFile(client, storage, relPath);
     if (target.isRoot || isDir(target.file)) throw new Error("not file");
-    const url = await downloadUrlFor(client, storage, target.file);
-    return forwardProxy(client, url, {
-      headers: {
-        Referer: `${new URL(url).protocol}//${new URL(url).host}/`,
-      },
-      method: "GET",
-      responseEncoding: "base64",
-    });
+    return linkFor(client, storage, target.file);
   },
 
   async mkdir(storage, relPath) {

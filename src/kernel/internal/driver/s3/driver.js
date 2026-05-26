@@ -1,12 +1,29 @@
-import { basename, dirname, normalizePath } from "../model/path.js";
-import { forwardProxy, joinUrl } from "./http.js";
-import { signAwsV4 } from "./aws4.js";
+import { basename, dirname, normalizePath } from "../../model/path.js";
+import { forwardProxy, joinUrl } from "../http.js";
+import { signAwsV4 } from "../aws4.js";
 
 const tagText = (xml, name) => String(xml || "").match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`, "i"))?.[1] || "";
 const decodeXml = (value) => String(value || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 const keyFor = (path, dir = false) => {
   const key = normalizePath(path).replace(/^\/+/, "");
   return key && dir ? `${key}/` : key;
+};
+
+const base64ToBytes = (value) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = String(value || "").replace(/[\r\n\s]/g, "");
+  const bytes = [];
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = chars.indexOf(clean[i]);
+    const b = chars.indexOf(clean[i + 1]);
+    const c = clean[i + 2] === "=" ? -1 : chars.indexOf(clean[i + 2]);
+    const d = clean[i + 3] === "=" ? -1 : chars.indexOf(clean[i + 3]);
+    if (a < 0 || b < 0) continue;
+    bytes.push((a << 2) | (b >> 4));
+    if (c >= 0) bytes.push(((b & 15) << 4) | (c >> 2));
+    if (d >= 0) bytes.push(((c & 3) << 6) | d);
+  }
+  return Uint8Array.from(bytes);
 };
 
 const s3Url = (addition, key = "", query = "") => {
@@ -22,13 +39,15 @@ const signedRequest = (client, addition, method, key, {
   body = "",
   contentType = "application/octet-stream",
   headers: extraHeaders = {},
+  payloadEncoding,
   query = "",
+  signingBody,
   responseEncoding = "text",
 } = {}) => {
   const url = s3Url(addition, key, query);
   const headers = signAwsV4({
     accessKeyId: addition.access_key_id,
-    body,
+    body: signingBody === undefined ? body : signingBody,
     headers: {
       ...(contentType ? { "content-type": contentType } : {}),
       ...extraHeaders,
@@ -44,6 +63,7 @@ const signedRequest = (client, addition, method, key, {
     contentType,
     headers,
     method,
+    payloadEncoding,
     responseEncoding,
     timeout: Number(addition.timeout || 60000),
   });
@@ -123,6 +143,25 @@ export const createS3Driver = ({ client }) => ({
     const name = addition.placeholder || ".siyuan-cloud";
     await signedRequest(client, addition, "PUT", keyFor(normalizePath(relPath + "/" + name)), { body: "" });
   },
+  async move(storage, relPath, dstRelPath) {
+    const addition = storage.addition_json;
+    const src = `${addition.bucket}/${keyFor(relPath)}`;
+    const dst = normalizePath(dstRelPath + "/" + basename(relPath)).replace(/^\/+/, "");
+    await signedRequest(client, addition, "PUT", dst, {
+      contentType: "",
+      headers: { "x-amz-copy-source": `/${encodeURIComponent(src).replace(/%2F/g, "/")}` },
+    });
+    await signedRequest(client, addition, "DELETE", keyFor(relPath), { contentType: "" });
+  },
+  async copy(storage, relPath, dstRelPath) {
+    const addition = storage.addition_json;
+    const src = `${addition.bucket}/${keyFor(relPath)}`;
+    const dst = normalizePath(dstRelPath + "/" + basename(relPath)).replace(/^\/+/, "");
+    await signedRequest(client, addition, "PUT", dst, {
+      contentType: "",
+      headers: { "x-amz-copy-source": `/${encodeURIComponent(src).replace(/%2F/g, "/")}` },
+    });
+  },
   async remove(storage, relPath) {
     await signedRequest(client, storage.addition_json, "DELETE", keyFor(relPath), { contentType: "" });
   },
@@ -136,10 +175,13 @@ export const createS3Driver = ({ client }) => ({
     });
     await signedRequest(client, addition, "DELETE", keyFor(relPath), { contentType: "" });
   },
-  async put(storage, relPath, content, mime) {
+  async put(storage, relPath, content, mime, options = {}) {
+    const signingBody = options.bodyEncoding === "base64" ? base64ToBytes(content || "") : (content || "");
     await signedRequest(client, storage.addition_json, "PUT", keyFor(relPath), {
       body: content || "",
       contentType: mime || "application/octet-stream",
+      payloadEncoding: options.bodyEncoding === "base64" ? "base64" : undefined,
+      signingBody,
     });
   },
 });

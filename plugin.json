@@ -20,9 +20,9 @@
     "zh_CN": "思盘"
   },
   "description": {
-    "default": "Multi-storage file list and cloud drive manager inside SiYuan.",
-    "en_US": "Multi-storage file list and cloud drive manager inside SiYuan.",
-    "zh_CN": "思源中的多存储文件列表与网盘管理插件。"
+    "default": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
+    "en_US": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
+    "zh_CN": "思源网盘聚合管理器，支持网盘文件查看、媒体播放、阅读批注、图床直链等能力，更多玩法期待你的探索。"
   },
   "readme": {
     "default": "README.md",
@@ -37,6 +37,9 @@
     "思盘",
     "cloud drive",
     "file manager",
+    "openlist",
+    "media",
+    "s3",
     "kernel plugin",
     "webdav"
   ]

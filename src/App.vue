@@ -25,7 +25,7 @@ function openDock() {
   dockButton?.click()
 }
 
-function openFileManager() {
+function openFileManager(path = '/') {
   openTab({
     app: plugin.app,
     custom: {
@@ -33,7 +33,7 @@ function openFileManager() {
       icon: 'iconFolder',
       title: t('fileManagerTitle'),
       data: {
-        path: '/',
+        path,
       },
     },
     openNewTab: true,
@@ -50,7 +50,7 @@ onMounted(() => {
       const mount = document.createElement('div')
       mount.className = 'siyuan-cloud-file-tab'
       this.element.appendChild(mount)
-      const app = createApp(FileTab)
+      const app = createApp(FileTab, { initialPath: this.data?.path || '/' })
       app.mount(mount)
       tabApps.set(this.element, app)
     },
@@ -91,9 +91,13 @@ onMounted(() => {
     icon: OPENLIST_APP_ICON_SVG,
     title: t('openFileManager'),
     position: 'right',
-    callback: openFileManager,
+    callback: () => openFileManager(),
   })
 
-window._siyuan_cloud = { openPanel: openDock, openDock, openFileManager }
+  ;(window as any)._siyuan_cloud = {
+    openPanel: openDock,
+    openDock,
+    openFileManager,
+  }
 })
 </script>

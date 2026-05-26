@@ -1,10 +1,14 @@
 import { normalizePath } from "../model/path.js";
 import { create123PanDriver } from "./123/driver.js";
-import { createBaiduNetdiskDriver } from "./baidu_netdisk.js";
-import { createOneDriveDriver } from "./onedrive.js";
-import { createOpenListDriver } from "./openlist.js";
-import { createS3Driver } from "./s3.js";
-import { createWebDavDriver } from "./webdav.js";
+import { create189CloudDriver } from "./189/driver.js";
+import { createAliyundriveOpenDriver } from "./aliyundrive_open/driver.js";
+import { createBaiduNetdiskDriver } from "./baidu_netdisk/driver.js";
+import { createLocalDriver } from "./local/driver.js";
+import { createOneDriveDriver } from "./onedrive/driver.js";
+import { createOpenListDriver } from "./openlist/driver.js";
+import { createQuarkDriver } from "./quark_uc/driver.js";
+import { createS3Driver } from "./s3/driver.js";
+import { createWebDavDriver } from "./webdav/driver.js";
 
 const parseAddition = (storage) => {
   if (storage.addition_json) return storage.addition_json;
@@ -37,6 +41,11 @@ export const createDriverRuntime = ({ client, saveStorageAddition }) => {
     "123": create123PanDriver({ client }),
     BaiduNetdisk: createBaiduNetdiskDriver({ client }),
     BaiduNetDisk: createBaiduNetdiskDriver({ client }),
+    AliyundriveOpen: createAliyundriveOpenDriver({ client }),
+    AliyunDriveOpen: createAliyundriveOpenDriver({ client }),
+    "189Cloud": create189CloudDriver({ client }),
+    Quark: createQuarkDriver({ client }),
+    Local: createLocalDriver({ client }),
   };
 
   const runtime = {

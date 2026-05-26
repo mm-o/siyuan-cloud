@@ -77,6 +77,7 @@ const stages = ref<Stage[]>([
   { key: 'architecture', labelKey: 'stageArchitectureLabel', detailKey: 'stageArchitectureDetail', status: 'done' },
   { key: 'auth', labelKey: 'stageAuthLabel', detailKey: 'stageAuthDetail', status: 'done' },
   { key: 'fs', labelKey: 'stageFsLabel', detailKey: 'stageFsDetail', status: 'done' },
+  { key: 'streaming-proxy', labelKey: 'stageStreamingProxyLabel', detailKey: 'stageStreamingProxyDetail', status: 'done' },
   { key: 'admin', labelKey: 'stageAdminLabel', detailKey: 'stageAdminDetail', status: 'active' },
   { key: 'meta', labelKey: 'stageMetaLabel', detailKey: 'stageMetaDetail', status: 'done' },
   { key: 'security', labelKey: 'stageSecurityLabel', detailKey: 'stageSecurityDetail', status: 'active' },

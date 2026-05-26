@@ -6,6 +6,13 @@ import {
 } from "../model/path.js";
 
 export const createVirtualFs = ({ getState, now }) => {
+  const byteLengthForBase64 = (value) => {
+    const clean = String(value || "").replace(/[\r\n\s]/g, "");
+    if (!clean) return 0;
+    const padding = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((clean.length * 3) / 4) - padding);
+  };
+
   const ensureDir = (path) => {
     const state = getState();
     const normalized = normalizePath(path);
@@ -30,19 +37,22 @@ export const createVirtualFs = ({ getState, now }) => {
     return state.entries[normalized];
   };
 
-  const createFile = (path, content, mime) => {
+  const createFile = (path, content, mime, options = {}) => {
     const state = getState();
     const normalized = normalizePath(path);
     const parent = ensureDir(dirname(normalized));
+    const bodyEncoding = String(options.bodyEncoding || "text");
     const text = content === undefined || content === null ? "" : String(content);
+    const size = Number(options.size || 0) || (bodyEncoding.startsWith("base64") ? byteLengthForBase64(text) : text.length);
     state.entries[normalized] = {
       name: basename(normalized),
       path: normalized,
       is_dir: false,
-      size: text.length,
+      size,
       modified: now(),
       created: state.entries[normalized]?.created || now(),
       content: text,
+      body_encoding: bodyEncoding,
       mime: mime || "text/plain; charset=utf-8",
     };
     if (!parent.children.includes(normalized)) {
@@ -78,7 +88,10 @@ export const createVirtualFs = ({ getState, now }) => {
         cloneEntryTree(child, normalizePath(dstPath + "/" + basename(child)));
       }
     } else {
-      createFile(dstPath, src.content || "", src.mime);
+      createFile(dstPath, src.content || "", src.mime, {
+        bodyEncoding: src.body_encoding || "text",
+        size: src.size || 0,
+      });
     }
   };
 

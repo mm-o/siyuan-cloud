@@ -69,6 +69,18 @@
             <textarea v-model="configText" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('configJsonPlaceholder')" />
           </div>
         </div>
+        <div class="b3-label ol-card">
+          <div class="ol-panel-block">
+            <label class="ol-field">
+              <span>{{ t('externalPreviews') }}</span>
+              <textarea v-model="externalPreviews" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('externalPreviewsHelp')" />
+              <small>{{ t('externalPreviewsHelp') }}</small>
+            </label>
+            <div class="ol-actions">
+              <button class="b3-button" type="button" @click="saveExternalPreviews">{{ t('saveExternalPreviews') }}</button>
+            </div>
+          </div>
+        </div>
         <div class="b3-label ol-card ol-empty">
           <span>{{ t('stateFile') }}</span>
           <code>{{ storageInfo.state_file || '/storage/petal/siyuan-cloud/siyuan-cloud/state.json' }}</code>
@@ -250,6 +262,7 @@ const {
   driverNote,
   exportAddition,
   exportConfig,
+  externalPreviews,
   fieldHelp,
   fieldLabel,
   fieldOptions,
@@ -267,6 +280,7 @@ const {
   openPrivateEntry,
   refreshAll,
   runVerifySuite,
+  saveExternalPreviews,
   selectedStorageId,
   statusClass,
   statusDetail,

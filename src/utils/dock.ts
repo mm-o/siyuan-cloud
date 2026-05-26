@@ -1,6 +1,14 @@
 import { showMessage, type Plugin } from 'siyuan'
 import { computed, onMounted, ref, watch } from 'vue'
-import { fetchOpenListJson, fetchOpenListText, openListJson, privateBase } from '@/utils/api'
+import {
+  fetchOpenListJson,
+  fetchOpenListText,
+  fsGet,
+  fsMkdir,
+  fsNewFile,
+  openListJson,
+  privateBase,
+} from '@/utils/api'
 
 type Status = 'checking' | 'online' | 'offline'
 
@@ -73,6 +81,7 @@ export function useDock(plugin: Plugin) {
   const mountCreateResult = ref('')
   const mountFormOpen = ref(false)
   const configText = ref('')
+  const externalPreviews = ref('')
   const verifyLog = ref<Array<{ id: string, ok: boolean, title: string, detail: string }>>([])
 
   function t(key: string) {
@@ -595,6 +604,30 @@ export function useDock(plugin: Plugin) {
     }
   }
 
+  async function loadExternalPreviews() {
+    try {
+      const payload = await fetchOpenListJson('/api/admin/setting/get?key=external_previews')
+      externalPreviews.value = payload.data?.value || '{}'
+    } catch (error) {
+      externalPreviews.value = '{}'
+      showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
+    }
+  }
+
+  async function saveExternalPreviews() {
+    try {
+      const parsed = JSON.parse(externalPreviews.value || '{}')
+      externalPreviews.value = JSON.stringify(parsed, null, 2)
+      await openListJson('/api/admin/setting/save', {
+        key: 'external_previews',
+        value: externalPreviews.value,
+      })
+      showMessage(t('externalPreviewsSaved'))
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
+    }
+  }
+
   async function loadStorageList() {
     const payload = await fetchOpenListJson('/api/admin/storage/list')
     verifyStorages.value = payload.data?.content || payload.data || []
@@ -612,9 +645,11 @@ export function useDock(plugin: Plugin) {
     return verifyStep(t('verifyFsRoundTrip'), async () => {
       const dir = `${verifyMountPath.value}/fs`
       const path = `${dir}/note.txt`
-      await openListJson('/api/fs/mkdir', { path: dir })
-      await openListJson('/api/fs/put', { path, content: 'hello fs' }, { method: 'PUT' })
-      const got = await openListJson('/api/fs/get', { path })
+      await fsMkdir(dir)
+      await fsNewFile(path, '', true)
+      const got = await fsGet(path)
+      if (got.code !== 200)
+        throw new Error(got.message || `Siyuan Cloud code ${got.code}`)
       return got.data?.name || path
     })
   }
@@ -685,6 +720,7 @@ export function useDock(plugin: Plugin) {
   async function refreshAll() {
     await loadDriverOptions()
     await loadStorageList()
+    await loadExternalPreviews()
     await refreshStatus()
   }
 
@@ -734,6 +770,7 @@ export function useDock(plugin: Plugin) {
     editMount,
     exportAddition,
     exportConfig,
+    externalPreviews,
     fieldHelp,
     fieldLabel,
     fieldOptions,
@@ -751,6 +788,7 @@ export function useDock(plugin: Plugin) {
     openPrivateEntry,
     refreshAll,
     runVerifySuite,
+    saveExternalPreviews,
     selectedStorageId,
     statusClass,
     statusDetail,

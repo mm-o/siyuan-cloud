@@ -1,9 +1,9 @@
-import { basename, dirname, normalizePath } from "../model/path.js";
+import { basename, dirname, normalizePath } from "../../model/path.js";
 import {
   basicAuth,
   forwardProxy,
   joinUrl,
-} from "./http.js";
+} from "../http.js";
 
 const davHeaders = (addition, extra = {}) => ({
   Authorization: basicAuth(addition.username, addition.password),
@@ -84,10 +84,31 @@ export const createWebDavDriver = ({ client }) => {
       };
     },
     async read(storage, relPath) {
-      return request(storage, relPath, { method: "GET", responseEncoding: "base64" });
+      const addition = storage.addition_json;
+      const url = joinUrl(addition.address, normalizePath((addition.root_folder_path || "/") + "/" + relPath));
+      return {
+        link: {
+          url,
+          header: davHeaders(addition),
+        },
+      };
     },
     async mkdir(storage, relPath) {
       await request(storage, relPath, { method: "MKCOL" });
+    },
+    async move(storage, relPath, dstRelPath) {
+      const addition = storage.addition_json;
+      await request(storage, relPath, {
+        headers: { Destination: joinUrl(addition.address, normalizePath((addition.root_folder_path || "/") + "/" + dstRelPath + "/" + basename(relPath))) },
+        method: "MOVE",
+      });
+    },
+    async copy(storage, relPath, dstRelPath) {
+      const addition = storage.addition_json;
+      await request(storage, relPath, {
+        headers: { Destination: joinUrl(addition.address, normalizePath((addition.root_folder_path || "/") + "/" + dstRelPath + "/" + basename(relPath))) },
+        method: "COPY",
+      });
     },
     async remove(storage, relPath) {
       await request(storage, relPath, { method: "DELETE" });
@@ -99,11 +120,12 @@ export const createWebDavDriver = ({ client }) => {
         method: "MOVE",
       });
     },
-    async put(storage, relPath, content, mime) {
+    async put(storage, relPath, content, mime, options = {}) {
       await request(storage, relPath, {
         body: content || "",
         contentType: mime || "application/octet-stream",
         method: "PUT",
+        payloadEncoding: options.bodyEncoding === "base64" ? "base64" : undefined,
       });
     },
   };

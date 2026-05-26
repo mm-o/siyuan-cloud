@@ -41,6 +41,11 @@ const preferProxy = (info) => {
   return info;
 };
 
+const configPatch = (info, patch) => {
+  Object.assign(info.config, patch);
+  return info;
+};
+
 const text = (name, required = false, help = "") => field(name, "string", "", "", required, help);
 const password = (name, required = false, help = "") => field(name, "password", "", "", required, help);
 const bool = (name, defaultValue = false, help = "") => field(name, "bool", defaultValue, "", false, help);
@@ -76,7 +81,6 @@ const metadataOnlyNames = [
   "IPFS API",
   "KodBox",
   "LenovoNasShare",
-  "Local",
   "MediaFire",
   "MediaTrack",
   "Mega_nz",
@@ -125,6 +129,7 @@ const withAliases = (map) => ({
 const driverNameOrder = [
   "SiYuanKernel",
   "SiYuanWorkspace",
+  "Local",
   "WebDav",
   "OpenList",
   "AListV3",
@@ -201,14 +206,14 @@ const buildDriverInfoMap = () => withAliases({
       note: "Read/list/remove/rename are wired through SiYuan /api/file. Upload is still guarded.",
     },
   },
-  WebDav: supported("WebDav", [
+  WebDav: preferProxy(supported("WebDav", [
     select("vendor", ["sharepoint", "other"], "other"),
     text("address", true),
     text("username", true),
     password("password", true),
     bool("tls_insecure_skip_verify", false),
-  ]),
-  OpenList: supported("OpenList", [
+  ])),
+  OpenList: configPatch(supported("OpenList", [
     text("url", true),
     password("meta_password"),
     text("username"),
@@ -218,7 +223,7 @@ const buildDriverInfoMap = () => withAliases({
     bool("pass_ua_to_upsteam", true),
     bool("forward_archive_requests", true),
     bool("pass_refresh_flag_to_upsteam", false),
-  ]),
+  ]), { proxy_range_option: true, link_cache_mode: "auto" }),
   AListV3: supported("AListV3", [
     text("url", true),
     text("username"),
@@ -231,7 +236,8 @@ const buildDriverInfoMap = () => withAliases({
     password("password"),
     password("token"),
   ]),
-  S3: supported("S3", [
+  S3: configPatch(supported("S3", [
+    rootPath("/"),
     text("bucket", true),
     text("endpoint", true),
     text("region"),
@@ -239,23 +245,39 @@ const buildDriverInfoMap = () => withAliases({
     password("secret_access_key", true),
     password("session_token"),
     text("custom_host"),
+    bool("enable_custom_host_presign", false),
+    number("sign_url_expire", 4),
+    text("placeholder"),
     bool("force_path_style", false),
     select("list_object_version", ["v1", "v2"], "v1"),
+    bool("remove_bucket", false),
+    bool("add_filename_to_disposition", false),
     bool("enable_direct_upload", false),
-  ]),
-  Doge: supported("Doge", [
+    text("direct_upload_host"),
+  ]), { check_status: true }),
+  Doge: configPatch(supported("Doge", [
+    rootPath("/"),
     text("bucket", true),
     text("endpoint", true),
     text("region"),
     text("access_key_id", true),
     password("secret_access_key", true),
     password("session_token"),
+    text("custom_host"),
+    bool("enable_custom_host_presign", false),
+    number("sign_url_expire", 4),
+    text("placeholder"),
     bool("force_path_style", false),
-  ]),
+    select("list_object_version", ["v1", "v2"], "v1"),
+    bool("remove_bucket", false),
+    bool("add_filename_to_disposition", false),
+    bool("enable_direct_upload", false),
+    text("direct_upload_host"),
+  ]), { check_status: true }),
   "115 Cloud": unsupported("115 Cloud", [
     rootId("0"),
-    password("cookie", true),
-    text("qrcode_token"),
+    text("cookie", false, "one of QR code token and cookie required"),
+    text("qrcode_token", false, "one of QR code token and cookie required"),
     select("qrcode_source", ["web", "android", "ios", "tv", "alipaymini", "wechatmini", "qandroid"], "linux"),
     number("page_size", 1000),
     float("limit_rate", 2),
@@ -270,14 +292,14 @@ const buildDriverInfoMap = () => withAliases({
     password("refresh_token", true),
   ]),
   "115 Share": unsupported("115 Share", [text("share_code", true), password("receive_code"), rootId()]),
-  "123Pan": supported("123Pan", [
+  "123Pan": preferProxy(supported("123Pan", [
     rootId("0"),
     text("username", true),
     password("password", true),
     password("access_token"),
     number("UploadThread", 3),
-    field("platform", "string", "web"),
-  ]),
+    field("platform", "string", "web", "", false, "the platform header value, sent with API requests"),
+  ])),
   "123 Open": unsupported("123 Open", [
     rootId(),
     text("ClientID"),
@@ -293,7 +315,9 @@ const buildDriverInfoMap = () => withAliases({
   ]),
   "123PanShare": unsupported("123PanShare", [text("share_key", true), password("share_pwd"), rootId()]),
   "123PanLink": unsupported("123PanLink", [text("url", true)]),
-  "189Cloud": unsupported("189Cloud", [rootId("-11"), text("username", true), password("password", true), password("cookie")]),
+  "189Cloud": configPatch(supported("189Cloud", [rootId("-11"), text("username", true), password("password", true), text("cookie", false, "Fill in the cookie if need captcha")]), {
+    alert: "info|You can try to use 189PC driver if this driver does not work.",
+  }),
   "189CloudPC": unsupported("189CloudPC", [rootId("-11"), text("username", true), password("password", true), password("cookie")]),
   "189CloudTV": unsupported("189CloudTV", [rootId("-11"), text("username", true), password("password", true), password("cookie")]),
   Aliyundrive: unsupported("Aliyundrive", [
@@ -304,7 +328,7 @@ const buildDriverInfoMap = () => withAliases({
     bool("rapid_upload", false),
     bool("internal_upload", false),
   ]),
-  AliyundriveOpen: unsupported("AliyundriveOpen", [
+  AliyundriveOpen: configPatch(supported("AliyundriveOpen", [
     select("drive_type", ["default", "resource", "backup"], "resource"),
     rootId(),
     password("refresh_token", true),
@@ -320,7 +344,7 @@ const buildDriverInfoMap = () => withAliases({
     bool("internal_upload", false),
     select("livp_download_format", ["jpeg", "mov"], "jpeg"),
     password("access_token"),
-  ]),
+  ]), { default_root: "root", no_overwrite_upload: true }),
   AliyundriveShare: unsupported("AliyundriveShare", [
     rootId(),
     password("refresh_token", true),
@@ -401,21 +425,55 @@ const buildDriverInfoMap = () => withAliases({
   ]),
   "Onedrive Sharelink": unsupported("Onedrive Sharelink", [text("share_url", true), rootPath("/")]),
   PikPak: unsupported("PikPak", [text("username", true), password("password", true)]),
-  Quark: unsupported("Quark", [password("cookie", true)]),
+  Quark: configPatch(preferProxy(supported("Quark", [
+    password("cookie", true),
+    rootId("0"),
+    select("order_by", ["none", "file_type", "file_name", "updated_at"], "none"),
+    select("order_direction", ["asc", "desc"], "asc"),
+    bool("use_transcoding_address", false),
+    bool("only_list_video_file", false),
+    number("addition_version", 2),
+  ])), { default_root: "0", no_overwrite_upload: true }),
   SFTP: unsupported("SFTP", [text("address", true), text("username", true), password("password"), password("private_key")]),
   SMB: unsupported("SMB", [text("address", true), text("username"), password("password"), text("share_name")]),
   Thunder: unsupported("Thunder", [text("username"), password("password"), password("refresh_token")]),
   URLTree: unsupported("URLTree", [text("url", true)]),
   USS: unsupported("USS", [text("bucket", true), text("endpoint", true), text("operator", true), password("password", true)]),
   Virtual: unsupported("Virtual", []),
+  Local: configPatch(preferProxy(supported("Local", [
+    rootPath("/"),
+    bool("directory_size", false, "This might impact host performance"),
+    bool("thumbnail", false, "enable thumbnail"),
+    text("thumb_cache_folder"),
+    field("thumb_concurrency", "string", "16", "", false, "Number of concurrent thumbnail generation goroutines."),
+    field("video_thumb_pos", "string", "20%", "", false, "The position of the video thumbnail."),
+    bool("show_hidden", true, "show hidden directories and files"),
+    field("mkdir_perm", "string", "777"),
+    field("recycle_bin_path", "string", "delete permanently"),
+  ])), { no_cache: true, no_link_url: true }),
 });
 
 export const driverInfoMap = () => buildDriverInfoMap();
 
+const exposedDriverNames = [
+  "SiYuanKernel",
+  "SiYuanWorkspace",
+  "Local",
+  "WebDav",
+  "OpenList",
+  "AListV3",
+  "AList V3",
+  "S3",
+  "Doge",
+  "123Pan",
+  "189Cloud",
+  "AliyundriveOpen",
+  "BaiduNetdisk",
+  "Onedrive",
+  "Quark",
+];
+
 export const driverNames = () => {
   const map = driverInfoMap();
-  return [
-    ...driverNameOrder.filter((name) => map[name]),
-    ...Object.keys(map).filter((name) => !driverNameOrder.includes(name)),
-  ];
+  return exposedDriverNames.filter((name) => map[name]);
 };

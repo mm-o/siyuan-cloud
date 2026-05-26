@@ -1,8 +1,9 @@
 import { basename } from "../../internal/model/path.js";
 import { proxyResponse } from "./response.js";
 
-const PROXY_IGNORE_HEADERS = [
+const ORIGIN_IGNORE_HEADERS = new Set([
   "authorization",
+  "cookie",
   "connection",
   "host",
   "proxy-authorization",
@@ -12,17 +13,59 @@ const PROXY_IGNORE_HEADERS = [
   "trailer",
   "transfer-encoding",
   "upgrade",
-];
+]);
+
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+const connectionHeaders = (headers = {}) => {
+  const result = new Set();
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (String(key).toLowerCase() !== "connection") continue;
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      for (const part of String(item || "").split(",")) {
+        const name = part.trim().toLowerCase();
+        if (name) result.add(name);
+      }
+    }
+  }
+  return result;
+};
+
+const headerValues = (value) => Array.isArray(value) ? value.map(String) : [String(value)];
+
+const setHeader = (headers, key, value) => {
+  const lower = String(key).toLowerCase();
+  for (const existing of Object.keys(headers)) {
+    if (existing.toLowerCase() === lower) delete headers[existing];
+  }
+  headers[key] = headerValues(value);
+};
 
 export const processHeader = (origin = {}, override = {}) => {
   const result = {};
+  const originConnectionHeaders = connectionHeaders(origin);
   for (const [key, value] of Object.entries(origin || {})) {
-    if (PROXY_IGNORE_HEADERS.includes(String(key).toLowerCase())) continue;
-    result[key] = Array.isArray(value) ? value.map(String) : [String(value)];
+    const lower = String(key).toLowerCase();
+    if (ORIGIN_IGNORE_HEADERS.has(lower) || originConnectionHeaders.has(lower)) continue;
+    setHeader(result, key, value);
   }
+  const overrideConnectionHeaders = connectionHeaders(override);
   for (const [key, value] of Object.entries(override || {})) {
     if (value === undefined || value === null || value === "") continue;
-    result[key] = Array.isArray(value) ? value.map(String) : [String(value)];
+    const lower = String(key).toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lower) || overrideConnectionHeaders.has(lower)) continue;
+    setHeader(result, key, value);
   }
   return result;
 };

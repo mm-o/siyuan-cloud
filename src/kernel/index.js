@@ -5,7 +5,6 @@ import {
   jsonResponse,
   pageResp,
   rawResponse,
-  redirectResponse,
   success,
   successWithMessage,
   textResponse,
@@ -379,12 +378,9 @@ import { createWebDavServer } from "./server/webdav.js";
       try {
         const options = proxyReadOptions(request, filePath);
         const data = await mount.driver.read(mount.storage, mount.relPath, options);
-        if (data.link || data.Link || data.proxy_url || data.proxyUrl) {
+        if (data.link) {
           const link = linkFromDriverData(data);
           return proxy(null, link, { request_header: options.requestHeaders }, !!mount.storage.proxy_range);
-        }
-        if (data.redirect_url || data.redirectUrl) {
-          return redirectResponse(data.redirect_url || data.redirectUrl, data.status || 302);
         }
         if (String(data.bodyEncoding || "").startsWith("base64")) {
           const headers = rawForwardHeaders(data.headers);
@@ -403,6 +399,13 @@ import { createWebDavServer } from "./server/webdav.js";
     }
     const entry = state.entries[filePath];
     if (!entry || entry.is_dir) return textResponse("not found", 404);
+    if (String(entry.body_encoding || "").startsWith("base64")) {
+      return rawResponse(
+        base64ToArrayBuffer(entry.content || ""),
+        200,
+        entry.mime || "application/octet-stream",
+      );
+    }
     return textResponse(entry.content || "", 200, entry.mime || "application/octet-stream");
   };
 
@@ -485,6 +488,7 @@ import { createWebDavServer } from "./server/webdav.js";
     }),
     ...createPublicHandlers({
       getState: () => state,
+      handlersRef: () => handlers,
       settingItem,
     }),
     ...createAdminHandlers({

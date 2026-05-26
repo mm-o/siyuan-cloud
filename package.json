@@ -2,7 +2,7 @@
   "name": "siyuan-cloud",
   "version": "0.3.0",
   "type": "module",
-  "description": "Multi-storage file list and cloud drive manager inside SiYuan.",
+  "description": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
   "author": "mm-o",
   "license": "MIT",
   "homepage": "https://github.com/mm-o/siyuan-cloud",

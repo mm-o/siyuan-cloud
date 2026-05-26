@@ -1,8 +1,8 @@
-import { basename, dirname, normalizePath } from "../model/path.js";
+import { basename, dirname, normalizePath } from "../../model/path.js";
 import {
   forwardProxy,
   remoteJson,
-} from "./http.js";
+} from "../http.js";
 
 const API = "https://pan.baidu.com/rest/2.0";
 const OPEN_API = "https://openapi.baidu.com/oauth/2.0/token";
@@ -147,6 +147,12 @@ const postForm = (client, storage, pathname, query, form) => requestBaidu(client
 
 const fileNameOf = (file) => file?.server_filename || file?.name || basename(file?.path || "");
 const isDir = (file) => Number(file?.isdir || 0) === 1;
+const VIDEO_EXTS = new Set(["mp4", "mkv", "avi", "mov", "rmvb", "webm", "flv", "m3u8", "m4v"]);
+const isVideoFile = (file) => Number(file?.category || 0) === 1 || VIDEO_EXTS.has(fileNameOf(file).split(".").pop()?.toLowerCase() || "");
+const effectiveDownloadApi = (storage, file) => {
+  const api = storage.addition_json.download_api || "official";
+  return api === "crack_video" && !isVideoFile(file) ? "official" : api;
+};
 
 const fileToObj = (file, relPath, storage) => {
   const actualPath = file?.path || rootedPath(storage.addition_json, relPath);
@@ -230,6 +236,7 @@ const resolveHeadLocation = async (client, url, headers) => {
       contentType: "application/octet-stream",
       headers,
       method: "HEAD",
+      redirect: false,
       responseEncoding: "text",
       timeout: 30000,
     });
@@ -300,8 +307,9 @@ const linkCrackVideo = async (client, storage, file) => {
 };
 
 const linkFor = async (client, storage, file) => {
+  const api = effectiveDownloadApi(storage, file);
   const key = cacheKey(storage, "link", [
-    storage.addition_json.download_api || "official",
+    api,
     file.fs_id || file.id || "",
     file.size || "",
     file.server_mtime || file.mtime || "",
@@ -309,7 +317,7 @@ const linkFor = async (client, storage, file) => {
   const cached = getCache(key);
   if (cached) return cached;
   let link;
-  switch (storage.addition_json.download_api || "official") {
+  switch (api) {
     case "crack":
       link = await linkCrack(client, storage, file);
       break;
@@ -400,9 +408,6 @@ export const createBaiduNetdiskDriver = ({ client }) => ({
         header,
         content_length: Number(target.file?.size || 0),
       },
-      proxy_url: link.url,
-      proxy_headers: header,
-      proxy_method: "GET",
     };
   },
 

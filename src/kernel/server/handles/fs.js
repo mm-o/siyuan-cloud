@@ -64,7 +64,159 @@ export const createFsHandlers = ({
   };
 
   const proxyRawUrl = (path) => `/plugin/private/siyuan-cloud/p${normalizePath(path)}`;
-  const proxyRawUrlForStorage = (_storage, path) => proxyRawUrl(path);
+  const rawUrlForStorage = (storage, path, linkUrl = "") => storageShouldProxy(storage) ? proxyRawUrl(path) : linkUrl;
+
+  const requestMeta = (request) => request?.request || request?.Request || {};
+  const requestHeaders = (request) => requestMeta(request)?.headers || requestMeta(request)?.Headers || {};
+  const requestHeader = (request, name) => {
+    const target = String(name || "").toLowerCase();
+    for (const [key, value] of Object.entries(requestHeaders(request))) {
+      if (String(key).toLowerCase() !== target) continue;
+      return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+    }
+    return "";
+  };
+  const requestContentType = (request) =>
+    requestHeader(request, "Content-Type")
+    || requestMeta(request)?.contentType
+    || requestMeta(request)?.ContentType
+    || "application/octet-stream";
+  const decodePathValue = (value) => {
+    const input = String(value || "");
+    if (!input) return "";
+    try {
+      return decodeURIComponent(input);
+    } catch (_) {
+      return input;
+    }
+  };
+  const requestBodyData = (request) => {
+    const body = requestMeta(request)?.body || requestMeta(request)?.Body || {};
+    return body.data !== undefined ? body.data : body.Data;
+  };
+  const firstFormFile = (files) => {
+    for (const value of Object.values(files || {})) {
+      if (Array.isArray(value) && value[0]) return value[0];
+    }
+    return null;
+  };
+  const arrayBufferFromBytes = (value) => {
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (Array.isArray(value)) return Uint8Array.from(value.map((item) => Number(item) & 0xff));
+    if (value && typeof value === "object" && Array.isArray(value.data)) {
+      return Uint8Array.from(value.data.map((item) => Number(item) & 0xff));
+    }
+    return null;
+  };
+  const bytesToBase64 = (bytes) => {
+    if (!bytes || !bytes.length) return "";
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let output = "";
+    for (let index = 0; index < bytes.length; index += 3) {
+      const a = bytes[index];
+      const hasB = index + 1 < bytes.length;
+      const hasC = index + 2 < bytes.length;
+      const b = hasB ? bytes[index + 1] : 0;
+      const c = hasC ? bytes[index + 2] : 0;
+      output += chars[a >> 2];
+      output += chars[((a & 3) << 4) | (b >> 4)];
+      output += hasB ? chars[((b & 15) << 2) | (c >> 6)] : "=";
+      output += hasC ? chars[c & 63] : "=";
+    }
+    return output;
+  };
+  const overwriteEnabled = (request, req) => {
+    const header = requestHeader(request, "Overwrite");
+    if (header) return header !== "false";
+    if (req.overwrite === undefined || req.overwrite === null || req.overwrite === "") return true;
+    return boolValue(req.overwrite, true);
+  };
+  const uploadTargetExists = async (path) => {
+    if (isWorkspacePath(path)) {
+      const payload = await siyuanApiJson("/api/file/readDir", { path: workspaceRelPath(dirname(path)) });
+      if (payload.code !== 0) return false;
+      return (payload.data || []).some((entry) => entry?.name === basename(path));
+    }
+    const mount = driverRuntime.resolve(state.storages, path);
+    if (mount) {
+      try {
+        await mount.driver.get(mount.storage, mount.relPath, { skipLink: true });
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    return !!state.entries[path];
+  };
+  const uploadFromRawRequest = async (request, req, fallbackName) => {
+    const rawPath = req.path || req.file_path || req.name || decodePathValue(requestHeader(request, "File-Path")) || fallbackName;
+    const path = normalizePath(rawPath || fallbackName);
+    const mime = req.mime || requestContentType(request);
+    const data = requestBodyData(request);
+    if (typeof data === "string") {
+      return { body: data, bodyEncoding: "text", mime, path, size: data.length };
+    }
+    const bytes = arrayBufferFromBytes(data);
+    if (bytes) {
+      return {
+        body: bytesToBase64(bytes),
+        bodyEncoding: "base64",
+        mime,
+        path,
+        size: bytes.byteLength,
+      };
+    }
+    const content = req.content ?? req.data ?? "";
+    return {
+      body: String(content),
+      bodyEncoding: "text",
+      mime,
+      path,
+      size: String(content).length,
+    };
+  };
+  const uploadFromFormRequest = async (request, req) => {
+    const file = firstFormFile(req.files);
+    const fileData = file?.data ?? file?.Data;
+    const bytes = arrayBufferFromBytes(fileData);
+    const filename = file?.filename || file?.Filename || req.file_name || req.name || "upload.bin";
+    const path = normalizePath(req.path || req.file_path || decodePathValue(requestHeader(request, "File-Path")) || joinPath(req.dir || dirname(req.path || "/"), filename));
+    const mime = file?.headers?.["Content-Type"]?.[0]
+      || file?.Headers?.["Content-Type"]?.[0]
+      || req.mime
+      || requestContentType(request);
+    if (bytes) {
+      return {
+        body: bytesToBase64(bytes),
+        bodyEncoding: "base64",
+        mime,
+        path,
+        size: bytes.byteLength,
+      };
+    }
+    return {
+      body: "",
+      bodyEncoding: "text",
+      mime,
+      path,
+      size: Number(file?.size || file?.Size || 0),
+    };
+  };
+  const joinPath = (dir, name) => normalizePath(`${normalizePath(dir || "/").replace(/\/+$/, "")}/${String(name || "").replace(/^\/+/, "")}`);
+  const driverPut = async (mount, upload) => {
+    await mount.driver.put(mount.storage, mount.relPath, upload.body, upload.mime, {
+      bodyEncoding: upload.bodyEncoding,
+      size: upload.size,
+    });
+  };
+  const sameStorageMount = (left, right) =>
+    !!left
+    && !!right
+    && (
+      (left.storage?.id && right.storage?.id && left.storage.id === right.storage.id)
+      || normalizePath(left.storage?.mount_path || "/") === normalizePath(right.storage?.mount_path || "/")
+    );
 
   return {
     "ANY /api/fs/list": async (request) => {
@@ -139,7 +291,7 @@ export const createFsHandlers = ({
           const shouldProxy = storageShouldProxy(mount.storage);
           const data = await mount.driver.get(mount.storage, mount.relPath, { skipLink: shouldProxy });
           if (data && !data.is_dir && shouldProxy) {
-            data.raw_url = proxyRawUrlForStorage(mount.storage, path);
+            data.raw_url = rawUrlForStorage(mount.storage, path);
             data.url = data.raw_url;
           }
           return jsonResponse(success(data));
@@ -214,33 +366,49 @@ export const createFsHandlers = ({
     },
     "PUT /api/fs/put": async (request) => {
       const req = await parseJson(request);
-      const path = normalizePath(req.path || req.file_path || req.name || "/untitled.txt");
+      const upload = await uploadFromRawRequest(request, req, "/untitled.txt");
+      const path = upload.path;
+      if (!overwriteEnabled(request, req) && await uploadTargetExists(path)) return jsonResponse(failure("file exists", 403));
       const mount = driverRuntime.resolve(state.storages, path);
       if (mount) {
         try {
-          await mount.driver.put(mount.storage, mount.relPath, req.content || req.data || "", req.mime);
+          await driverPut({ ...mount, relPath: mount.relPath }, upload);
           return jsonResponse(success({ path }));
         } catch (error) {
           return jsonResponse(failure(error.message || "driver put failed", 502));
         }
       }
-      createFile(path, req.content || req.data || "", req.mime);
+      if (isWorkspacePath(path)) {
+        return jsonResponse(failure("workspace upload is blocked until /api/file/putFile multipart bridging is proven in the kernel plugin runtime", 501));
+      }
+      createFile(path, upload.body, upload.mime, {
+        bodyEncoding: upload.bodyEncoding,
+        size: upload.size,
+      });
       await saveState();
       return jsonResponse(success({ path }));
     },
     "PUT /api/fs/form": async (request) => {
       const req = await parseJson(request);
-      const path = normalizePath(req.path || req.file_path || req.name || "/upload.txt");
+      const upload = await uploadFromFormRequest(request, req);
+      const path = upload.path;
+      if (!overwriteEnabled(request, req) && await uploadTargetExists(path)) return jsonResponse(failure("file exists", 403));
       const mount = driverRuntime.resolve(state.storages, path);
       if (mount) {
         try {
-          await mount.driver.put(mount.storage, mount.relPath, req.content || req.data || "", req.mime);
+          await driverPut({ ...mount, relPath: mount.relPath }, upload);
           return jsonResponse(success({ path }));
         } catch (error) {
           return jsonResponse(failure(error.message || "driver put failed", 502));
         }
       }
-      createFile(path, req.content || req.data || "", req.mime);
+      if (isWorkspacePath(path)) {
+        return jsonResponse(failure("workspace upload is blocked until /api/file/putFile multipart bridging is proven in the kernel plugin runtime", 501));
+      }
+      createFile(path, upload.body, upload.mime, {
+        bodyEncoding: upload.bodyEncoding,
+        size: upload.size,
+      });
       await saveState();
       return jsonResponse(success({ path }));
     },
@@ -278,8 +446,16 @@ export const createFsHandlers = ({
       const oldPath = normalizePath(req.path);
       const newName = String(req.name || "").trim();
       if (!isSafeRelativeName(newName)) return jsonResponse(failure("relative path is not allowed", 403));
+      if (oldPath === "/") return jsonResponse(failure("rename root folder is not allowed", 500));
+      if (!boolValue(req.overwrite, false)) {
+        const dstPath = normalizePath(dirname(oldPath) + "/" + newName);
+        if (dstPath !== oldPath && await uploadTargetExists(dstPath)) {
+          return jsonResponse(failure(`file [${newName}] exists`, 403));
+        }
+      }
       const mount = driverRuntime.resolve(state.storages, oldPath);
       if (mount) {
+        if (mount.relPath === "/") return jsonResponse(failure("rename root folder is not allowed", 500));
         try {
           await mount.driver.rename(mount.storage, mount.relPath, newName);
           return jsonResponse(success());
@@ -288,6 +464,7 @@ export const createFsHandlers = ({
         }
       }
       if (isWorkspacePath(oldPath)) {
+        if (normalizePath(workspaceRelPath(oldPath)) === "/") return jsonResponse(failure("rename root folder is not allowed", 500));
         const newPath = normalizePath(dirname(oldPath) + "/" + newName);
         const payload = await siyuanApiJson("/api/file/renameFile", {
           path: workspaceRelPath(oldPath),
@@ -312,8 +489,23 @@ export const createFsHandlers = ({
       if (!names.length) return jsonResponse(failure("Empty file names", 400));
       const srcDir = normalizePath(req.src_dir);
       const dstDir = normalizePath(req.dst_dir);
-      if (driverRuntime.resolve(state.storages, srcDir) || driverRuntime.resolve(state.storages, dstDir)) {
-        return jsonResponse(failure("driver move is not wired for mounted cloud storage yet", 501));
+      const srcMount = driverRuntime.resolve(state.storages, srcDir);
+      const dstMount = driverRuntime.resolve(state.storages, dstDir);
+      if (srcMount || dstMount) {
+        if (!srcMount || !dstMount || !sameStorageMount(srcMount, dstMount) || !srcMount.driver.move) {
+          return jsonResponse(failure("driver move across mount boundaries is not implemented in the SiYuan kernel port yet", 501));
+        }
+        for (const name of names) {
+          const srcPath = normalizePath(srcDir + "/" + name);
+          const dstPath = normalizePath(dstDir + "/" + basename(srcPath));
+          if (!req.overwrite && await uploadTargetExists(dstPath) && !req.skip_existing) return jsonResponse(failure(`file [${name}] exists`, 403));
+          await srcMount.driver.move(srcMount.storage, normalizePath(srcMount.relPath + "/" + name), dstMount.relPath);
+        }
+        const task = await taskStore.addTask("move", {
+          name: `move ${names.length} item(s)`,
+          status: "Move operations completed immediately",
+        });
+        return jsonResponse(success({ message: "Move operations completed immediately", tasks: [task] }));
       }
       ensureDir(dstDir);
       for (const name of names) {
@@ -336,8 +528,23 @@ export const createFsHandlers = ({
       if (!names.length) return jsonResponse(failure("Empty file names", 400));
       const srcDir = normalizePath(req.src_dir);
       const dstDir = normalizePath(req.dst_dir);
-      if (driverRuntime.resolve(state.storages, srcDir) || driverRuntime.resolve(state.storages, dstDir)) {
-        return jsonResponse(failure("driver copy is not wired for mounted cloud storage yet", 501));
+      const srcMount = driverRuntime.resolve(state.storages, srcDir);
+      const dstMount = driverRuntime.resolve(state.storages, dstDir);
+      if (srcMount || dstMount) {
+        if (!srcMount || !dstMount || !sameStorageMount(srcMount, dstMount) || !srcMount.driver.copy) {
+          return jsonResponse(failure("driver copy across mount boundaries is not implemented in the SiYuan kernel port yet", 501));
+        }
+        for (const name of names) {
+          const srcPath = normalizePath(srcDir + "/" + name);
+          const dstPath = normalizePath(dstDir + "/" + basename(srcPath));
+          if (!req.overwrite && await uploadTargetExists(dstPath) && !req.skip_existing && !req.merge) return jsonResponse(failure(`file [${name}] exists`, 403));
+          await srcMount.driver.copy(srcMount.storage, normalizePath(srcMount.relPath + "/" + name), dstMount.relPath);
+        }
+        const task = await taskStore.addTask("copy", {
+          name: `copy ${names.length} item(s)`,
+          status: "Copy operations completed immediately",
+        });
+        return jsonResponse(success({ message: "Copy operations completed immediately", tasks: [task] }));
       }
       ensureDir(dstDir);
       for (const name of names) {
@@ -482,7 +689,7 @@ export const createFsHandlers = ({
             header: link.header,
             method: link.method,
             content_length: link.content_length,
-            raw_url: proxyRawUrlForStorage(mount.storage, path),
+            raw_url: rawUrlForStorage(mount.storage, path, link.url),
             provider: mount.storage.driver,
           }));
         } catch (error) {
@@ -510,14 +717,9 @@ export const createFsHandlers = ({
     },
     "POST /api/fs/get_direct_upload_info": async (request) => {
       const req = await parseJson(request);
-      return jsonResponse(success({
-        method: "put",
-        url: "/plugin/private/siyuan-cloud/api/fs/put",
-        headers: {},
-        path: normalizePath(req.path || req.file_path || "/"),
-        provider: "siyuan-storage",
-        note: "Direct upload is folded back to the kernel compatibility /api/fs/put endpoint.",
-      }));
+      const path = normalizePath(req.path || req.file_path || "/");
+      if (!overwriteEnabled(request, req) && await uploadTargetExists(path)) return jsonResponse(failure("file exists", 403));
+      return jsonResponse(success(null));
     },
     "ANY /api/fs/other": async () => jsonResponse(success(null)),
   };

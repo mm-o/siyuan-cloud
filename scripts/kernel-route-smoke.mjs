@@ -111,9 +111,19 @@ globalThis.siyuan = {
             refresh_token: "BAIDU_REFRESH_REFRESHED",
           };
         } else if (url.hostname === "pan.baidu.com" && url.pathname.endsWith("/rest/2.0/xpan/file") && url.searchParams.get("method") === "list") {
+          const isImageMount = url.searchParams.get("dir") === "/image";
           body = {
             errno: 0,
-            list: [{
+            list: [isImageMount ? {
+              fs_id: 99002,
+              server_filename: "baidu-image.png",
+              path: "/image/baidu-image.png",
+              size: 6,
+              isdir: 0,
+              server_mtime: 1767225600,
+              server_ctime: 1767225600,
+              category: 3,
+            } : {
               fs_id: 99001,
               server_filename: "baidu-video.mp4",
               path: "/baidu-video.mp4",
@@ -125,10 +135,11 @@ globalThis.siyuan = {
             }],
           };
         } else if (url.hostname === "pan.baidu.com" && url.pathname.endsWith("/rest/2.0/xpan/multimedia") && url.searchParams.get("method") === "filemetas") {
+          const isImage = url.searchParams.get("fsids") === "[99002]";
           body = {
             errno: 0,
             list: [{
-              dlink: "https://d.pcs.baidu.com/file/baidu-video.mp4?fid=99001",
+              dlink: isImage ? "https://d.pcs.baidu.com/file/baidu-image.png?fid=99002" : "https://d.pcs.baidu.com/file/baidu-video.mp4?fid=99001",
             }],
           };
         } else if (url.hostname === "pan.baidu.com" && url.pathname.endsWith("/api/mediainfo") && url.searchParams.get("type") === "VideoURL") {
@@ -139,17 +150,18 @@ globalThis.siyuan = {
             },
           };
         } else if (url.hostname === "d.pcs.baidu.com" && req.method === "HEAD") {
-          headers = { Location: "https://baidu-cdn.example.test/baidu-video.mp4?final=1" };
+          assert.equal(req.redirect, false);
+          headers = { Location: url.pathname.endsWith("baidu-image.png") ? "https://baidu-cdn.example.test/baidu-image.png?final=1" : "https://baidu-cdn.example.test/baidu-video.mp4?final=1" };
           body = "";
         } else if (url.hostname === "baidu-cdn.example.test" && req.method === "GET") {
           const range = req.headers.find((item) => item.Range)?.Range || "";
-          contentType = "video/mp4";
+          contentType = url.pathname.endsWith("baidu-image.png") ? "image/png" : "video/mp4";
           headers = {
             "Accept-Ranges": "bytes",
             "Content-Range": range === "bytes=0-8388607" ? "bytes 0-8388607/16777216" : "bytes 0-1023/4096",
             "Content-Length": range === "bytes=0-8388607" ? "8388608" : "1024",
           };
-          body = Buffer.from("baidu video").toString("base64");
+          body = Buffer.from(url.pathname.endsWith("baidu-image.png") ? "image" : "baidu video").toString("base64");
         } else if (url.hostname === "openlist-login.example.test" && url.pathname.endsWith("/api/auth/login")) {
           body = {
             code: 200,
@@ -298,6 +310,18 @@ assert.ok(status.data.routes.includes("POST /api/fs/mkdir"));
 assert.ok(status.data.routes.includes("POST /api/fs/get_direct_upload_info"));
 assert.ok(status.data.routes.includes("GET /api/authn/webauthn_begin_login"));
 
+const apiIndex = await json({ path: "/api/public/api" });
+assert.equal(apiIndex.code, 200);
+assert.equal(apiIndex.data.base_url, "/plugin/private/siyuan-cloud");
+assert.equal(apiIndex.data.api_base, "/plugin/private/siyuan-cloud/api");
+assert.equal(apiIndex.data.endpoints.download, "/plugin/private/siyuan-cloud/d/{path}");
+assert.equal(apiIndex.data.endpoints.proxy, "/plugin/private/siyuan-cloud/p/{path}");
+assert.equal(apiIndex.data.endpoints.webdav, "/plugin/private/siyuan-cloud/dav");
+assert.equal(apiIndex.data.endpoints.s3, "/plugin/private/siyuan-cloud/s3");
+assert.ok(apiIndex.data.capabilities.includes("openlist.http-api"));
+assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/fs/get"));
+assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/public/api"));
+
 const mkdir = await json({
   body: { path: "/smoke" },
   method: "POST",
@@ -312,6 +336,44 @@ const put = await json({
 });
 assert.equal(put.code, 200);
 
+const putBinary = await call({
+  body: Uint8Array.from([0, 1, 2, 3]),
+  headers: {
+    "Content-Type": "application/octet-stream",
+    "File-Path": "/smoke/binary.bin",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(putBinary.statusCode, 200);
+
+const directUploadInfo = await json({
+  body: { path: "/smoke/direct.txt" },
+  method: "POST",
+  path: "/api/fs/get_direct_upload_info",
+});
+assert.equal(directUploadInfo.code, 200);
+assert.equal(directUploadInfo.data, null);
+
+const formUpload = await call({
+  body: {
+    files: {
+      file: [{
+        data: Uint8Array.from([104, 101, 108, 108, 111]),
+        filename: "form.txt",
+        headers: { "Content-Type": ["text/plain"] },
+        size: 5,
+      }],
+    },
+  },
+  headers: {
+    "File-Path": "/smoke/form.txt",
+  },
+  method: "PUT",
+  path: "/api/fs/form",
+});
+assert.equal(formUpload.statusCode, 200);
+
 const list = await json({
   body: { path: "/smoke", page: 1, per_page: 20 },
   method: "POST",
@@ -319,6 +381,16 @@ const list = await json({
 });
 assert.equal(list.code, 200);
 assert.equal(list.data.content.some((item) => item.name === "a.txt"), true);
+assert.equal(list.data.content.some((item) => item.name === "binary.bin"), true);
+assert.equal(list.data.content.some((item) => item.name === "form.txt"), true);
+
+const binaryRead = await call({
+  method: "GET",
+  path: "/d/smoke/binary.bin",
+});
+assert.equal(binaryRead.statusCode, 200);
+assert.equal(binaryRead.body.raw.contentType, "application/octet-stream");
+assert.equal(new Uint8Array(binaryRead.body.raw.data).length, 4);
 
 const propfind = await text({
   headers: { Depth: "1" },
@@ -366,12 +438,47 @@ const copy = await json({
 assert.equal(copy.code, 200);
 assert.equal(Array.isArray(copy.data.tasks), true);
 
+const mkdirMoves = await json({
+  body: { path: "/moved" },
+  method: "POST",
+  path: "/api/fs/mkdir",
+});
+assert.equal(mkdirMoves.code, 200);
+
+const moveSingle = await json({
+  body: { dst_dir: "/moved", names: ["a.txt"], src_dir: "/smoke" },
+  method: "POST",
+  path: "/api/fs/move",
+});
+assert.equal(moveSingle.code, 200);
+
+const movedList = await json({
+  body: { path: "/moved", page: 1, per_page: 20 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(movedList.data.content.some((item) => item.name === "a.txt"), true);
+
+const smokeAfterMove = await json({
+  body: { path: "/smoke", page: 1, per_page: 20 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(smokeAfterMove.data.content.some((item) => item.name === "a.txt"), false);
+
 const copyDone = await json({
   method: "GET",
   path: "/api/task/copy/done",
 });
 assert.equal(copyDone.code, 200);
 assert.equal(copyDone.data.content.length >= 1, true);
+
+const moveDone = await json({
+  method: "GET",
+  path: "/api/task/move/done",
+});
+assert.equal(moveDone.code, 200);
+assert.equal(moveDone.data.content.length >= 1, true);
 
 const metaCreate = await json({
   body: { hide: "^secret", h_sub: true, path: "/smoke", readme: "readme", r_sub: true },
@@ -447,10 +554,12 @@ assert.equal(driverNames.data.includes("WebDav"), true);
 assert.equal(driverNames.data.includes("BaiduNetdisk"), true);
 assert.equal(driverNames.data.includes("AliyundriveOpen"), true);
 assert.equal(driverNames.data.includes("123Pan"), true);
-assert.equal(driverNames.data.includes("115 Cloud"), true);
 assert.equal(driverNames.data.includes("Onedrive"), true);
-assert.equal(driverNames.data.includes("GoogleDrive"), true);
 assert.equal(driverNames.data.includes("189Cloud"), true);
+assert.equal(driverNames.data.includes("Quark"), true);
+assert.equal(driverNames.data.includes("Local"), true);
+assert.equal(driverNames.data.includes("115 Cloud"), false);
+assert.equal(driverNames.data.includes("GoogleDrive"), false);
 const baiduInfo = await json({
   method: "GET",
   path: "/api/admin/driver/info",
@@ -622,11 +731,19 @@ const oneDriveRefreshStorage = oneDriveRefreshConfig.data.storages.find((item) =
 const oneDriveRefreshAddition = JSON.parse(oneDriveRefreshStorage.addition);
 assert.equal(oneDriveRefreshAddition.access_token, "OD_ACCESS_REFRESHED");
 assert.equal(oneDriveRefreshAddition.refresh_token, "OD_REFRESH_REFRESHED");
-const remoteOneDriveRead = await text({
+const remoteOneDriveRead = await call({
   method: "GET",
   path: "/d/remote-onedrive/remote-doc.txt",
 });
-assert.equal(remoteOneDriveRead.text, "onedrive doc");
+assert.equal(remoteOneDriveRead.body.proxy.url, "https://download.example.test/remote-doc.txt");
+assert.equal(remoteOneDriveRead.body.proxy.method, "GET");
+const remoteOneDriveLink = await json({
+  body: { path: "/remote-onedrive/remote-doc.txt" },
+  method: "POST",
+  path: "/api/fs/link",
+});
+assert.equal(remoteOneDriveLink.data.raw_url, "https://download.example.test/remote-doc.txt");
+assert.equal(remoteOneDriveLink.data.url, "https://download.example.test/remote-doc.txt");
 await json({
   body: {
     driver: "123Pan",
@@ -655,11 +772,13 @@ const remote123Get = await json({
   path: "/api/fs/get",
 });
 assert.equal(remote123Get.data.provider, "123Pan");
-const remote123Read = await text({
+const remote123Read = await call({
   method: "GET",
   path: "/d/remote-123/pan123.txt",
 });
-assert.equal(remote123Read.text, "123pan doc");
+assert.equal(remote123Read.body.proxy.url, "https://download123.example.test/pan123.txt");
+assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://download123.example.test/");
+assert.equal(remote123Read.body.proxy.method, "GET");
 const remote123Test = await json({
   body: {
     driver: "123Pan",
@@ -705,7 +824,7 @@ const remoteBaiduGet = await json({
 assert.equal(remoteBaiduGet.data.provider, "BaiduNetdisk");
 assert.equal(remoteBaiduGet.data.raw_url, "/plugin/private/siyuan-cloud/p/remote-baidu/baidu-video.mp4");
 const remoteBaiduRead = await call({
-  headers: { Range: ["bytes=0-1023"] },
+  headers: { Cookie: ["siyuan-local=1"], Range: ["bytes=0-1023"] },
   method: "GET",
   path: "/d/remote-baidu/baidu-video.mp4",
 });
@@ -713,6 +832,7 @@ assert.equal(remoteBaiduRead.statusCode, 200);
 assert.equal(remoteBaiduRead.body.proxy.url, "https://baidu-cdn.example.test/baidu-video.mp4?final=1");
 assert.equal(remoteBaiduRead.body.proxy.headers.Range[0], "bytes=0-1023");
 assert.equal(remoteBaiduRead.body.proxy.headers["User-Agent"][0], "pan.baidu.com");
+assert.equal(remoteBaiduRead.body.proxy.headers.Cookie, undefined);
 const remoteBaiduProxyRead = await call({
   headers: { Range: ["bytes=0-"] },
   method: "GET",
@@ -785,6 +905,32 @@ assert.equal(remoteBaiduStreamRead.statusCode, 200);
 assert.equal(remoteBaiduStreamRead.body.proxy.url, "https://baidu-cdn.example.test/baidu-video.mp4?crack_video=1");
 assert.equal(remoteBaiduStreamRead.body.proxy.headers.Range[0], "bytes=0-");
 assert.equal(remoteBaiduStreamRead.body.proxy.headers["User-Agent"][0], "netdisk");
+await json({
+  body: {
+    driver: "BaiduNetdisk",
+    mount_path: "/remote-baidu-image",
+    addition: JSON.stringify({
+      access_token: "BAIDU_ACCESS",
+      download_api: "crack_video",
+      root_folder_path: "/image",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteBaiduImageList = await json({
+  body: { path: "/remote-baidu-image", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteBaiduImageList.data.content[0].name, "baidu-image.png");
+const remoteBaiduImageRead = await call({
+  method: "GET",
+  path: "/p/remote-baidu-image/baidu-image.png",
+});
+assert.equal(remoteBaiduImageRead.statusCode, 200);
+assert.equal(remoteBaiduImageRead.body.proxy.url, "https://baidu-cdn.example.test/baidu-image.png?final=1");
+assert.equal(remoteBaiduImageRead.body.proxy.headers["User-Agent"][0], "pan.baidu.com");
 
 const lock = await text({
   method: "LOCK",

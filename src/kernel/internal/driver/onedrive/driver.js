@@ -1,8 +1,7 @@
-import { basename, dirname, normalizePath } from "../model/path.js";
+import { basename, dirname, normalizePath } from "../../model/path.js";
 import {
-  forwardProxy,
   remoteJson,
-} from "./http.js";
+} from "../http.js";
 
 const hosts = {
   global: {
@@ -116,6 +115,7 @@ const requestGraph = async (client, storage, url, {
   body,
   contentType = "application/json",
   method = "GET",
+  payloadEncoding,
   retry = true,
 } = {}) => {
   const addition = storage.addition_json;
@@ -126,10 +126,11 @@ const requestGraph = async (client, storage, url, {
     contentType,
     headers: graphHeaders(addition),
     method,
+    payloadEncoding,
   });
   if (resp?.error?.code === "InvalidAuthenticationToken" && retry) {
     await refreshToken(client, storage);
-    return requestGraph(client, storage, url, { body, contentType, method, retry: false });
+    return requestGraph(client, storage, url, { body, contentType, method, payloadEncoding, retry: false });
   }
   return checkGraph(resp);
 };
@@ -211,7 +212,13 @@ export const createOneDriveDriver = ({ client }) => ({
     if (!file.file) throw new Error("not file");
     const url = customDownloadUrl(storage.addition_json, file["@microsoft.graph.downloadUrl"]);
     if (!url) throw new Error("get download url failed");
-    return forwardProxy(client, url, { method: "GET", contentType: "application/octet-stream", responseEncoding: "base64" });
+    return {
+      link: {
+        url,
+        header: {},
+        content_length: Number(file.size || 0),
+      },
+    };
   },
 
   async mkdir(storage, relPath) {
@@ -220,6 +227,35 @@ export const createOneDriveDriver = ({ client }) => ({
         name: basename(relPath),
         folder: {},
         "@microsoft.graph.conflictBehavior": "rename",
+      },
+      method: "POST",
+    });
+  },
+
+  async move(storage, relPath, dstRelPath) {
+    const dst = await requestGraph(client, storage, metaUrl(storage.addition_json, dstRelPath));
+    const parentPath = dst.id === "root" ? "/drive/root" : `/drive/root:${encodePath(rootedPath(storage.addition_json, dstRelPath))}`;
+    await requestGraph(client, storage, metaUrl(storage.addition_json, relPath), {
+      body: {
+        parentReference: {
+          id: dst.id,
+          path: parentPath,
+        },
+        name: basename(relPath),
+      },
+      method: "PATCH",
+    });
+  },
+
+  async copy(storage, relPath, dstRelPath) {
+    const dst = await requestGraph(client, storage, metaUrl(storage.addition_json, dstRelPath));
+    await requestGraph(client, storage, `${metaUrl(storage.addition_json, relPath)}/copy`, {
+      body: {
+        parentReference: {
+          driveId: dst.parentReference?.driveId || dst.driveId,
+          id: dst.id,
+        },
+        name: basename(relPath),
       },
       method: "POST",
     });
@@ -238,11 +274,12 @@ export const createOneDriveDriver = ({ client }) => ({
     });
   },
 
-  async put(storage, relPath, content, mime) {
+  async put(storage, relPath, content, mime, options = {}) {
     await requestGraph(client, storage, `${metaUrl(storage.addition_json, relPath)}/content`, {
       body: content || "",
       contentType: mime || "application/octet-stream",
       method: "PUT",
+      payloadEncoding: options.bodyEncoding === "base64" ? "base64" : undefined,
     });
   },
 });

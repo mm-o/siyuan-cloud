@@ -17,7 +17,6 @@ try {
 const {
   version,
 } = PluginInfo
-
 export default class SiyuanCloudPlugin extends Plugin {
   // Run as mobile
   public isMobile: boolean
@@ -31,6 +30,7 @@ export default class SiyuanCloudPlugin extends Plugin {
   public isInWindow: boolean
   public platform: SyFrontendTypes
   public readonly version = version
+  private openSiyuanUrlHandler?: (event: CustomEvent<{ url: string }>) => void
 
   async onload() {
     const frontEnd = getFrontend();
@@ -51,13 +51,40 @@ export default class SiyuanCloudPlugin extends Plugin {
     }
 
     init(this)
+
+    this.openSiyuanUrlHandler = event => this.openSiyuanCloudUrl(event.detail?.url || '')
+    this.eventBus.on('open-siyuan-url-plugin', this.openSiyuanUrlHandler as any)
   }
 
   onunload() {
+    if (this.openSiyuanUrlHandler)
+      this.eventBus.off('open-siyuan-url-plugin', this.openSiyuanUrlHandler as any)
     destroy()
   }
 
   openSetting() {
     window._siyuan_cloud?.openPanel?.()
+  }
+
+  private async openSiyuanCloudUrl(url: string) {
+    const urlObj = safeUrl(url)
+    if (urlObj.protocol !== 'siyuan:' || urlObj.hostname !== 'plugins')
+      return
+    const pluginName = urlObj.pathname.split('/').filter(Boolean)[0]
+    if (pluginName !== this.name || !urlObj.pathname.endsWith('/open'))
+      return
+
+    const path = urlObj.searchParams.get('path') || ''
+    if (!path)
+      return
+    window._siyuan_cloud?.openFileManager?.(path)
+  }
+}
+
+function safeUrl(url: string) {
+  try {
+    return new URL(url)
+  } catch {
+    return new URL('about:blank')
   }
 }

@@ -1,5 +1,12 @@
-import { dirname, normalizePath } from "../model/path.js";
-import { remoteJson } from "./http.js";
+import {
+  basename,
+  dirname,
+  normalizePath,
+} from "../../model/path.js";
+import {
+  forwardProxy,
+  remoteJson,
+} from "../http.js";
 
 const trimAddress = (address) => String(address || "").replace(/\/+$/, "");
 
@@ -102,6 +109,20 @@ export const createOpenListDriver = ({ client }) => {
     async mkdir(storage, relPath) {
       await request(storage, "/fs/mkdir", "POST", { path: relPath });
     },
+    async move(storage, relPath, dstRelPath) {
+      await request(storage, "/fs/move", "POST", {
+        src_dir: dirname(relPath),
+        dst_dir: normalizePath(dstRelPath),
+        names: [basename(relPath)],
+      });
+    },
+    async copy(storage, relPath, dstRelPath) {
+      await request(storage, "/fs/copy", "POST", {
+        src_dir: dirname(relPath),
+        dst_dir: normalizePath(dstRelPath),
+        names: [basename(relPath)],
+      });
+    },
     async remove(storage, relPath) {
       await request(storage, "/fs/remove", "POST", {
         dir: dirname(relPath),
@@ -111,8 +132,28 @@ export const createOpenListDriver = ({ client }) => {
     async rename(storage, relPath, newName) {
       await request(storage, "/fs/rename", "POST", { path: relPath, name: newName });
     },
-    async put(storage, relPath, content, mime) {
-      await request(storage, "/fs/put", "PUT", { path: relPath, content, mime });
+    async put(storage, relPath, content, mime, options = {}) {
+      const addition = storage.addition_json;
+      const response = await forwardProxy(
+        client,
+        `${trimAddress(addition.url || addition.address || addition.Address)}/api/fs/put`,
+        {
+          allowErrorStatus: true,
+          body: content || "",
+          contentType: mime || "application/octet-stream",
+          headers: {
+            Authorization: addition.token || addition.Token || "",
+            "File-Path": relPath,
+            Password: addition.meta_password || "",
+          },
+          method: "PUT",
+          payloadEncoding: options.bodyEncoding === "base64" ? "base64" : undefined,
+          responseEncoding: "text",
+          timeout: Number(addition.timeout || 30000),
+        },
+      );
+      const payload = JSON.parse(response.body || "{}");
+      checkResp(payload);
     },
   };
 };
