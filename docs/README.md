@@ -9,6 +9,7 @@ The source trees are intentionally ignored by Git because they are large upstrea
 - `docs/kernel-plugin-notes.md`: SiYuan kernel plugin API findings, storage/sync conclusion, and implemented route surface.
 - `docs/kernel-architecture.md`: Kernel-side source layout and generated `kernel.js` build rule.
 - `docs/siyuan-cloud-migration-plan.md`: Chinese migration plan table for continuing the Siyuan Cloud OpenList-compatible port.
+- `docs/bazaar-review-checklist.md`: marketplace submission and maintainer review checklist.
 - `AGENTS.md`: short handoff file for future agents. It records the "align with OpenList and copy/adapt directly" rule, current architecture mapping, and source locations.
 
 ## Source Trees
