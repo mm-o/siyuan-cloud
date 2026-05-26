@@ -76,6 +76,22 @@ Notes:
 - `/p/<path>` is the proxy route for storages that need hidden links, Range playback, or driver-specific headers.
 - `/api/fs/get` and `/api/fs/link` return `raw_url`; companion plugins should use that field instead of guessing the final URL.
 
+## Reviewer Verification
+
+Recommended quick path:
+
+1. Use SiYuan 3.7.0 or later.
+2. Open the Dock panel, go to Mounts, and add a storage. `123Pan` is recommended for the first playback test because its direct playback path is simpler.
+3. Browse the mounted files from the top bar file manager.
+4. Right-click a media file, choose Copy Link, then paste the generated Markdown link into a SiYuan document.
+5. Preview the document. Images should render directly, and videos can be played by the browser/player surface or companion media plugins.
+
+Baidu Netdisk notes:
+
+- For video playback, set the Baidu driver download API to a crack-capable option such as `crack` or `crack_video`; the ordinary official link path may not be playable for every account/file.
+- Keep network/system proxies disabled during playback verification. Baidu download links are sensitive to proxy egress IP changes and may fail to preview or play when a proxy is enabled.
+- Baidu video playback depends on SiYuan's kernel `body.proxy` streaming proxy capability. Without the streaming proxy changes from SiYuan PR #17748, Baidu Range playback may fail even if listing and link resolution work.
+
 ## API For Plugins And Tools
 
 Siyuan Cloud exposes a unified HTTP API for companion plugins and tools. Use this route as the file-service base URL:
@@ -159,9 +175,10 @@ Siyuan Cloud is a file capability layer, not just a single-drive client:
 
 ## Current Limits
 
-- Requires a SiYuan build with kernel plugin HTTP `body.proxy` support, tracked by SiYuan PR #17748.
+- Requires SiYuan 3.7.0 or later with kernel plugin HTTP `body.proxy` support, tracked by SiYuan PR #17748.
 - Some drivers are still being ported or are early runtime adapters. Upload, multipart upload, offline download, and full share behavior will continue to be completed.
 - Local storage is limited to SiYuan workspace-relative paths and does not expose arbitrary host absolute paths.
+- Network proxies may break some cloud-drive media links, especially Baidu Netdisk playback URLs.
 
 ## Development
 
