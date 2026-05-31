@@ -1,5 +1,7 @@
 # Siyuan Cloud
 
+> Compatibility note: this plugin can be installed on SiYuan 3.6.5 or later, but the complete kernel-plugin HTTP and streaming proxy capabilities require SiYuan 3.7.0 or later. For the full Siyuan Cloud experience, try the latest SiYuan dev build.
+
 Siyuan Cloud is a standalone cloud-drive aggregation manager for SiYuan, rebuilt from OpenList and adapted for SiYuan. It does not depend on or launch the OpenList backend; instead, it brings multi-cloud mounting, cloud file management, cloud file viewing, media playback, image-hosting links, WebDAV/S3 access, and plugin APIs into SiYuan, mounting Baidu Netdisk, OneDrive, 123Pan, 189Cloud, Quark, AliyundriveOpen, WebDAV, S3, local workspace files, and remote OpenList/AList servers into one file tree.
 
 In one sentence: **Siyuan Cloud is a SiYuan-native cloud-drive aggregation manager for cloud file management and viewing, media playback, image-hosting links, reading annotations, and more workflows waiting to be explored.**
@@ -80,7 +82,7 @@ Notes:
 
 Recommended quick path:
 
-1. Use SiYuan 3.7.0 or later.
+1. Use SiYuan 3.7.0 or later for full feature verification. You can install the plugin on 3.6.5+, but some kernel-plugin HTTP/proxy capabilities may be incomplete before 3.7.0.
 2. Open the Dock panel, go to Mounts, and add a storage. `123Pan` is recommended for the first playback test because its direct playback path is simpler.
 3. Browse the mounted files from the top bar file manager.
 4. Right-click a media file, choose Copy Link, then paste the generated Markdown link into a SiYuan document.
@@ -175,7 +177,7 @@ Siyuan Cloud is a file capability layer, not just a single-drive client:
 
 ## Current Limits
 
-- Requires SiYuan 3.7.0 or later with kernel plugin HTTP `body.proxy` support, tracked by SiYuan PR #17748.
+- SiYuan 3.6.5 is the minimum install version. Complete file routing, playback, and proxy behavior require SiYuan 3.7.0 or later with kernel plugin HTTP `body.proxy` support, tracked by SiYuan PR #17748.
 - Some drivers are still being ported or are early runtime adapters. Upload, multipart upload, offline download, and full share behavior will continue to be completed.
 - Local storage is limited to SiYuan workspace-relative paths and does not expose arbitrary host absolute paths.
 - Network proxies may break some cloud-drive media links, especially Baidu Netdisk playback URLs.
