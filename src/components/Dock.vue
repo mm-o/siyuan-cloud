@@ -200,6 +200,13 @@
             <b>{{ driverDisplayName(driverInfo.config?.name || verifyDriver) }}</b>
             <span>{{ driverNote(driverInfo.config?.name || verifyDriver, driverInfo.config?.note || t('driverMetadataOnly')) }}</span>
           </div>
+          <div v-if="driverQrLoginAvailable" class="ol-driver-note">
+            <button class="b3-button b3-button--outline" type="button" :disabled="mountCreating || driverVerifyPolling" @click="refreshDriverQrCode">
+              {{ driverVerifyPolling ? t('qrPolling') : t('qrRefresh') }}
+            </button>
+            <span>{{ driverVerifyMessage || t('qrRefreshHelp') }}</span>
+            <img v-if="driverVerifyQrSrc" :src="driverVerifyQrSrc" :alt="t('qrScanPrompt')">
+          </div>
           <div v-if="driverFields.length" class="ol-driver-fields">
             <label v-for="field in driverFields" :key="field.name" class="ol-field">
               <span :title="field.name">{{ fieldLabel(field) }}<i v-if="field.required">*</i></span>
@@ -260,6 +267,10 @@ const {
   driverInfo,
   driverOptions,
   driverNote,
+  driverQrLoginAvailable,
+  driverVerifyMessage,
+  driverVerifyPolling,
+  driverVerifyQrSrc,
   exportAddition,
   exportConfig,
   externalPreviews,
@@ -278,6 +289,7 @@ const {
   openFileManager,
   openEditMount,
   openPrivateEntry,
+  refreshDriverQrCode,
   refreshAll,
   runVerifySuite,
   saveExternalPreviews,

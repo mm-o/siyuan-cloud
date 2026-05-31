@@ -37,3 +37,32 @@ export const rawDownloadUrl = (storage, relPath, proxy = false) => {
 export const persistAddition = async (storage) => {
   if (storage?.saveDriverStorage) await storage.saveDriverStorage(storage.addition_json);
 };
+
+export const createStorageCache = ({ ttl = 5 * 60 * 1000, linkTtl = 30 * 60 * 1000 } = {}) => {
+  const list = new Map();
+  const file = new Map();
+  const link = new Map();
+  const storageKey = (storage) => String(storage.id || storage.mount_path || JSON.stringify(storage.addition_json || {}));
+  const cached = async (map, key, producer, ttlMs = ttl) => {
+    const now = Date.now();
+    const hit = map.get(key);
+    if (hit && hit.expires > now) return hit.value;
+    const value = await producer();
+    map.set(key, { value, expires: now + ttlMs });
+    return value;
+  };
+  const clear = (storage) => {
+    const prefix = `${storageKey(storage)}:`;
+    for (const map of [list, file, link]) {
+      for (const key of map.keys()) {
+        if (key.startsWith(prefix)) map.delete(key);
+      }
+    }
+  };
+  return {
+    clear,
+    file: (storage, key, producer) => cached(file, `${storageKey(storage)}:file:${key}`, producer),
+    link: (storage, key, producer) => cached(link, `${storageKey(storage)}:link:${key}`, producer, linkTtl),
+    list: (storage, key, producer) => cached(list, `${storageKey(storage)}:list:${key}`, producer),
+  };
+};

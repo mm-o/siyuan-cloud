@@ -1,20 +1,12 @@
 import { privateBase, r, type OpenListResp } from './request'
 
-export {
-  fetchOpenListJson,
-  fetchOpenListText,
-  openListJson,
-  privateBase,
-  type OpenListResp,
-} from './request'
-
 export const fsGet = (
   path: string = '/',
   password = '',
 ): Promise<OpenListResp> => {
   return r.post('/fs/get', {
-    path: path,
-    password: password,
+    path,
+    password,
   })
 }
 
@@ -106,18 +98,9 @@ export function openListAbsoluteUrl(url: string) {
   return `${location.origin}${url.startsWith('/') ? '' : '/'}${url}`
 }
 
-export function openListProxyUrl(path: string) {
-  return `${privateBase}/p${path.split('/').map(part => encodeURIComponent(part)).join('/')}`
-}
-
-export function openListDownloadRoute(path: string, data: Record<string, any> = {}) {
+function openListDownloadRoute(path: string, data: Record<string, any> = {}) {
   const sign = data.sign ? `?sign=${encodeURIComponent(String(data.sign))}` : ''
   return openListAbsoluteUrl(`${privateBase}/d${path}${sign}`)
-}
-
-export function openListDownloadUrl(path: string, data: Record<string, any> = {}) {
-  const rawUrl = String(data.raw_url || data.url || '')
-  return rawUrl ? openListAbsoluteUrl(rawUrl) : openListDownloadRoute(path, data)
 }
 
 export async function resolveOpenListFile(path: string, password = '') {
@@ -131,6 +114,6 @@ export async function resolveOpenListFile(path: string, password = '') {
     path,
     raw_url: String(data.raw_url || data.url || ''),
     d_url: dUrl,
-    url: openListDownloadUrl(path, data),
+    url: data.raw_url || data.url ? openListAbsoluteUrl(String(data.raw_url || data.url)) : dUrl,
   }
 }

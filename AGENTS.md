@@ -28,7 +28,6 @@ This is important for conversation continuity: future agents should be able to c
 - Vue management panel: `src/App.vue`
 - Dock account/mount/settings panel: `src/components/Dock.vue`
 - Main file manager custom tab: `src/components/FileTab.vue`
-- Migration/progress development panel: `src/components/MigrationPanel.vue`
 - Kernel source entry: `src/kernel/index.js`
 - Generated kernel bundle: `dist/kernel.js` for release, or the configured dev plugin directory during `pnpm dev`
 - Manifest: `plugin.json`

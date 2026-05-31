@@ -1,5 +1,5 @@
 export const normalizePath = (input) => {
-  let value = typeof input === "string" && input.trim() ? input.trim() : "/"
+  let value = input === undefined || input === null || input === "" ? "/" : String(input)
   if (!value.startsWith("/")) value = "/" + value
   value = value.replace(/\\/g, "/").replace(/\/+/g, "/")
   const parts = []

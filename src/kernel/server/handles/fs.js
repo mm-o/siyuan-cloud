@@ -217,8 +217,77 @@ export const createFsHandlers = ({
       (left.storage?.id && right.storage?.id && left.storage.id === right.storage.id)
       || normalizePath(left.storage?.mount_path || "/") === normalizePath(right.storage?.mount_path || "/")
     );
+  const torrentNotImplemented = (operation) => ({
+    operation,
+    reason: "torrent parsing and CAS rapid upload are not implemented in the SiYuan kernel JavaScript port yet.",
+    upstream_source: "server/handles/torrent.go + pkg/torrent/* + drivers/189pc/torrent.go",
+    next: "Port a JavaScript bencode/torrent reader and 189/189PC CAS rapid-upload flow before enabling this route.",
+  });
+  const fsTorrentPlaceholder = (operation, req = {}) => jsonResponse(failure(
+    "torrent operations are not implemented in the SiYuan kernel port yet",
+    501,
+    {
+      ...torrentNotImplemented(operation),
+      name: req.path || req.file_name || req.name || "torrent",
+    },
+  ), 501);
+  const shouldSkipExisting = (req) => boolValue(req.skip_existing, false);
+  const shouldMerge = (req) => boolValue(req.merge, false);
+  const shouldOverwrite = (req) => boolValue(req.overwrite, false);
+  const driverTargetIsDir = async (path) => {
+    const mount = driverRuntime.resolve(state.storages, path);
+    if (!mount) return false;
+    try {
+      return !!(await mount.driver.get(mount.storage, mount.relPath, { skipLink: true }))?.is_dir;
+    } catch (_) {
+      return false;
+    }
+  };
+  const extensionType = (name, isDir) => {
+    if (isDir) return 1;
+    const ext = String(name).toLowerCase().split(".").pop() || "";
+    if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "avif"].includes(ext)) return 2;
+    if (["mp4", "mkv", "mov", "avi", "webm", "m4v"].includes(ext)) return 3;
+    if (["mp3", "flac", "wav", "ogg", "m4a"].includes(ext)) return 4;
+    if (["zip", "7z", "rar", "tar", "gz", "bz2"].includes(ext)) return 5;
+    if (["pdf", "epub", "txt", "md", "json", "yaml", "yml", "csv", "log"].includes(ext)) return 6;
+    return 0;
+  };
+  const driverObjResp = (item) => ({
+    name: item.name || "",
+    size: Number(item.size || 0),
+    is_dir: !!item.is_dir,
+    modified: item.modified || new Date().toISOString(),
+    created: item.created || item.modified || new Date().toISOString(),
+    sign: item.sign || "",
+    thumb: item.thumb || "",
+    type: Number(item.type || extensionType(item.name, item.is_dir)),
+    hashinfo: item.hashinfo || "",
+    hash_info: item.hash_info || {},
+  });
+  const driverListResp = (data) => {
+    const content = (data.content || []).map(driverObjResp);
+    return {
+      content,
+      total: Number(data.total || content.length),
+      readme: data.readme || "",
+      header: data.header || "",
+      write: data.write !== false,
+      write_content_bypass: data.write_content_bypass !== false,
+      provider: data.provider || "unknown",
+      direct_upload_tools: data.direct_upload_tools || [],
+    };
+  };
+  const driverGetResp = (data, rawUrl = "") => ({
+    ...driverObjResp(data),
+    raw_url: rawUrl || data.raw_url || "",
+    readme: data.readme || "",
+    header: data.header || "",
+    provider: data.provider || "unknown",
+    related: (data.related || []).map(driverObjResp),
+  });
 
-  return {
+  const handlers = {
     "ANY /api/fs/list": async (request) => {
       const req = await parseJson(request);
       const path = normalizePath(req.path);
@@ -234,7 +303,7 @@ export const createFsHandlers = ({
       if (mount) {
         try {
           const data = await mount.driver.list(mount.storage, mount.relPath, req);
-          return jsonResponse(success(data));
+          return jsonResponse(success(driverListResp(data)));
         } catch (error) {
           return jsonResponse(failure(error.message || "driver list failed", 502, {
             driver: mount.storage.driver,
@@ -290,11 +359,11 @@ export const createFsHandlers = ({
         try {
           const shouldProxy = storageShouldProxy(mount.storage);
           const data = await mount.driver.get(mount.storage, mount.relPath, { skipLink: shouldProxy });
+          let rawUrl = data.raw_url || "";
           if (data && !data.is_dir && shouldProxy) {
-            data.raw_url = rawUrlForStorage(mount.storage, path);
-            data.url = data.raw_url;
+            rawUrl = rawUrlForStorage(mount.storage, path);
           }
-          return jsonResponse(success(data));
+          return jsonResponse(success(driverGetResp(data, rawUrl)));
         } catch (error) {
           return jsonResponse(failure(error.message || "driver get failed", 502, {
             driver: mount.storage.driver,
@@ -321,6 +390,23 @@ export const createFsHandlers = ({
           name: item.name,
           modified: item.modified,
         }))));
+      }
+      const mount = driverRuntime.resolve(state.storages, path);
+      if (mount) {
+        try {
+          const data = await mount.driver.list(mount.storage, mount.relPath, req);
+          return jsonResponse(success((data.content || [])
+            .filter((item) => item.is_dir)
+            .map((item) => ({
+              name: item.name,
+              modified: item.modified || new Date().toISOString(),
+            }))));
+        } catch (error) {
+          return jsonResponse(failure(error.message || "driver dirs failed", 502, {
+            driver: mount.storage.driver,
+            mount_path: mount.storage.mount_path,
+          }));
+        }
       }
       const entry = state.entries[path];
       if (!entry || !entry.is_dir) return jsonResponse(failure("directory not found", 404));
@@ -498,7 +584,10 @@ export const createFsHandlers = ({
         for (const name of names) {
           const srcPath = normalizePath(srcDir + "/" + name);
           const dstPath = normalizePath(dstDir + "/" + basename(srcPath));
-          if (!req.overwrite && await uploadTargetExists(dstPath) && !req.skip_existing) return jsonResponse(failure(`file [${name}] exists`, 403));
+          if (!shouldOverwrite(req) && await uploadTargetExists(dstPath)) {
+            if (!shouldSkipExisting(req)) return jsonResponse(failure(`file [${name}] exists`, 403));
+            continue;
+          }
           await srcMount.driver.move(srcMount.storage, normalizePath(srcMount.relPath + "/" + name), dstMount.relPath);
         }
         const task = await taskStore.addTask("move", {
@@ -512,7 +601,10 @@ export const createFsHandlers = ({
         const srcPath = normalizePath(srcDir + "/" + name);
         const dstPath = normalizePath(dstDir + "/" + basename(srcPath));
         if (!state.entries[srcPath]) continue;
-        if (!req.overwrite && state.entries[dstPath] && !req.skip_existing) return jsonResponse(failure(`file [${name}] exists`, 403));
+        if (!shouldOverwrite(req) && state.entries[dstPath]) {
+          if (!shouldSkipExisting(req)) return jsonResponse(failure(`file [${name}] exists`, 403));
+          continue;
+        }
         if (state.entries[dstPath]) removeEntry(dstPath);
         moveEntryTree(srcPath, dstPath);
       }
@@ -537,7 +629,10 @@ export const createFsHandlers = ({
         for (const name of names) {
           const srcPath = normalizePath(srcDir + "/" + name);
           const dstPath = normalizePath(dstDir + "/" + basename(srcPath));
-          if (!req.overwrite && await uploadTargetExists(dstPath) && !req.skip_existing && !req.merge) return jsonResponse(failure(`file [${name}] exists`, 403));
+          if (!shouldOverwrite(req) && await uploadTargetExists(dstPath)) {
+            if (!shouldSkipExisting(req)) return jsonResponse(failure(`file [${name}] exists`, 403));
+            if (!shouldMerge(req) || !await driverTargetIsDir(dstPath)) continue;
+          }
           await srcMount.driver.copy(srcMount.storage, normalizePath(srcMount.relPath + "/" + name), dstMount.relPath);
         }
         const task = await taskStore.addTask("copy", {
@@ -551,8 +646,11 @@ export const createFsHandlers = ({
         const srcPath = normalizePath(srcDir + "/" + name);
         const dstPath = normalizePath(dstDir + "/" + basename(srcPath));
         if (!state.entries[srcPath]) continue;
-        if (!req.overwrite && state.entries[dstPath] && !req.skip_existing && !req.merge) return jsonResponse(failure(`file [${name}] exists`, 403));
-        if (state.entries[dstPath] && !req.merge) removeEntry(dstPath);
+        if (!shouldOverwrite(req) && state.entries[dstPath]) {
+          if (!shouldSkipExisting(req)) return jsonResponse(failure(`file [${name}] exists`, 403));
+          if (!shouldMerge(req) || !state.entries[dstPath].is_dir) continue;
+        }
+        if (state.entries[dstPath] && !shouldMerge(req)) removeEntry(dstPath);
         cloneEntryTree(srcPath, dstPath);
       }
       const task = await taskStore.addTask("copy", {
@@ -723,6 +821,10 @@ export const createFsHandlers = ({
     },
     "ANY /api/fs/other": async () => jsonResponse(success(null)),
   };
+  for (const operation of ["parse", "upload_parse", "rapid_upload", "generate"]) {
+    handlers[`POST /api/fs/torrent/${operation}`] = async (request) => fsTorrentPlaceholder(operation, await parseJson(request));
+  }
+  return handlers;
 };
 
 

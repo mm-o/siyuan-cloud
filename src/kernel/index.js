@@ -49,7 +49,10 @@ import { createScanHandlers } from "./server/handles/scan.js";
 import { createSecurityHandlers } from "./server/handles/security.js";
 import { createArchiveHandlers } from "./server/handles/archive.js";
 import { createPublicHandlers } from "./server/handles/public.js";
-import { createStatusHandlers } from "./server/handles/status.js";
+import {
+  createStatusHandlers,
+  createStatusPayload,
+} from "./server/handles/status.js";
 import {
   createShareHandlers,
   createShareReader,
@@ -563,12 +566,10 @@ import { createWebDavServer } from "./server/webdav.js";
 
   siyuan.plugin.lifecycle.onload = async () => {
     await loadState();
-    await siyuan.rpc.bind("siyuan-cloud.status", async () => ({
-      ok: true,
-      version: OPENLIST_VERSION,
-      users: state.users.length,
-      entries: Object.keys(state.entries).length,
-      routes: Object.keys(handlers).length,
+    await siyuan.rpc.bind("siyuan-cloud.status", async () => createStatusPayload({
+      client: siyuan.client,
+      getState: () => state,
+      handlersRef: () => handlers,
     }), "Return Siyuan Cloud compatibility runtime status.");
     await log("kernel plugin loaded", OPENLIST_VERSION);
   };

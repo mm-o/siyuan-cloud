@@ -147,6 +147,15 @@
   line-height: 1.35;
 }
 
+.ol-driver-note img {
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--b3-border-color);
+  border-radius: 4px;
+  background: var(--b3-theme-background);
+  object-fit: contain;
+}
+
 .ol-mount-result {
   display: block;
 }

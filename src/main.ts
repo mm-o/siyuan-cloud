@@ -1,6 +1,4 @@
-import {
-  Plugin,
-} from "siyuan";
+import { Plugin } from 'siyuan'
 import { createApp } from 'vue'
 import App from './App.vue'
 
@@ -12,14 +10,13 @@ export function usePlugin(pluginProps?: Plugin): Plugin {
   if (!plugin && !pluginProps) {
     throw new Error('Siyuan Cloud plugin is not bound')
   }
-  return plugin!;
+  return plugin!
 }
-
 
 let app: ReturnType<typeof createApp> | null = null
 let container: HTMLDivElement | null = null
 export function init(plugin: Plugin) {
-  usePlugin(plugin);
+  usePlugin(plugin)
 
   container = document.createElement('div')
   container.className = 'siyuan-cloud-app'

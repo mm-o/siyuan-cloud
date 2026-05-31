@@ -2,10 +2,10 @@ import { normalizePath } from "../../model/path.js";
 import {
   basenameOf,
   boolValue,
+  createStorageCache,
   dirnameOf,
   parseTime,
   persistAddition,
-  rawDownloadUrl,
 } from "../common.js";
 import { remoteJson } from "../http.js";
 
@@ -34,6 +34,7 @@ const checkQuark = (payload) => {
 const cookieHeader = (addition) => addition.cookie || addition.Cookie || "";
 
 const confFor = (storage) => configs[storage.driver] || configs.Quark;
+const cache = createStorageCache();
 
 const requestQuark = async (client, storage, pathname, {
   body,
@@ -64,11 +65,10 @@ const requestQuark = async (client, storage, pathname, {
 
 const timeFromMs = (value) => parseTime(Number(value || 0));
 
-const fileToObj = (file, relPath, storage) => {
+const fileToObj = (file, relPath) => {
   const isDir = !file.file;
   return {
     name: file.file_name || basenameOf(relPath),
-    path: normalizePath(relPath),
     is_dir: isDir,
     size: Number(file.size || 0),
     modified: timeFromMs(file.updated_at || file.l_updated_at),
@@ -79,13 +79,13 @@ const fileToObj = (file, relPath, storage) => {
     hashinfo: "",
     hash_info: {},
     id: file.fid || "",
-    raw_url: isDir ? "" : rawDownloadUrl(storage, relPath, true),
-    provider: storage.driver || "Quark",
     file,
   };
 };
 
 const listByParent = async (client, storage, parentId) => {
+  const cacheKey = parentId || storage.addition_json.root_folder_id || "0";
+  return cache.list(storage, cacheKey, async () => {
   const addition = storage.addition_json;
   const result = [];
   const size = 100;
@@ -113,6 +113,7 @@ const listByParent = async (client, storage, parentId) => {
     page += 1;
   }
   return result;
+  });
 };
 
 const decodeHtml = (value) => String(value || "")
@@ -124,6 +125,7 @@ const decodeHtml = (value) => String(value || "")
 
 const resolveFile = async (client, storage, relPath) => {
   const clean = normalizePath(relPath || "/");
+  return cache.file(storage, clean, async () => {
   const rootId = storage.addition_json.root_folder_id || storage.addition_json.RootFolderID || "0";
   if (clean === "/") {
     return {
@@ -142,9 +144,11 @@ const resolveFile = async (client, storage, relPath) => {
     parentId = current.fid;
   }
   return current;
+  });
 };
 
 const downloadLink = async (client, storage, file) => {
+  return cache.link(storage, `${storage.driver || "Quark"}:${file.fid}:${boolValue(storage.addition_json.use_transcoding_address)}`, async () => {
   const conf = confFor(storage);
   if (
     boolValue(storage.addition_json.use_transcoding_address)
@@ -189,10 +193,12 @@ const downloadLink = async (client, storage, file) => {
     url,
     content_length: Number(file.size || 0),
   };
+  });
 };
 
 const manageFile = async (client, storage, pathname, body) => {
   await requestQuark(client, storage, pathname, { body, method: "POST" });
+  cache.clear(storage);
 };
 
 export const createQuarkDriver = ({ client }) => ({
@@ -208,7 +214,7 @@ export const createQuarkDriver = ({ client }) => ({
   async list(storage, relPath) {
     const parent = await resolveFile(client, storage, relPath);
     const content = (await listByParent(client, storage, parent.fid))
-      .map((file) => fileToObj(file, normalizePath(relPath + "/" + file.file_name), storage));
+      .map((file) => fileToObj(file, normalizePath(relPath + "/" + file.file_name)));
     return {
       content,
       total: content.length,
@@ -222,7 +228,7 @@ export const createQuarkDriver = ({ client }) => ({
 
   async get(storage, relPath, options = {}) {
     const file = await resolveFile(client, storage, relPath);
-    const obj = fileToObj(file, relPath, storage);
+    const obj = fileToObj(file, relPath);
     if (!obj.is_dir && !options.skipLink) {
       const link = await downloadLink(client, storage, file);
       obj.raw_url = link.url;

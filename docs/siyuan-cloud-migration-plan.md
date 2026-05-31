@@ -47,9 +47,10 @@
 | 插件外壳 | 顶栏入口、Dock、文件管理自定义 Tab、账户/挂载/设置/进度面板 | 思源内启用插件后可打开 Dock 和文件 Tab |
 | API 契约 | `/api/auth/*`、`/api/fs/*`、`/api/admin/*`、`/api/public/*`、`/api/task/*`、`/api/share/*` 保持 OpenList-style envelope | `pnpm test:kernel` |
 | 虚拟 FS | list/get/put/form/mkdir/remove/rename/copy/move/download/proxy 已接入 | smoke test 覆盖文本和二进制回读 |
+| Torrent 兼容占位 | `/api/fs/torrent/parse`、`/api/fs/torrent/upload_parse`、`/api/fs/torrent/rapid_upload`、`/api/fs/torrent/generate` 已按 OpenList route 注册结构化占位 | smoke test 覆盖 route、能力索引和 Dock 进度 |
 | 前端 FS 操作 | FileTab 顶部按钮和右键菜单接入上传、下载、新建、重命名、复制、移动、删除 | `fs*` helper + `handle_resp.ts` 统一处理 |
 | 代理播放 | `/api/fs/get.raw_url`、`/api/fs/link.raw_url`、`/d`、`/p` 走 `fs.Link -> common.Proxy -> body.proxy` 边界；Range/header 交给思源 `body.proxy` 流式转发 | 播放器插件可直接调用 OpenList HTTP API，图片走 SiYuan Viewer |
-| 驱动首批运行时 | OpenList/AListV3、WebDav、S3/Doge、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、Quark、Local 有初始 runtime adapter | 通过最长 `mount_path` dispatch；Dock 只列出已接 runtime 的驱动 |
+| 驱动首批运行时 | OpenList/AListV3、WebDav、S3/Doge、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV、Local 有初始 runtime adapter | 通过最长 `mount_path` dispatch；Dock 只列出已接 runtime 的驱动 |
 | 管理面板 | driver names/info、storage create/update/enable/disable/delete、config import/export | Dock 挂载表单可验证 |
 | WebDAV/S3 | WebDAV 读写和 LOCK/UNLOCK/PROPPATCH 骨架，S3 list/get/put/delete/copy/multipart 骨架 | smoke test 覆盖主要表面 |
 
@@ -67,13 +68,13 @@
 - `src/components/FileTab.vue` 文件列表交互继续贴近 OpenList 前端：顶部工具栏选择按钮控制 checkbox 显示，checkbox 负责选择/全选，点击条目负责打开，批量操作按钮由选中项启用，并删除桌面式单击选择/双击打开逻辑。
 - 新增 `/api/public/api` 和 `/api/public/routes` 机器可读索引，其他项目可把 `/plugin/private/siyuan-cloud` 当作 OpenList-compatible base URL，直接调用 `/api/*`、`/d/*`、`/p/*`、`/dav/*`、`/s3/*`。
 - Dock 设置页保留 OpenList 兼容 `external_previews` JSON 编辑；PotPlayer 等播放器仍然是前端 URL Scheme，不是后端进程启动 API，FileTab 不内置外部播放器菜单，播放器插件按 OpenList HTTP API 和 OpenList Frontend URL 转换规则自行实现交互。
-- 驱动实现文件架构对齐 OpenList：`openlist/driver.js`、`webdav/driver.js`、`s3/driver.js`、`onedrive/driver.js`、`baidu_netdisk/driver.js`、`aliyundrive_open/driver.js`、`189/driver.js`、`quark_uc/driver.js`、`local/driver.js` 等都放在对应驱动目录下。
+- 驱动实现文件架构对齐 OpenList：`openlist/driver.js`、`webdav/driver.js`、`s3/driver.js`、`onedrive/driver.js`、`baidu_netdisk/driver.js`、`aliyundrive_open/driver.js`、`189/driver.js`、`189pc/driver.js`、`189pc/session.js`、`189_tv/driver.js`、`189_tv/session.js`、`quark_uc/driver.js`、`quark_open/driver.js`、`quark_uc_tv/driver.js`、`local/driver.js` 等都放在对应驱动目录下。
 - `/api/admin/driver/names` 现在只返回已接 runtime 的挂载项；未实现驱动仍保留在 `driver/list` / `driver/info` 的 metadata 中，方便后续按 OpenList 字段继续迁移，但不会出现在 Dock 可选挂载列表。
-- 新增 AliyundriveOpen、189Cloud、Quark、Local 的初始 list/get/read/link 和基础管理适配；Local 在 SiYuan kernel runtime 中映射到 workspace-relative `/api/file`，不直接读取任意宿主机绝对路径。
+- 新增 AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark、Local 的初始 list/get/read/link 和基础管理适配；189CloudPC / 189CloudTV 对照 `docs/OpenList-main/drivers/189pc` 和 `docs/OpenList-main/drivers/189_tv` 先复制 `List`、`Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename` 的签名请求边界，密码/二维码登录、PC AES `params`、上传和 CAS/torrent 秒传仍保留结构化占位；Local 在 SiYuan kernel runtime 中映射到 workspace-relative `/api/file`，不直接读取任意宿主机绝对路径。
 - 115 Cloud / 115 Open 暂不暴露到挂载列表：OpenList 实现依赖第三方 Go SDK、115 ECDH 登录/秒传和 OSS 上传栈，需要单独迁移 JS 兼容层后再打开。
 - 重新对照 `docs/OpenList-main/drivers/*/meta.go` 和 `driver.go`：WebDav、123Pan 按 OpenList `PreferProxy` 标记；S3/Doge 补齐 custom host presign、sign expire、placeholder、remove bucket、filename disposition、direct upload host 等 addition 字段；AliyundriveOpen、Quark、Local 补齐 default root / no overwrite / no cache / no link url 等 config 差异；115 Cloud 的 `cookie`、`qrcode_token` 改回 text metadata，并保持 metadata-only。
 - OneDrive、123Pan、WebDav 的读取路径已从“driver 自己通过 `forwardProxy` 拉取 base64 内容”改为 OpenList 的 `Link()` 形态：driver 返回 `model.Link` 风格 URL/header，`/d` 和 `/p` 统一进入 `server/common/proxy.js -> body.proxy`。123Pan 的 `Referer` 继续按 OpenList 使用下载接口原始 URL 的 scheme/host。
-- Dock 进度状态和 `/siyuan-cloud/status.adapters` 已同步到当前 runtime 驱动：OpenList/AListV3、WebDav、S3/Doge、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、Quark、Local。
+- Dock 进度状态和 `/siyuan-cloud/status.adapters` 已同步到当前 runtime 驱动：OpenList/AListV3、WebDav、S3/Doge、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV、Local。
 
 ## 2026-05-26 流式代理补齐
 
@@ -82,10 +83,43 @@
 - `/api/fs/link.raw_url` 与 `/api/fs/get.raw_url` 统一按 OpenList 代理策略返回：`web_proxy` / `PreferProxy` / `OnlyProxy` / `NoLinkURL` 返回 `/plugin/private/siyuan-cloud/p/<path>`，否则保留 driver `Link()` URL。
 - Dock 迁移进度新增 `streaming-proxy` 阶段；smoke test 新增 OneDrive 直链 raw_url 和 Baidu 代理 raw_url 的覆盖，防止后续回退到全量 `/p` 或 per-driver 媒体补丁。
 
+## 2026-05-30 OpenList 最新对齐
+
+- 对照最新 `docs/OpenList-main/server/handles/torrent.go`，新增 OpenList torrent route 占位：`/api/fs/torrent/parse`、`/api/fs/torrent/upload_parse`、`/api/fs/torrent/rapid_upload`、`/api/fs/torrent/generate`。当前返回结构化 `501`，记录 upstream source 和下一步 JS bencode/torrent reader、189/189PC CAS 秒传迁移边界。
+- `/api/public/api` 新增 `openlist.fs.torrent.placeholder` capability，`/siyuan-cloud/status.stages` 暴露 `torrent` active 阶段。
+- `/api/fs/copy` 和 `/api/fs/move` 的 `skip_existing` 冲突处理对齐最新 OpenList `server/handles/fsmanage.go`：目标已存在且允许跳过时继续处理后续文件，不再中断整批；copy 的 `merge` 只在目标为目录时继续。
+- `pnpm test:kernel` 增加 torrent 占位、公开能力索引、Dock 进度阶段，以及 copy/move skip-existing continuation 覆盖。
+- Dock 状态刷新固定使用私有 HTTP status route，避免当前 SiYuan kernel plugin 的 `/ws/plugin/rpc` 通知通道偶发握手失败影响用户界面；内核侧 HTTP status 和 `siyuan-cloud.status` RPC 仍共用 `createStatusPayload`，避免字段漂移。
+
+## 2026-05-30 Companion 链接复用
+
+- FileTab 的媒体和书籍文件名暴露 OpenList-compatible `/p/<path>` 为 DOM `data-href`，直接复用思播、思阅已经支持的文档链接点击拦截逻辑。
+- 思盘不调用 `window.siyuanMediaPlayer` / `window.sireader`，不派发 `playMediaItem` 或阅读器专用事件，不增加 `siyuan://plugins/<plugin>/...` 跳转；文件内容仍走 `/p -> fs.Link -> common.Proxy -> body.proxy`。
+- 其他 companion 插件可复用同一条普通 HTTP 链接元数据，也可继续直接调用 `/plugin/private/siyuan-cloud/api/fs/get`。
+
+## 2026-05-30 189Cloud PC/TV 初始迁移
+
+- 对照 `docs/OpenList-main/drivers/189pc/{driver.go,utils.go,help.go,meta.go}` 和 `docs/OpenList-main/drivers/189_tv/{driver.go,utils.go,help.go,meta.go}`，新增 `src/kernel/internal/driver/189pc/driver.js`、`src/kernel/internal/driver/189pc/session.js`、`src/kernel/internal/driver/189_tv/driver.js` 与 `src/kernel/internal/driver/189_tv/session.js` runtime 入口，并暴露到 `/api/admin/driver/names`。
+- 首批按 OpenList 方法边界迁移 PC/TV 的已登录 session 路径：`List`、`Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename`，下载仍返回 `model.Link` 风格数据并复用 `/d` / `/p -> common.Proxy -> body.proxy`。
+- PC/TV 的完整登录链路仍未声称完成：PC 密码/二维码登录涉及 RSA、验证码/OCR、AES-ECB `params` 和 token refresh；TV 二维码登录涉及 AppKey 签名与扫码轮询；上传、家庭云中转、rapid/CAS/torrent 仍按结构化错误保留下一步边界。
+- AliyundriveOpen 增加短期 list/path/link 缓存，贴近 OpenList `op/cache` 对 repeated `Link()` 的复用效果，减少播放器 Range 请求反复逐层 list 和取下载链接造成的首包等待。
+- 189PC/TV 的 session 签名请求实现已拆回各自 OpenList 对应目录；根级 189 专用 common 文件不再存在，后续继续按 `drivers/189pc` 与 `drivers/189_tv` 分别复制相邻源码。
+
+## 2026-05-30 Quark 系列对齐
+
+- 对照 `docs/OpenList-main/drivers/quark_uc` 和 `docs/OpenList-main/server/handles/fsread.go` 修复 Quark/UC runtime 的 OpenList object 路径边界：driver 内部继续用挂载内 `relPath` 解析对象，但 `/api/fs/list` 的 HTTP 边界按 OpenList `ObjResp` 收敛，不向外返回 driver 私有 `path` 字段；FileTab 按当前目录和 `name` 组合下一层路径。
+- 新增 `src/kernel/internal/driver/quark_open/driver.js`，按 OpenList `quark_open` 复制请求签名、online API token refresh、`List`、`Link`、`MakeDir`、`Move`、`Rename`、`Remove` 方法边界；上传和 multipart proof/OSS part finish 仍保留结构化占位。
+- 新增 `src/kernel/internal/driver/quark_uc_tv/driver.js`，按 OpenList `quark_uc_tv` 暴露 `QuarkTV` 和 `UCTV`，复制 TV 签名、device/query token 保存、refresh token 换取 access token、`List`、`Link`，并保持上游 `MakeDir`/`Move`/`Rename`/`Copy`/`Remove`/`Put` 的 `NotImplement` 边界。
+- `UC`、`QuarkOpen`、`QuarkTV`、`UCTV` 已加入 `/api/admin/driver/names`、`/api/admin/driver/info`、`/siyuan-cloud/status.adapters` 和 smoke test；QuarkTV/UCTV 的 OpenList `need verify` 二维码流程已在 Dock 中提供“刷新二维码”入口，扫码后通过 driver test 轮询写回 addition。
+- 修复路径规范化和 OpenList `FixAndCleanPath` 的差异：内核与 FileTab 不再对整条路径 `.trim()`，保留文件名组件首尾空格；真实验证 `/夸克网盘/花生十三&飞扬《2025上半年省考笔试系统班》 ` 可正常进入，smoke test 覆盖 Quark 目录名尾随空格。
+- Quark/UC、QuarkOpen、QuarkTV/UCTV 接入共享 storage-scoped list/file/link cache，补齐 OpenList `op` 层 `dirCache` / `linkCache` 的关键播放路径行为；连续 `/p` Range 请求不再重复逐层 list 和重新取下载链接，smoke test 用 Quark API 计数断言该行为。
+- 普通 `Quark` 的代理默认值改回 OpenList `QuarkOrUC.Init` 语义：新增/更新挂载未显式传 `web_proxy` 时，只有 `use_transcoding_address=false` 才默认 `web_proxy=true`；开启转码地址的新挂载默认返回转码直链，不额外套 `/p`。
+- Dock 新挂载表单默认偏向播放体验：BaiduNetdisk `download_api=crack_video`、普通 `Quark` `use_transcoding_address=true`、QuarkTV/UCTV `link_method=streaming`；既有挂载 addition 不自动迁移。
+
 ## 下一步
 
-1. 继续从 `docs/OpenList-main/drivers/*` 迁移真实驱动上传、直传和大文件分片行为，优先 BaiduNetdisk、OneDrive、123Pan、AliyundriveOpen、Quark、189Cloud、WebDav、S3。
-2. 补齐 OpenList 前端剩余 FS helper 对应的后端占位或真实行为，包括 dirs、batch_rename、recursive_move、remove_empty_directory、archive、offline download。
+1. 继续从 `docs/OpenList-main/drivers/*` 迁移真实驱动上传、直传和大文件分片行为，优先 BaiduNetdisk、OneDrive、123Pan、AliyundriveOpen、Quark、189Cloud/189CloudPC/189CloudTV、WebDav、S3。
+2. 迁移或继续占位 OpenList 最新 torrent/offline download 行为，包括 SimpleHttp 安全文件名、ed2k 工具路由、torrent parse/generate 和 189/189PC CAS 秒传。
 3. 扩展 smoke test，让每个稳定 route family 都有最小 OpenList-compatible 断言。
 4. 继续审查 UI：文件管理 Tab 和 Dock 优先使用 SiYuan 原生 `b3-*`/`block__icon` 样式，不新增视觉体系。
 5. 每完成一个 capability batch，同步更新本计划、`docs/kernel-architecture.md`、`docs/kernel-plugin-notes.md` 和 Dock 进度文案。

@@ -7,6 +7,20 @@ const DOCK_SETTINGS = 'siyuan-cloud-dock-settings.json'
 const {
   version,
 } = PluginInfoString
+
+interface SiyuanCloudBridge {
+  openPanel?: () => void
+  openDock?: () => void
+  openFileManager?: (path?: string) => void
+}
+
+interface OpenSiyuanUrlEventBus {
+  on(type: 'open-siyuan-url-plugin', listener: (event: CustomEvent<{ url: string }>) => void): void
+  off(type: 'open-siyuan-url-plugin', listener: (event: CustomEvent<{ url: string }>) => void): void
+}
+
+const cloudBridge = () => window._siyuan_cloud as SiyuanCloudBridge | undefined
+
 export default class SiyuanCloudPlugin extends Plugin {
   public readonly version = version
   private openSiyuanUrlHandler?: (event: CustomEvent<{ url: string }>) => void
@@ -15,12 +29,12 @@ export default class SiyuanCloudPlugin extends Plugin {
     init(this)
 
     this.openSiyuanUrlHandler = event => this.openSiyuanCloudUrl(event.detail?.url || '')
-    this.eventBus.on('open-siyuan-url-plugin', this.openSiyuanUrlHandler as any)
+    this.siyuanUrlEventBus().on('open-siyuan-url-plugin', this.openSiyuanUrlHandler)
   }
 
   onunload() {
     if (this.openSiyuanUrlHandler)
-      this.eventBus.off('open-siyuan-url-plugin', this.openSiyuanUrlHandler as any)
+      this.siyuanUrlEventBus().off('open-siyuan-url-plugin', this.openSiyuanUrlHandler)
     destroy()
   }
 
@@ -29,7 +43,7 @@ export default class SiyuanCloudPlugin extends Plugin {
   }
 
   openSetting() {
-    window._siyuan_cloud?.openPanel?.()
+    cloudBridge()?.openPanel?.()
   }
 
   private async openSiyuanCloudUrl(url: string) {
@@ -43,7 +57,11 @@ export default class SiyuanCloudPlugin extends Plugin {
     const path = urlObj.searchParams.get('path') || ''
     if (!path)
       return
-    window._siyuan_cloud?.openFileManager?.(path)
+    cloudBridge()?.openFileManager?.(path)
+  }
+
+  private siyuanUrlEventBus() {
+    return this.eventBus as unknown as OpenSiyuanUrlEventBus
   }
 }
 

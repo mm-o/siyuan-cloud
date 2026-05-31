@@ -1,12 +1,16 @@
 import { normalizePath } from "../model/path.js";
 import { create123PanDriver } from "./123/driver.js";
 import { create189CloudDriver } from "./189/driver.js";
+import { create189CloudTVDriver } from "./189_tv/driver.js";
+import { create189CloudPCDriver } from "./189pc/driver.js";
 import { createAliyundriveOpenDriver } from "./aliyundrive_open/driver.js";
 import { createBaiduNetdiskDriver } from "./baidu_netdisk/driver.js";
 import { createLocalDriver } from "./local/driver.js";
 import { createOneDriveDriver } from "./onedrive/driver.js";
 import { createOpenListDriver } from "./openlist/driver.js";
+import { createQuarkOpenDriver } from "./quark_open/driver.js";
 import { createQuarkDriver } from "./quark_uc/driver.js";
+import { createQuarkUCTVDriver } from "./quark_uc_tv/driver.js";
 import { createS3Driver } from "./s3/driver.js";
 import { createWebDavDriver } from "./webdav/driver.js";
 
@@ -44,7 +48,13 @@ export const createDriverRuntime = ({ client, saveStorageAddition }) => {
     AliyundriveOpen: createAliyundriveOpenDriver({ client }),
     AliyunDriveOpen: createAliyundriveOpenDriver({ client }),
     "189Cloud": create189CloudDriver({ client }),
+    "189CloudPC": create189CloudPCDriver({ client }),
+    "189CloudTV": create189CloudTVDriver({ client }),
     Quark: createQuarkDriver({ client }),
+    UC: createQuarkDriver({ client }),
+    QuarkOpen: createQuarkOpenDriver({ client }),
+    QuarkTV: createQuarkUCTVDriver({ client }),
+    UCTV: createQuarkUCTVDriver({ client }),
     Local: createLocalDriver({ client }),
   };
 

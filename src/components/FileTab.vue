@@ -124,6 +124,7 @@
             <span
               class="b3-list-item__text"
               :title="item.name"
+              :data-href="companionHref(item)"
             >
               <svg
                 class="ol-file-row__icon"
@@ -174,7 +175,6 @@ import {
   fsRemove,
   fsRename,
   openListAbsoluteUrl,
-  privateBase,
   resolveOpenListFile,
 } from '@/utils/api'
 import { handleResp, handleRespWithNotifySuccess } from '@/utils/handle_resp'
@@ -182,6 +182,7 @@ import {
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
+import { privateBase } from '@/utils/request'
 
 interface FsItem {
   name: string
@@ -240,10 +241,12 @@ const toolbarActions = computed(() => [
 ])
 
 const fileKinds = {
+  audio: new Set('mp3,wav,aac,m4a,flac,ogg'.split(',')),
   image: new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(',')),
   text: new Set('txt,log,md,markdown,json,xml,yml,yaml,toml,ini,conf,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,rb,rs,php,c,cpp,h'.split(',')),
   video: new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(',')),
 }
+const companionExts = new Set('mp3,wav,aac,m4a,flac,ogg,mp4,m3u8,webm,mov,m4v,mkv,avi,flv,wmv,epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
 
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -255,7 +258,7 @@ function tf(key: string, fallback: string) {
 }
 
 function normalizePath(path: string) {
-  const input = String(path || '/').trim()
+  const input = path === undefined || path === null || path === '' ? '/' : String(path)
   if (!input)
     return '/'
   const slash = input.startsWith('/') ? input : `/${input}`
@@ -343,18 +346,17 @@ function fileKind(item: FsItem) {
 }
 
 const isImageFile = (item: FsItem) => fileKind(item) === 'image'
-const isTextFile = (item: FsItem) => fileKind(item) === 'text'
 
 const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
 const escapeMdDest = (url: string) => url.replace(/([\\()])/g, '\\$1')
 const docProxyUrl = (path: string) => decodeURI(encodeURI(`${privateBase}/p${path}`)).replace(/#/g, '%23').replace(/\?/g, '%3F')
-const siyuanOpenUrl = (path: string) => `siyuan://plugins/siyuan-cloud/open?path=${encodeURIComponent(path)}`
+const companionHref = (item: FsItem) => !item.is_dir && companionExts.has(extensionOf(item.name)) ? openListAbsoluteUrl(docProxyUrl(itemPath(item))) : undefined
 function documentLink(item: FsItem, path: string) {
   const kind = fileKind(item)
   const url = docProxyUrl(path)
   if (kind === 'video')
     return `<video controls src="${escapeHtml(url)}"></video>`
-  return `${kind === 'image' ? '!' : ''}[${escapeMdText(item.name)}](${escapeMdDest(kind === 'image' ? url : siyuanOpenUrl(path))})`
+  return `${kind === 'image' ? '!' : ''}[${escapeMdText(item.name)}](${escapeMdDest(url)})`
 }
 
 function triggerDownload(url: string, filename?: string) {
@@ -543,11 +545,12 @@ async function openFile(item: FsItem) {
     await goPath(itemPath(item))
     return
   }
-  if (isImageFile(item)) {
+  const kind = fileKind(item)
+  if (kind === 'image') {
     await openImageViewer(item)
     return
   }
-  if (!isTextFile(item)) {
+  if (kind !== 'text') {
     showMessage(tf('useDownloadAction', 'Use the toolbar or context menu to download this file.'), 3000)
     return
   }

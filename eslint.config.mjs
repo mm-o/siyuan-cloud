@@ -1,13 +1,11 @@
 import antfu from '@antfu/eslint-config'
-import perfectionist from 'eslint-plugin-perfectionist'
-import i18nPlugin from './src/utils/eslint/i18n-validate-keys.mjs'
 
 export default antfu(
   {
     type: 'lib',
     stylistic: {
-      indent: 2, // 4, or 'tab'
-      quotes: 'single', // or 'double'
+      indent: 2,
+      quotes: 'single',
     },
 
     vue: true,
@@ -19,20 +17,6 @@ export default antfu(
       'dist',
       'node_modules',
     ],
-  },
-  {
-    files: [
-      'src/**/*.vue',
-    ],
-    rules: {
-    },
-  },
-  {
-    files: [
-      'src/**/*.ts',
-    ],
-    rules: {
-    },
   },
   {
     rules: {

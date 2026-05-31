@@ -1,14 +1,17 @@
 import { showMessage, type Plugin } from 'siyuan'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
-  fetchOpenListJson,
-  fetchOpenListText,
   fsGet,
   fsMkdir,
   fsNewFile,
+} from '@/utils/api'
+import {
+  fetchOpenListJson,
+  fetchOpenListText,
   openListJson,
   privateBase,
-} from '@/utils/api'
+} from '@/utils/request'
+import { fetchKernelStatus } from '@/utils/status'
 
 type Status = 'checking' | 'online' | 'offline'
 
@@ -36,19 +39,6 @@ interface DriverInfo {
 }
 
 const DOCK_SETTINGS = 'siyuan-cloud-dock-settings.json'
-const legacyTabs: Record<string, string> = {
-  FS: 'mounts',
-  Progress: 'about',
-  Routes: 'about',
-  Storage: 'mounts',
-  account: 'settings',
-  meta: 'about',
-  progress: 'about',
-  plan: 'about',
-  routes: 'about',
-  users: 'settings',
-  verify: 'tasks',
-}
 
 export function useDock(plugin: Plugin) {
   const tabs = [
@@ -61,7 +51,6 @@ export function useDock(plugin: Plugin) {
   const currentTab = ref('mounts')
   const status = ref<Status>('checking')
   const statusDetail = ref(t('waitingKernel'))
-  const routes = ref<string[]>([])
   const storageInfo = ref<StorageInfo>({})
   const accountInfo = ref('')
   const verifyUsername = ref('admin')
@@ -80,9 +69,13 @@ export function useDock(plugin: Plugin) {
   const mountCreateOk = ref(false)
   const mountCreateResult = ref('')
   const mountFormOpen = ref(false)
+  const driverVerifyQr = ref('')
+  const driverVerifyMessage = ref('')
+  const driverVerifyPolling = ref(false)
   const configText = ref('')
   const externalPreviews = ref('')
   const verifyLog = ref<Array<{ id: string, ok: boolean, title: string, detail: string }>>([])
+  let driverVerifyTimer: ReturnType<typeof window.setInterval> | undefined
 
   function t(key: string) {
     return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -193,6 +186,19 @@ export function useDock(plugin: Plugin) {
     return t('unknown')
   })
 
+  const driverQrLoginAvailable = computed(() => {
+    const driver = normalizeDriverName(verifyDriver.value)
+    return driverFields.value.some(field => field.name === 'query_token')
+      || driverForm.value.login_type === 'qrcode'
+      || ['QuarkTV', 'UCTV', '189CloudTV'].includes(driver)
+  })
+
+  const driverVerifyQrSrc = computed(() =>
+    driverVerifyQr.value
+      ? `data:image/jpeg;base64,${driverVerifyQr.value.replace(/^data:image\/[^;]+;base64,/, '')}`
+      : '',
+  )
+
   function storageTags(item: any) {
     const driver = driverDisplayName(String(item?.driver || item?.type || 'OpenList'))
     const statusText = String(item?.disabled ? t('disabled') : item?.status || 'work')
@@ -218,7 +224,7 @@ export function useDock(plugin: Plugin) {
   async function loadDockSettings() {
     try {
       const settings = await plugin.loadData(DOCK_SETTINGS)
-      const tab = legacyTabs[settings?.currentTab] || settings?.currentTab
+      const tab = settings?.currentTab
       if (tabs.some(item => item.key === tab))
         currentTab.value = tab
     } catch {
@@ -331,8 +337,104 @@ export function useDock(plugin: Plugin) {
     return JSON.parse(String(addition || '{}'))
   }
 
+  function mergedAddition(clearQrSession = false) {
+    const rawAddition = JSON.parse(verifyAddition.value || '{}')
+    const addition = { ...rawAddition, ...additionFromForm() }
+    if (clearQrSession) {
+      for (const key of ['query_token', 'QueryToken', 'access_token', 'AccessToken', 'refresh_token', 'RefreshToken'])
+        delete addition[key]
+    }
+    verifyAddition.value = JSON.stringify(addition, null, 2)
+    syncFormFromJson()
+    return addition
+  }
+
+  function applyDriverTestData(data: any) {
+    if (data?.addition) {
+      verifyAddition.value = JSON.stringify(data.addition, null, 2)
+      syncFormFromJson()
+    }
+    const verify = data?.verify || {}
+    driverVerifyQr.value = verify.qr_data || ''
+    if (driverVerifyQr.value)
+      driverVerifyMessage.value = t('qrScanPrompt')
+  }
+
+  async function requestDriverTest(addition: Record<string, any>) {
+    const payload = await fetchOpenListJson('/api/admin/driver/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ driver: verifyDriver.value, addition }),
+    })
+    applyDriverTestData(payload.data)
+    return payload
+  }
+
+  function stopDriverQrPolling() {
+    if (driverVerifyTimer)
+      window.clearInterval(driverVerifyTimer)
+    driverVerifyTimer = undefined
+    driverVerifyPolling.value = false
+  }
+
+  function startDriverQrPolling() {
+    stopDriverQrPolling()
+    driverVerifyPolling.value = true
+    driverVerifyTimer = window.setInterval(async () => {
+      try {
+        const payload = await requestDriverTest(JSON.parse(verifyAddition.value || '{}'))
+        if (payload.code === 200) {
+          stopDriverQrPolling()
+          driverVerifyQr.value = ''
+          driverVerifyMessage.value = t('qrLoginDone')
+          mountCreateOk.value = true
+          mountCreateResult.value = t('driverTestPassed')
+          showMessage(t('qrLoginDone'))
+        }
+      } catch {
+        // Keep polling while the QR session is waiting for scan confirmation.
+      }
+    }, 2500)
+  }
+
+  async function refreshDriverQrCode() {
+    if (mountCreating.value)
+      return
+    mountCreating.value = true
+    mountCreateOk.value = false
+    mountCreateResult.value = t('qrRefreshing')
+    driverVerifyQr.value = ''
+    driverVerifyMessage.value = ''
+    stopDriverQrPolling()
+    try {
+      const payload = await requestDriverTest(mergedAddition(true))
+      if (payload.code === 200) {
+        mountCreateOk.value = true
+        mountCreateResult.value = t('driverTestPassed')
+        driverVerifyMessage.value = t('qrLoginDone')
+        return
+      }
+      if (!driverVerifyQr.value)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      mountCreateOk.value = true
+      mountCreateResult.value = t('qrScanPrompt')
+      startDriverQrPolling()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      mountCreateOk.value = false
+      mountCreateResult.value = message
+      driverVerifyMessage.value = message
+      showMessage(message, 3000, 'error')
+    } finally {
+      mountCreating.value = false
+    }
+  }
+
   async function loadDriverInfo() {
     try {
+      stopDriverQrPolling()
+      driverVerifyQr.value = ''
+      driverVerifyMessage.value = ''
       const payload = await fetchOpenListJson(`/api/admin/driver/info?driver=${encodeURIComponent(verifyDriver.value)}`)
       driverInfo.value = payload.data || null
       driverForm.value = defaultDriverForm(driverInfo.value || {})
@@ -385,20 +487,13 @@ export function useDock(plugin: Plugin) {
   }
 
   async function tryDriverTest(addition: Record<string, any>) {
-    try {
-      const payload = await openListJson('/api/admin/driver/test', { driver: verifyDriver.value, addition })
-      if (payload.data?.addition) {
-        verifyAddition.value = JSON.stringify(payload.data.addition, null, 2)
-        syncFormFromJson()
-      }
-      const user = payload.data?.user || {}
-      return user.nickname ? `${t('driverTestPassed')}: ${user.nickname}` : t('driverTestPassed')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (message.includes('does not expose a test method yet') || message.includes('not found'))
-        return ''
-      throw error
-    }
+    const payload = await requestDriverTest(addition)
+    if (payload.code === 501 || payload.message?.includes('does not expose a test method yet') || payload.message?.includes('not found'))
+      return ''
+    if (payload.code && payload.code !== 200)
+      throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+    const user = payload.data?.user || {}
+    return user.nickname ? `${t('driverTestPassed')}: ${user.nickname}` : t('driverTestPassed')
   }
 
   async function addMount() {
@@ -507,6 +602,7 @@ export function useDock(plugin: Plugin) {
   }
 
   function closeMountForm() {
+    stopDriverQrPolling()
     mountFormOpen.value = false
   }
 
@@ -706,11 +802,12 @@ export function useDock(plugin: Plugin) {
     status.value = 'checking'
     statusDetail.value = `${t('callingStatus')} ${privateBase}/siyuan-cloud/status`
     try {
-      const payload = await fetchOpenListJson('/siyuan-cloud/status')
-      routes.value = payload.data?.routes || []
-      storageInfo.value = payload.data?.storage || {}
+      const result = await fetchKernelStatus()
+      const data = result.data
+      const routeCount = data.routes?.length || 0
+      storageInfo.value = data.storage || {}
       status.value = 'online'
-      statusDetail.value = `${payload.data?.version || 'kernel'} / ${payload.data?.entries || 0} entries / ${routes.value.length} routes`
+      statusDetail.value = `${data.version || 'kernel'} / ${data.entries || 0} entries / ${routeCount} routes / ${result.source}`
     } catch (error) {
       status.value = 'offline'
       statusDetail.value = error instanceof Error ? error.message : t('kernelUnavailable')
@@ -752,6 +849,7 @@ export function useDock(plugin: Plugin) {
     await loadDockSettings()
     await refreshAll()
   })
+  onBeforeUnmount(stopDriverQrPolling)
 
   return {
     accountInfo,
@@ -767,6 +865,10 @@ export function useDock(plugin: Plugin) {
     driverInfo,
     driverNote,
     driverOptions,
+    driverQrLoginAvailable,
+    driverVerifyMessage,
+    driverVerifyPolling,
+    driverVerifyQrSrc,
     editMount,
     exportAddition,
     exportConfig,
@@ -786,6 +888,7 @@ export function useDock(plugin: Plugin) {
     openAddMount,
     openEditMount,
     openPrivateEntry,
+    refreshDriverQrCode,
     refreshAll,
     runVerifySuite,
     saveExternalPreviews,

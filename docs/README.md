@@ -14,8 +14,8 @@ The source trees are intentionally ignored by Git because they are large upstrea
 
 ## Source Trees
 
-- `docs/siyuan-master`: SiYuan source checkout from `siyuan-note/siyuan`, branch `dev`.
-  - Use this branch for kernel plugin work because PR #17487 was merged into `dev`.
+- `docs/siyuan-master`: SiYuan source checkout from `siyuan-note/siyuan`, currently checked out at tag `v3.7.0-dev9`.
+  - Kernel plugin support from PR #17487 and streaming proxy support from PR #17748 are present in this tag.
 - `docs/OpenList-main`: OpenList source checkout from `OpenListTeam/OpenList`, branch `main`.
   - Prefer copying route names, request fields, response fields, and handler control flow from this tree before writing new behavior.
 
@@ -35,7 +35,8 @@ The source trees are intentionally ignored by Git because they are large upstrea
 From this plugin root:
 
 ```powershell
-git -C docs/siyuan-master pull --ff-only
+git -C docs/siyuan-master fetch origin --tags
+git -C docs/siyuan-master checkout v3.7.0-dev9
 git -C docs/OpenList-main pull --ff-only
 ```
 

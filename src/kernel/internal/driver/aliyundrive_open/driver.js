@@ -14,6 +14,28 @@ import {
 
 const API_URL = "https://openapi.alipan.com";
 const DEFAULT_RENEW_API = "https://api.oplist.org/alicloud/renewapi";
+const CACHE_TTL = 55 * 1000;
+const listCache = new Map();
+const fileCache = new Map();
+const linkCache = new Map();
+
+const storageKey = (storage) => String(storage.id || storage.mount_path || JSON.stringify(storage.addition_json || {}));
+const cached = async (map, key, producer, ttl = CACHE_TTL) => {
+  const now = Date.now();
+  const hit = map.get(key);
+  if (hit && hit.expires > now) return hit.value;
+  const value = await producer();
+  map.set(key, { value, expires: now + ttl });
+  return value;
+};
+const clearStorageCache = (storage) => {
+  const prefix = `${storageKey(storage)}:`;
+  for (const map of [listCache, fileCache, linkCache]) {
+    for (const key of map.keys()) {
+      if (key.startsWith(prefix)) map.delete(key);
+    }
+  }
+};
 
 const checkAli = (payload) => {
   if (payload?.code) throw new Error(`${payload.code}:${payload.message || ""}`.replace(/:$/, ""));
@@ -124,6 +146,8 @@ const fileToObj = (file, relPath, storage) => {
 };
 
 const listByParent = async (client, storage, parentId) => {
+  const cacheKey = `${storageKey(storage)}:list:${parentId}`;
+  return cached(listCache, cacheKey, async () => {
   const addition = storage.addition_json;
   const driveId = await initDrive(client, storage);
   const result = [];
@@ -143,10 +167,13 @@ const listByParent = async (client, storage, parentId) => {
     marker = resp.next_marker || "";
   } while (marker);
   return result;
+  });
 };
 
 const resolveFile = async (client, storage, relPath) => {
   const clean = normalizePath(relPath || "/");
+  const cacheKey = `${storageKey(storage)}:file:${clean}`;
+  return cached(fileCache, cacheKey, async () => {
   if (clean === "/") {
     return {
       file_id: rootFolderId(storage.addition_json),
@@ -165,9 +192,12 @@ const resolveFile = async (client, storage, relPath) => {
     parentId = current.file_id;
   }
   return current;
+  });
 };
 
 const linkFor = async (client, storage, file) => {
+  const cacheKey = `${storageKey(storage)}:link:${file.file_id || ""}`;
+  return cached(linkCache, cacheKey, async () => {
   const driveId = await initDrive(client, storage);
   const resp = await requestAli(client, storage, "/adrive/v1.0/openFile/getDownloadUrl", {
     body: {
@@ -179,6 +209,7 @@ const linkFor = async (client, storage, file) => {
   const url = resp.url || resp.streamsUrl?.[storage.addition_json.livp_download_format || "jpeg"] || "";
   if (!url) throw new Error("get download url failed");
   return url;
+  });
 };
 
 export const createAliyundriveOpenDriver = ({ client }) => ({
@@ -243,6 +274,7 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
         check_name_mode: "refuse",
       },
     });
+    clearStorageCache(storage);
   },
 
   async move(storage, relPath, dstRelPath) {
@@ -257,6 +289,7 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
         check_name_mode: "ignore",
       },
     });
+    clearStorageCache(storage);
   },
 
   async copy(storage, relPath, dstRelPath) {
@@ -271,6 +304,7 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
         auto_rename: false,
       },
     });
+    clearStorageCache(storage);
   },
 
   async remove(storage, relPath) {
@@ -285,6 +319,7 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
         file_id: file.file_id,
       },
     });
+    clearStorageCache(storage);
   },
 
   async rename(storage, relPath, newName) {
@@ -297,6 +332,7 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
         name: newName,
       },
     });
+    clearStorageCache(storage);
   },
 
   async put() {

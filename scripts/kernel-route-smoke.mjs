@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
 const storageData = new Map();
+const rpcHandlers = new Map();
+let quarkSortRequests = 0;
+let quarkDownloadRequests = 0;
 
 const jsonBody = (payload) => ({
   async json() {
@@ -105,6 +108,147 @@ globalThis.siyuan = {
         } else if (url.hostname === "download123.example.test" && req.method === "GET") {
           contentType = "text/plain";
           body = "123pan doc";
+        } else if (url.hostname === "drive.quark.cn" && url.pathname.endsWith("/1/clouddrive/file/sort")) {
+          quarkSortRequests += 1;
+          const parent = url.searchParams.get("pdir_fid");
+          body = {
+            status: 0,
+            code: 0,
+            message: "success",
+            data: {
+              list: parent === "quark-dir-1"
+                ? [{
+                    fid: "quark-file-1",
+                    file_name: "quark-child.txt",
+                    file: true,
+                    category: 1,
+                    size: 11,
+                    created_at: 1767225600000,
+                    updated_at: 1767225600000,
+                  }]
+                : [{
+                    fid: "quark-dir-1",
+                    file_name: "quark-folder ",
+                    file: false,
+                    size: 0,
+                    created_at: 1767225600000,
+                    updated_at: 1767225600000,
+                  }],
+            },
+            metadata: { _total: 1 },
+          };
+        } else if (url.hostname === "drive.quark.cn" && url.pathname.endsWith("/1/clouddrive/file/v2/play/project")) {
+          quarkDownloadRequests += 1;
+          body = {
+            status: 0,
+            code: 0,
+            message: "success",
+            data: {
+              video_list: [{
+                video_info: {
+                  url: "https://quark-transcode.example.test/quark-child.m3u8",
+                  size: 11,
+                },
+              }],
+            },
+          };
+        } else if (url.hostname === "drive.quark.cn" && url.pathname.endsWith("/1/clouddrive/file/download")) {
+          quarkDownloadRequests += 1;
+          body = {
+            status: 0,
+            code: 0,
+            message: "success",
+            data: [{ download_url: "https://quark-download.example.test/quark-child.txt" }],
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/open/v1/user/info")) {
+          body = {
+            status: 0,
+            req_id: "quark-open-user",
+            data: { user_id: "quark-open-user", nickname: "quark-open" },
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/open/v1/file/list")) {
+          body = {
+            status: 0,
+            req_id: "quark-open-list",
+            data: {
+              file_list: [{
+                fid: "quark-open-file-1",
+                filename: "quark-open.txt",
+                file_type: "1",
+                size: 15,
+                created_at: 1767225600000,
+                updated_at: 1767225600000,
+              }],
+              last_page: true,
+            },
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/open/v1/file/get_download_url")) {
+          body = {
+            status: 0,
+            req_id: "quark-open-download",
+            data: {
+              fid: "quark-open-file-1",
+              size: 15,
+              file_name: "quark-open.txt",
+              download_url: "https://quark-open-download.example.test/quark-open.txt",
+            },
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/oauth/authorize")) {
+          body = {
+            status: 0,
+            req_id: "quark-tv-authorize",
+            qr_data: "QUARK_TV_QR_DATA",
+            query_token: "QUARK_TV_QUERY",
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/oauth/code")) {
+          body = {
+            status: 0,
+            req_id: "quark-tv-code",
+            code: "QUARK_TV_CODE",
+          };
+        } else if (url.hostname === "api.extscreen.com" && url.pathname.endsWith("/quarkdrive/token")) {
+          body = {
+            code: 200,
+            message: "success",
+            data: {
+              access_token: "QUARK_TV_ACCESS_BY_QR",
+              refresh_token: "QUARK_TV_REFRESH_BY_QR",
+            },
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/user") && url.searchParams.get("method") === "user_info") {
+          body = {
+            status: 0,
+            req_id: "quark-tv-user",
+            data: { nickname: "quark-tv" },
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/file") && url.searchParams.get("method") === "list") {
+          body = {
+            status: 0,
+            req_id: "quark-tv-list",
+            data: {
+              total_count: 1,
+              files: [{
+                fid: "quark-tv-file-1",
+                filename: "quark-tv.txt",
+                file_type: "1",
+                isdir: 0,
+                size: 13,
+                created_at: 1767225600000,
+                updated_at: 1767225600000,
+              }],
+            },
+          };
+        } else if (url.hostname === "open-api-drive.quark.cn" && url.pathname.endsWith("/file") && url.searchParams.get("method") === "download") {
+          body = {
+            status: 0,
+            req_id: "quark-tv-download",
+            data: {
+              fid: "quark-tv-file-1",
+              file_name: "quark-tv.txt",
+              size: 13,
+              download_url: "https://quark-tv-download.example.test/quark-tv.txt",
+            },
+          };
         } else if (url.hostname === "api.oplist.org" && url.pathname.endsWith("/baiduyun/renewapi")) {
           body = {
             access_token: "BAIDU_ACCESS_REFRESHED",
@@ -254,7 +398,9 @@ globalThis.siyuan = {
     lifecycle: {},
   },
   rpc: {
-    async bind() {},
+    async bind(method, handler) {
+      rpcHandlers.set(method, handler);
+    },
   },
   server: {
     private: {
@@ -276,6 +422,10 @@ await import("../src/kernel/index.js");
 await globalThis.siyuan.plugin.lifecycle.onload();
 
 const handler = globalThis.siyuan.server.private.http.handler;
+const rpcStatus = await rpcHandlers.get("siyuan-cloud.status")?.();
+assert.equal(rpcStatus?.ok, true);
+assert.ok(rpcStatus.routes.includes("POST /api/fs/torrent/parse"));
+assert.ok(rpcStatus.stages.some((item) => item.key === "torrent" && item.status === "active"));
 
 const request = ({ method = "GET", path = "/", query = "", body, headers = {} }) => ({
   context: { path },
@@ -308,6 +458,8 @@ assert.equal(status.code, 200);
 assert.equal(status.data.ok, true);
 assert.ok(status.data.routes.includes("POST /api/fs/mkdir"));
 assert.ok(status.data.routes.includes("POST /api/fs/get_direct_upload_info"));
+assert.ok(status.data.routes.includes("POST /api/fs/torrent/parse"));
+assert.ok(status.data.stages.some((item) => item.key === "torrent" && item.status === "active"));
 assert.ok(status.data.routes.includes("GET /api/authn/webauthn_begin_login"));
 
 const apiIndex = await json({ path: "/api/public/api" });
@@ -319,8 +471,10 @@ assert.equal(apiIndex.data.endpoints.proxy, "/plugin/private/siyuan-cloud/p/{pat
 assert.equal(apiIndex.data.endpoints.webdav, "/plugin/private/siyuan-cloud/dav");
 assert.equal(apiIndex.data.endpoints.s3, "/plugin/private/siyuan-cloud/s3");
 assert.ok(apiIndex.data.capabilities.includes("openlist.http-api"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.torrent.placeholder"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/fs/get"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/public/api"));
+assert.ok(apiIndex.data.routes.some((item) => item.method === "POST" && item.path === "/api/fs/torrent/generate"));
 
 const mkdir = await json({
   body: { path: "/smoke" },
@@ -423,6 +577,22 @@ const archive = await json({
 assert.equal(archive.code, 501);
 assert.equal(archive.data.operation, "meta");
 
+for (const [path, operation] of [
+  ["/api/fs/torrent/parse", "parse"],
+  ["/api/fs/torrent/upload_parse", "upload_parse"],
+  ["/api/fs/torrent/rapid_upload", "rapid_upload"],
+  ["/api/fs/torrent/generate", "generate"],
+]) {
+  const torrent = await json({
+    body: { path: "/smoke/a.txt", torrent_data: "" },
+    method: "POST",
+    path,
+  });
+  assert.equal(torrent.code, 501);
+  assert.equal(torrent.data.operation, operation);
+  assert.match(torrent.data.upstream_source, /server\/handles\/torrent\.go/);
+}
+
 const mkdirCopies = await json({
   body: { path: "/copies" },
   method: "POST",
@@ -479,6 +649,39 @@ const moveDone = await json({
 });
 assert.equal(moveDone.code, 200);
 assert.equal(moveDone.data.content.length >= 1, true);
+
+await json({ body: { path: "/copy-skip-src" }, method: "POST", path: "/api/fs/mkdir" });
+await json({ body: { path: "/copy-skip-dst" }, method: "POST", path: "/api/fs/mkdir" });
+await json({ body: { content: "source conflict", path: "/copy-skip-src/conflict.txt" }, method: "PUT", path: "/api/fs/put" });
+await json({ body: { content: "source fresh", path: "/copy-skip-src/fresh.txt" }, method: "PUT", path: "/api/fs/put" });
+await json({ body: { content: "dest conflict", path: "/copy-skip-dst/conflict.txt" }, method: "PUT", path: "/api/fs/put" });
+const copySkip = await json({
+  body: { dst_dir: "/copy-skip-dst", names: ["conflict.txt", "fresh.txt"], overwrite: false, skip_existing: true, src_dir: "/copy-skip-src" },
+  method: "POST",
+  path: "/api/fs/copy",
+});
+assert.equal(copySkip.code, 200);
+const copySkipList = await json({ body: { path: "/copy-skip-dst", page: 1, per_page: 20 }, method: "POST", path: "/api/fs/list" });
+assert.equal(copySkipList.data.content.some((item) => item.name === "conflict.txt"), true);
+assert.equal(copySkipList.data.content.some((item) => item.name === "fresh.txt"), true);
+
+await json({ body: { path: "/move-skip-src" }, method: "POST", path: "/api/fs/mkdir" });
+await json({ body: { path: "/move-skip-dst" }, method: "POST", path: "/api/fs/mkdir" });
+await json({ body: { content: "source conflict", path: "/move-skip-src/conflict.txt" }, method: "PUT", path: "/api/fs/put" });
+await json({ body: { content: "source fresh", path: "/move-skip-src/fresh.txt" }, method: "PUT", path: "/api/fs/put" });
+await json({ body: { content: "dest conflict", path: "/move-skip-dst/conflict.txt" }, method: "PUT", path: "/api/fs/put" });
+const moveSkip = await json({
+  body: { dst_dir: "/move-skip-dst", names: ["conflict.txt", "fresh.txt"], overwrite: false, skip_existing: true, src_dir: "/move-skip-src" },
+  method: "POST",
+  path: "/api/fs/move",
+});
+assert.equal(moveSkip.code, 200);
+const moveSkipDst = await json({ body: { path: "/move-skip-dst", page: 1, per_page: 20 }, method: "POST", path: "/api/fs/list" });
+assert.equal(moveSkipDst.data.content.some((item) => item.name === "conflict.txt"), true);
+assert.equal(moveSkipDst.data.content.some((item) => item.name === "fresh.txt"), true);
+const moveSkipSrc = await json({ body: { path: "/move-skip-src", page: 1, per_page: 20 }, method: "POST", path: "/api/fs/list" });
+assert.equal(moveSkipSrc.data.content.some((item) => item.name === "conflict.txt"), true);
+assert.equal(moveSkipSrc.data.content.some((item) => item.name === "fresh.txt"), false);
 
 const metaCreate = await json({
   body: { hide: "^secret", h_sub: true, path: "/smoke", readme: "readme", r_sub: true },
@@ -556,10 +759,23 @@ assert.equal(driverNames.data.includes("AliyundriveOpen"), true);
 assert.equal(driverNames.data.includes("123Pan"), true);
 assert.equal(driverNames.data.includes("Onedrive"), true);
 assert.equal(driverNames.data.includes("189Cloud"), true);
+assert.equal(driverNames.data.includes("189CloudPC"), true);
+assert.equal(driverNames.data.includes("189CloudTV"), true);
 assert.equal(driverNames.data.includes("Quark"), true);
+assert.equal(driverNames.data.includes("UC"), true);
+assert.equal(driverNames.data.includes("QuarkOpen"), true);
+assert.equal(driverNames.data.includes("QuarkTV"), true);
+assert.equal(driverNames.data.includes("UCTV"), true);
 assert.equal(driverNames.data.includes("Local"), true);
 assert.equal(driverNames.data.includes("115 Cloud"), false);
 assert.equal(driverNames.data.includes("GoogleDrive"), false);
+const quarkInfo = await json({
+  method: "GET",
+  path: "/api/admin/driver/info",
+  query: "driver=Quark",
+});
+assert.equal(quarkInfo.data.config.prefer_proxy, false);
+assert.equal(quarkInfo.data.additional.find((item) => item.name === "use_transcoding_address")?.default, "true");
 const baiduInfo = await json({
   method: "GET",
   path: "/api/admin/driver/info",
@@ -567,12 +783,40 @@ const baiduInfo = await json({
 });
 assert.equal(baiduInfo.code, 200);
 assert.equal(baiduInfo.data.additional.some((item) => item.name === "refresh_token" && item.required), true);
+assert.equal(baiduInfo.data.additional.find((item) => item.name === "download_api")?.default, "crack_video");
 const oneDriveInfo = await json({
   method: "GET",
   path: "/api/admin/driver/info",
   query: "driver=Onedrive",
 });
 assert.equal(oneDriveInfo.data.additional.some((item) => item.name === "region" && item.type === "select"), true);
+const cloud189PcInfo = await json({
+  method: "GET",
+  path: "/api/admin/driver/info",
+  query: "driver=189CloudPC",
+});
+assert.equal(cloud189PcInfo.data.additional.some((item) => item.name === "login_type" && item.type === "select"), true);
+assert.equal(cloud189PcInfo.data.additional.some((item) => item.name === "generate_torrent"), true);
+const cloud189TvInfo = await json({
+  method: "GET",
+  path: "/api/admin/driver/info",
+  query: "driver=189CloudTV",
+});
+assert.equal(cloud189TvInfo.data.additional.some((item) => item.name === "access_token"), true);
+const quarkOpenInfo = await json({
+  method: "GET",
+  path: "/api/admin/driver/info",
+  query: "driver=QuarkOpen",
+});
+assert.equal(quarkOpenInfo.data.additional.some((item) => item.name === "app_id" && item.required), true);
+assert.equal(quarkOpenInfo.data.config.only_proxy, true);
+const quarkTvInfo = await json({
+  method: "GET",
+  path: "/api/admin/driver/info",
+  query: "driver=QuarkTV",
+});
+assert.equal(quarkTvInfo.data.additional.some((item) => item.name === "link_method" && item.type === "select"), true);
+assert.equal(quarkTvInfo.data.additional.find((item) => item.name === "link_method")?.default, "streaming");
 const exportedConfig = await json({
   method: "GET",
   path: "/api/admin/config/export",
@@ -795,6 +1039,184 @@ const remote123Test = await json({
 });
 assert.equal(remote123Test.code, 200);
 assert.equal(remote123Test.data.user.nickname, "pan123-user");
+
+await json({
+  body: {
+    driver: "Quark",
+    mount_path: "/remote-quark",
+    addition: JSON.stringify({
+      cookie: "QUARK_COOKIE",
+      root_folder_id: "0",
+      order_by: "none",
+      order_direction: "asc",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteQuarkList = await json({
+  body: { path: "/remote-quark", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteQuarkList.data.provider, "Quark");
+assert.equal(remoteQuarkList.data.content[0].name, "quark-folder ");
+assert.equal(Object.hasOwn(remoteQuarkList.data.content[0], "path"), false);
+const remoteQuarkRootGet = await json({
+  body: { path: "/remote-quark" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(remoteQuarkRootGet.code, 200);
+assert.equal(remoteQuarkRootGet.data.is_dir, true);
+const remoteQuarkDirs = await json({
+  body: { path: "/remote-quark" },
+  method: "POST",
+  path: "/api/fs/dirs",
+});
+assert.equal(remoteQuarkDirs.data[0].name, "quark-folder ");
+const remoteQuarkChildList = await json({
+  body: { path: "/remote-quark/quark-folder ", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteQuarkChildList.data.content[0].name, "quark-child.txt");
+assert.equal(Object.hasOwn(remoteQuarkChildList.data.content[0], "path"), false);
+const remoteQuarkGet = await json({
+  body: { path: "/remote-quark/quark-folder /quark-child.txt" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(remoteQuarkGet.data.raw_url, "/plugin/private/siyuan-cloud/p/remote-quark/quark-folder /quark-child.txt");
+const remoteQuarkLink = await json({
+  body: { path: "/remote-quark/quark-folder /quark-child.txt" },
+  method: "POST",
+  path: "/api/fs/link",
+});
+assert.equal(remoteQuarkLink.data.url, "https://quark-download.example.test/quark-child.txt");
+assert.equal(quarkSortRequests, 2);
+assert.equal(quarkDownloadRequests, 1);
+const remoteQuarkProxyRead1 = await call({
+  headers: { Range: ["bytes=0-"] },
+  method: "GET",
+  path: "/p/remote-quark/quark-folder /quark-child.txt",
+});
+assert.equal(remoteQuarkProxyRead1.statusCode, 200);
+assert.equal(remoteQuarkProxyRead1.body.proxy.url, "https://quark-download.example.test/quark-child.txt");
+const remoteQuarkProxyRead2 = await call({
+  headers: { Range: ["bytes=1024-"] },
+  method: "GET",
+  path: "/p/remote-quark/quark-folder /quark-child.txt",
+});
+assert.equal(remoteQuarkProxyRead2.statusCode, 200);
+assert.equal(remoteQuarkProxyRead2.body.proxy.url, "https://quark-download.example.test/quark-child.txt");
+assert.equal(quarkSortRequests, 2);
+assert.equal(quarkDownloadRequests, 1);
+
+await json({
+  body: {
+    driver: "Quark",
+    mount_path: "/remote-quark-transcode",
+    addition: JSON.stringify({
+      cookie: "QUARK_COOKIE",
+      root_folder_id: "0",
+      order_by: "none",
+      order_direction: "asc",
+      use_transcoding_address: true,
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteQuarkTranscodeGet = await json({
+  body: { path: "/remote-quark-transcode/quark-folder /quark-child.txt" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(remoteQuarkTranscodeGet.data.raw_url, "https://quark-transcode.example.test/quark-child.m3u8");
+
+await json({
+  body: {
+    driver: "QuarkOpen",
+    mount_path: "/remote-quark-open",
+    addition: JSON.stringify({
+      access_token: "QUARK_OPEN_ACCESS",
+      app_id: "QUARK_APP",
+      refresh_token: "QUARK_OPEN_REFRESH",
+      root_folder_id: "0",
+      sign_key: "QUARK_SIGN",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteQuarkOpenList = await json({
+  body: { path: "/remote-quark-open", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteQuarkOpenList.data.provider, "QuarkOpen");
+assert.equal(Object.hasOwn(remoteQuarkOpenList.data.content[0], "path"), false);
+const remoteQuarkOpenLink = await json({
+  body: { path: "/remote-quark-open/quark-open.txt" },
+  method: "POST",
+  path: "/api/fs/link",
+});
+assert.equal(remoteQuarkOpenLink.data.url, "https://quark-open-download.example.test/quark-open.txt");
+
+await json({
+  body: {
+    driver: "QuarkTV",
+    mount_path: "/remote-quark-tv",
+    addition: JSON.stringify({
+      access_token: "QUARK_TV_ACCESS",
+      device_id: "QUARK_TV_DEVICE",
+      link_method: "download",
+      refresh_token: "QUARK_TV_REFRESH",
+      root_folder_id: "0",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteQuarkTvList = await json({
+  body: { path: "/remote-quark-tv", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteQuarkTvList.data.provider, "QuarkTV");
+assert.equal(Object.hasOwn(remoteQuarkTvList.data.content[0], "path"), false);
+const remoteQuarkTvLink = await json({
+  body: { path: "/remote-quark-tv/quark-tv.txt" },
+  method: "POST",
+  path: "/api/fs/link",
+});
+assert.equal(remoteQuarkTvLink.data.url, "https://quark-tv-download.example.test/quark-tv.txt");
+
+const quarkTvQrStart = await json({
+  body: {
+    driver: "QuarkTV",
+    addition: {
+      device_id: "QUARK_TV_DEVICE_QR",
+      root_folder_id: "0",
+    },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(quarkTvQrStart.code, 502);
+assert.equal(quarkTvQrStart.data.verify.qr_data, "QUARK_TV_QR_DATA");
+assert.equal(quarkTvQrStart.data.addition.query_token, "QUARK_TV_QUERY");
+const quarkTvQrDone = await json({
+  body: {
+    driver: "QuarkTV",
+    addition: quarkTvQrStart.data.addition,
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(quarkTvQrDone.code, 200);
+assert.equal(quarkTvQrDone.data.addition.refresh_token, "QUARK_TV_REFRESH_BY_QR");
 
 await json({
   body: {

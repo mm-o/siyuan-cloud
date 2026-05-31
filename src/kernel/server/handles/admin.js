@@ -53,12 +53,38 @@ export const createAdminHandlers = ({
     if (value === undefined || value === null || value === "") return fallback;
     return value === true || value === "true" || value === 1 || value === "1";
   };
+  const parseAddition = (value) => {
+    if (!value) return {};
+    if (typeof value === "object") return value;
+    try {
+      return JSON.parse(String(value || "{}"));
+    } catch (_) {
+      return {};
+    }
+  };
   const driverConfig = (driver) => driverInfoMap()[driver]?.config || {};
+  const verifyDataFromError = (error, driver, addition) => {
+    const message = error?.message || "driver test failed";
+    const html = String(message.match(/need verify:\s*([\s\S]*)/i)?.[1] || "");
+    const qrData = html.match(/base64,([^"')\s<]+)/i)?.[1] || "";
+    return {
+      driver,
+      addition,
+      verify: html ? {
+        html,
+        qr_data: qrData,
+        type: "qrcode",
+      } : null,
+    };
+  };
   const proxyDefaults = (driver, source = {}) => {
     const config = driverConfig(driver);
+    const addition = parseAddition(source.addition);
+    const quarkWebProxy = driver === "Quark" && !boolValue(addition.use_transcoding_address);
+    const preferProxy = boolValue(config.prefer_proxy) || quarkWebProxy;
     return {
-      web_proxy: boolValue(source.web_proxy, boolValue(config.prefer_proxy)),
-      webdav_policy: source.webdav_policy || (boolValue(config.prefer_proxy) ? "native_proxy" : "302_redirect"),
+      web_proxy: boolValue(source.web_proxy, preferProxy),
+      webdav_policy: source.webdav_policy || (preferProxy ? "native_proxy" : "302_redirect"),
       proxy_range: boolValue(source.proxy_range),
       down_proxy_url: source.down_proxy_url || "",
       disable_proxy_sign: boolValue(source.disable_proxy_sign),
@@ -287,7 +313,7 @@ export const createAdminHandlers = ({
       try {
         return jsonResponse(success(await driverRuntime.test(driver, addition)));
       } catch (error) {
-        return jsonResponse(failure(error.message || "driver test failed", 502, { driver }));
+        return jsonResponse(failure(error.message || "driver test failed", 502, verifyDataFromError(error, driver, addition)));
       }
     },
     "GET /api/admin/setting/get": async (request) => {

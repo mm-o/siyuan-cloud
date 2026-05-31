@@ -15,6 +15,13 @@ let dockApp: ReturnType<typeof createApp> | null = null
 let dockMount: HTMLDivElement | null = null
 const tabApps = new WeakMap<Element, ReturnType<typeof createApp>>()
 
+interface FileTabContext {
+  element: Element
+  data?: {
+    path?: string
+  }
+}
+
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
 }
@@ -45,7 +52,7 @@ onMounted(() => {
 
   plugin.addTab({
     type: 'file-manager',
-    init(this: any) {
+    init(this: FileTabContext) {
       this.element.innerHTML = ''
       const mount = document.createElement('div')
       mount.className = 'siyuan-cloud-file-tab'
@@ -54,7 +61,7 @@ onMounted(() => {
       app.mount(mount)
       tabApps.set(this.element, app)
     },
-    destroy(this: any) {
+    destroy(this: FileTabContext) {
       tabApps.get(this.element)?.unmount()
       tabApps.delete(this.element)
     },
@@ -94,7 +101,7 @@ onMounted(() => {
     callback: () => openFileManager(),
   })
 
-  ;(window as any)._siyuan_cloud = {
+  window._siyuan_cloud = {
     openPanel: openDock,
     openDock,
     openFileManager,

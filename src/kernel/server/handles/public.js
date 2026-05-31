@@ -55,6 +55,7 @@ export const createPublicHandlers = ({
       "openlist.task",
       "openlist.webdav",
       "openlist.s3",
+      "openlist.fs.torrent.placeholder",
     ],
     notes: [
       "Use this plugin private route as an OpenList-compatible base URL.",
