@@ -194,7 +194,6 @@ interface FsItem {
 }
 
 const plugin = usePlugin()
-const props = defineProps<{ initialPath?: string }>()
 const currentPath = ref('/')
 const pathInput = ref('/')
 const items = ref<FsItem[]>([])
@@ -204,6 +203,7 @@ const pathInputRef = ref<HTMLInputElement>()
 const uploadInputRef = ref<HTMLInputElement>()
 const selectedNames = ref<string[]>([])
 const selectionMode = ref(false)
+let refreshSeq = 0
 const sortedItems = computed(() =>
   [...items.value].sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name)),
 )
@@ -474,8 +474,11 @@ function escapeHtml(value: string) {
 }
 
 async function refresh() {
+  const seq = ++refreshSeq
   loading.value = true
   const payload = await fsList(currentPath.value, '', 1, 200)
+  if (seq !== refreshSeq)
+    return
   handleResp(payload, (data: any) => {
     items.value = data?.content || []
     pathInput.value = currentPath.value
@@ -495,9 +498,15 @@ async function locatePath(path = '') {
   currentPath.value = dir
   pathInput.value = dir
   await refresh()
-  if (name)
-    selectedNames.value = [name]
+  const item = items.value.find(item => item.name === name)
+  if (item?.is_dir) {
+    await goPath(target)
+    return
+  }
+  selectedNames.value = item ? [name] : []
 }
+
+defineExpose({ openPath: locatePath })
 
 async function goPath(path: string) {
   currentPath.value = normalizePath(path || '/')
@@ -773,5 +782,5 @@ function openItemMenu(event: MouseEvent, item: FsItem) {
   menu.open({ x: event.clientX, y: event.clientY })
 }
 
-onMounted(() => locatePath(props.initialPath || '/'))
+onMounted(() => locatePath('/'))
 </script>

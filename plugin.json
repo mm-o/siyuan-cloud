@@ -2,8 +2,8 @@
   "name": "siyuan-cloud",
   "author": "mm-o",
   "url": "https://github.com/mm-o/siyuan-cloud",
-  "version": "0.3.1",
-  "minAppVersion": "3.6.5",
+  "version": "0.3.2",
+  "minAppVersion": "3.7.0",
   "disabledInPublish": true,
   "kernels": [
     "all"

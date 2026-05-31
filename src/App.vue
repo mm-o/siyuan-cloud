@@ -13,13 +13,11 @@ import { OPENLIST_APP_ICON_SVG, OPENLIST_ICON_ID_APP, registerOpenListIcons } fr
 const plugin = usePlugin()
 let dockApp: ReturnType<typeof createApp> | null = null
 let dockMount: HTMLDivElement | null = null
-const tabApps = new WeakMap<Element, ReturnType<typeof createApp>>()
+let fileTabApp: ReturnType<typeof createApp> | null = null
+let fileTabVm: { openPath?: (path: string) => void } | null = null
 
 interface FileTabContext {
   element: Element
-  data?: {
-    path?: string
-  }
 }
 
 function t(key: string) {
@@ -32,7 +30,7 @@ function openDock() {
   dockButton?.click()
 }
 
-function openFileManager(path = '/') {
+function openFileManager(path?: string) {
   openTab({
     app: plugin.app,
     custom: {
@@ -40,10 +38,13 @@ function openFileManager(path = '/') {
       icon: 'iconFolder',
       title: t('fileManagerTitle'),
       data: {
-        path,
+        singleton: true,
       },
     },
-    openNewTab: true,
+    afterOpen: () => {
+      if (path)
+        fileTabVm?.openPath?.(path)
+    },
   })
 }
 
@@ -57,13 +58,13 @@ onMounted(() => {
       const mount = document.createElement('div')
       mount.className = 'siyuan-cloud-file-tab'
       this.element.appendChild(mount)
-      const app = createApp(FileTab, { initialPath: this.data?.path || '/' })
-      app.mount(mount)
-      tabApps.set(this.element, app)
+      fileTabApp = createApp(FileTab)
+      fileTabVm = fileTabApp.mount(mount) as { openPath?: (path: string) => void }
     },
-    destroy(this: FileTabContext) {
-      tabApps.get(this.element)?.unmount()
-      tabApps.delete(this.element)
+    destroy() {
+      fileTabApp?.unmount()
+      fileTabApp = null
+      fileTabVm = null
     },
   })
 

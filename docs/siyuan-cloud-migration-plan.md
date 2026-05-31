@@ -49,6 +49,7 @@
 | 虚拟 FS | list/get/put/form/mkdir/remove/rename/copy/move/download/proxy 已接入 | smoke test 覆盖文本和二进制回读 |
 | Torrent 兼容占位 | `/api/fs/torrent/parse`、`/api/fs/torrent/upload_parse`、`/api/fs/torrent/rapid_upload`、`/api/fs/torrent/generate` 已按 OpenList route 注册结构化占位 | smoke test 覆盖 route、能力索引和 Dock 进度 |
 | 前端 FS 操作 | FileTab 顶部按钮和右键菜单接入上传、下载、新建、重命名、复制、移动、删除 | `fs*` helper + `handle_resp.ts` 统一处理 |
+| Dock 文件树 | Dock 新增文件列表树视图页，按思源文档树结构使用 `file-tree` / `sy__file` / `b3-list-item` 原生 class，复用 `/api/fs/list`、FileTab 文件图标、图片 Viewer 和 companion `data-href` 链接边界 | `pnpm build` |
 | 代理播放 | `/api/fs/get.raw_url`、`/api/fs/link.raw_url`、`/d`、`/p` 走 `fs.Link -> common.Proxy -> body.proxy` 边界；Range/header 交给思源 `body.proxy` 流式转发 | 播放器插件可直接调用 OpenList HTTP API，图片走 SiYuan Viewer |
 | 驱动首批运行时 | OpenList/AListV3、WebDav、S3/Doge、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV、Local 有初始 runtime adapter | 通过最长 `mount_path` dispatch；Dock 只列出已接 runtime 的驱动 |
 | 管理面板 | driver names/info、storage create/update/enable/disable/delete、config import/export | Dock 挂载表单可验证 |
@@ -115,6 +116,15 @@
 - Quark/UC、QuarkOpen、QuarkTV/UCTV 接入共享 storage-scoped list/file/link cache，补齐 OpenList `op` 层 `dirCache` / `linkCache` 的关键播放路径行为；连续 `/p` Range 请求不再重复逐层 list 和重新取下载链接，smoke test 用 Quark API 计数断言该行为。
 - 普通 `Quark` 的代理默认值改回 OpenList `QuarkOrUC.Init` 语义：新增/更新挂载未显式传 `web_proxy` 时，只有 `use_transcoding_address=false` 才默认 `web_proxy=true`；开启转码地址的新挂载默认返回转码直链，不额外套 `/p`。
 - Dock 新挂载表单默认偏向播放体验：BaiduNetdisk `download_api=crack_video`、普通 `Quark` `use_transcoding_address=true`、QuarkTV/UCTV `link_method=streaming`；既有挂载 addition 不自动迁移。
+
+## 2026-05-31 Dock 文件树视图
+
+- Dock 新增“思盘文件”页签，文件树已内联到 `Dock.vue`，结构对齐思源 `layout/dock/Files.ts` 文档树和已有 companion 插件树视图：根级每个条目独立输出 `ul.b3-list.b3-list--background`，展开子级使用相邻 `ul`，行内保留 `--file-toggle-width`、toggle `padding-left` 和缩进线主题参数 `--QYL-indent-1`，让主题背景色与缩进线继续走思源/主题规则；不新增边框/颜色样式规则。注意 `file-tree__sliderDown` 是思源插入后的临时动画类，稳定展开状态必须移除，否则子树会保持 `height: 0`。
+- 树数据直接复用 OpenList-compatible `/api/fs/list`，目录展开按需加载并缓存当前层；刷新会清空展开缓存并重新读取根目录。
+- 点击目录在 Dock 内展开/折叠；图片按 FileTab 一样打开 Viewer，媒体和书籍文件保留 OpenList-compatible `/p/<path>` `data-href` 供 companion 插件消费，不打开主文件管理 Tab。
+- 清理重复打开入口：文件管理 Tab 使用稳定 `custom.data: { singleton: true }` 复用同一个自定义 Tab；Dock 文件页表头打开按钮、Dock 树普通文件点击、挂载卡片点击和 `siyuan://plugins/siyuan-cloud/open?path=...` 文件链接都复用同一个 `openFileManager(path)` 入口。带路径时由已挂载的 FileTab 先打开父目录并复用当前列表项判断：目录路径直接进入目录，文件路径选中目标文件；图片走 Viewer，媒体和书籍交给 companion `data-href` 链接边界。
+- Dock 管理页继续按思源原生形态收口：文件、挂载、设置、任务、分享、关于页在顶部导航下方直接渲染统一 `b3-list-item` 页级表头；顶部导航只负责页签切换，文件页表头右侧承载刷新文件树和打开主文件管理按钮；文件树直接挂在 Dock 下，不经过额外内容包装层，其他页由 `ol-body` 统一提供滚动和左右内容边距，内部列表项清掉额外左右 margin，挂载页保留原有挂载卡片和表单卡片。分享页直接复用 OpenList-compatible `/api/share/list`、`/api/share/enable`、`/api/share/disable`、`/api/share/delete`，提供复制链接、启用/禁用和删除。
+- 这是前端 Dock 可用性增强，不新增 kernel route 或 OpenList capability，因此 `/siyuan-cloud/status.stages` 暂不增加新阶段，避免把 UI 视图误标为内核迁移能力。
 
 ## 下一步
 

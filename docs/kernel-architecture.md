@@ -96,6 +96,9 @@ Dock 表单的新挂载默认值允许少量体验型偏置：BaiduNetdisk 默�
 ## 前端边界
 
 - `src/components/FileTab.vue` 是主文件管理 Tab，顶部按钮和右键菜单接入上传、下载、新建、重命名、复制、移动、删除。
+- `src/components/Dock.vue` 内联 Dock 轻量文件树，按思源 `layout/dock/Files.ts` 文档树 DOM/class 结构渲染：根级每项独立 `ul.b3-list.b3-list--background`，展开子级使用相邻 `ul`，行内保留 `--file-toggle-width`、toggle `padding-left` 和缩进线主题参数 `--QYL-indent-1`；文件树作为 Dock 的直接子级渲染，不经过额外内容包装层，避免和文件树自身左右间距叠加；它只复用 `/api/fs/list` 按需加载目录，并复用 FileTab 的 OpenList 文件图标、图片 Viewer 和 companion `data-href` 链接边界；不新增边框/颜色样式规则、不新增 kernel route，也不改变 OpenList API surface。不要在稳定渲染树上保留 `file-tree__sliderDown`，该 class 在思源源码中是临时动画态，会让子树 `height: 0`。
+- 文件管理 Tab 的打开逻辑保持单入口：`src/App.vue` 用稳定 `custom.data: { singleton: true }` 打开/聚焦同一个自定义 tab，避免重复创建主文件管理 Tab。Dock 文件树普通文件点击、挂载卡片点击和 `siyuan://plugins/siyuan-cloud/open?path=...` 文件链接都复用 `openFileManager(path)`；已挂载的 `FileTab` 先打开父目录并复用当前列表项判断，目录路径直接进入目录，文件路径选中目标文件。图片走 Viewer，媒体和书籍交给 companion `data-href` 链接边界。
+- Dock 的文件、挂载、设置、任务、分享、关于页在顶部导航下方直接渲染同一个 SiYuan 原生 `b3-list-item` 页级表头；文件页表头右侧承载刷新文件树和打开主文件管理按钮，顶部页签导航不再重复放这两个动作。文件页后面直接接文件树；其他页由 `ol-body` 统一提供左右内容边距和滚动，内部列表项清掉额外左右 margin，挂载页保留原有挂载卡片和表单卡片。分享页直接读取 OpenList-compatible `/api/share/list`，并用 `/api/share/enable`、`/api/share/disable`、`/api/share/delete` 管理现有分享。
 - `src/utils/api.ts` 对齐 OpenList Frontend `utils/api.ts`，只放 FS helper。
 - `src/utils/request.ts` 对齐 OpenList Frontend `utils/request.ts` 的 `r.post/r.put` 边界，并适配 SiYuan 私有路由前缀。
 - `src/utils/handle_resp.ts` 对齐 OpenList Frontend `utils/handle_resp.ts`，把 notify 映射到 `showMessage`。
