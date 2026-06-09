@@ -1,6 +1,6 @@
 {
   "name": "siyuan-cloud",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "type": "module",
   "description": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
   "author": "mm-o",
@@ -19,6 +19,7 @@
     "test:kernel": "node ./scripts/kernel-route-smoke.mjs"
   },
   "dependencies": {
+    "qrcode": "^1.5.4",
     "vue": "^3.3.8"
   },
   "devDependencies": {

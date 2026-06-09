@@ -121,9 +121,14 @@ export const createWebDavDriver = ({ client }) => {
       });
     },
     async put(storage, relPath, content, mime, options = {}) {
+      const body = content || "";
       await request(storage, relPath, {
-        body: content || "",
+        body,
         contentType: mime || "application/octet-stream",
+        headers: {
+          "Content-Length": String(options.size || (options.bodyEncoding === "base64" ? 0 : String(body).length)),
+          "Content-Type": mime || "application/octet-stream",
+        },
         method: "PUT",
         payloadEncoding: options.bodyEncoding === "base64" ? "base64" : undefined,
       });

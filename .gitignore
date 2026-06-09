@@ -3,7 +3,6 @@
 .DS_Store
 pnpm-lock.yaml
 /kernel.js
-package.zip
 node_modules
 dev
 dist

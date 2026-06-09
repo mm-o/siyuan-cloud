@@ -8,7 +8,6 @@ import {
 } from "../common.js";
 import {
   forwardProxy,
-  remoteJson,
 } from "../http.js";
 
 const API_URL = "https://api.cloud.189.cn";
@@ -92,6 +91,17 @@ const pathOfUrl = (url) => new URL(url).pathname || "/";
 const httpDate = () => new Date().toUTCString();
 const timestamp = () => Date.now();
 const randomSuffix = () => `${Math.floor(Math.random() * 100000)}_${Math.floor(Math.random() * 10000000000)}`;
+const tvClientSuffix = () => ({
+  clientType: "FAMILY_TV",
+  version: "6.5.5",
+  channelId: "home02",
+  clientSn: "unknown",
+  model: "PJX110",
+  osFamily: "Android",
+  osVersion: "35",
+  networkAccessMode: "WIFI",
+  telecomsOperator: "46011",
+});
 const toDesc = (order) => order === "desc" ? "true" : "false";
 const toFamilyOrderBy = (order) => {
   if (order === "filesize") return "2";
@@ -107,6 +117,17 @@ const rootFolderId = (addition, isFamily) => {
 };
 const familyId = (addition) => String(addition.family_id || addition.FamilyID || "");
 
+const normalize189SessionAddition = (addition) => {
+  if (familyMode(addition) && (addition.root_folder_id || addition.RootFolderID) === "-11") {
+    addition.root_folder_id = "";
+    delete addition.RootFolderID;
+  }
+  if (!familyMode(addition) && !(addition.root_folder_id || addition.RootFolderID)) {
+    addition.root_folder_id = "-11";
+    delete addition.RootFolderID;
+  }
+};
+
 const checkResp = (payload) => {
   if (!payload || typeof payload !== "object") return payload;
   const resCode = payload.res_code ?? payload.resCode;
@@ -117,6 +138,23 @@ const checkResp = (payload) => {
   if (payload.code && payload.code !== "SUCCESS") throw new Error(payload.message || payload.msg || payload.code);
   if (payload.error) throw new Error(payload.message || payload.error);
   return payload;
+};
+
+const parse189Json = (text, url) => {
+  const safe = String(text || "{}").replace(
+    /"((?:id|parentId|familyId|fileId|folderId|targetFolderId|uploadFileId|userFileId|operId|srcFileOwnerId|taskId))"\s*:\s*(-?\d{15,})/gi,
+    (_, key, value) => `"${key}":"${value}"`,
+  );
+  try {
+    return JSON.parse(safe);
+  } catch (error) {
+    throw new Error(`invalid JSON response from ${url}: ${error.message}`);
+  }
+};
+
+const remote189Json = async (client, url, options) => {
+  const data = await forwardProxy(client, url, options);
+  return parse189Json(data.body, url);
 };
 
 const headerValue = (headers = {}, name) => {
@@ -139,6 +177,28 @@ const resolveRedirect = async (client, url) => {
   return headerValue(resp.headers, "location") || url;
 };
 
+const requestTvAppKeyJson = async (client, url, query = {}) => {
+  const target = new URL(url);
+  for (const [key, value] of Object.entries({ ...tvClientSuffix(), ...query })) {
+    if (value !== undefined && value !== null && value !== "") target.searchParams.set(key, String(value));
+  }
+  const tempTime = timestamp();
+  const signText = `AppKey=${TV_APP_KEY}&Operate=GET&RequestURI=${pathOfUrl(url)}&Timestamp=${tempTime}`;
+  const resp = await remote189Json(client, target.toString(), {
+    allowErrorStatus: true,
+    headers: {
+      Accept: "application/json;charset=UTF-8",
+      AppKey: TV_APP_KEY,
+      AppSignature: hmacSha1Hex(TV_APP_SIGNATURE_SECRET, signText),
+      Timestamp: String(tempTime),
+      "User-Agent": "EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35",
+      "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    },
+    method: "GET",
+  });
+  return checkResp(resp);
+};
+
 const jsonWithSignedQuery = async (client, url, {
   addition,
   body,
@@ -150,17 +210,7 @@ const jsonWithSignedQuery = async (client, url, {
 } = {}) => {
   const target = new URL(url);
   const suffix = mode === "tv"
-    ? {
-        clientType: "FAMILY_TV",
-        version: "6.5.5",
-        channelId: "home02",
-        clientSn: "unknown",
-        model: "PJX110",
-        osFamily: "Android",
-        osVersion: "35",
-        networkAccessMode: "WIFI",
-        telecomsOperator: "46011",
-      }
+    ? tvClientSuffix()
     : {
         clientType: "TELEPC",
         version: "6.2",
@@ -183,7 +233,7 @@ const jsonWithSignedQuery = async (client, url, {
     "User-Agent": mode === "tv" ? "EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35" : "Mozilla/5.0",
     "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   };
-  const resp = await remoteJson(client, target.toString(), {
+  const resp = await remote189Json(client, target.toString(), {
     allowErrorStatus: true,
     body,
     contentType: "application/x-www-form-urlencoded",
@@ -205,7 +255,7 @@ export const refreshPcSession = async (client, storage) => {
   url.searchParams.set("rand", randomSuffix());
   url.searchParams.set("appId", "8025431004");
   url.searchParams.set("accessToken", accessToken);
-  const resp = checkResp(await remoteJson(client, url.toString(), {
+  const resp = checkResp(await remote189Json(client, url.toString(), {
     allowErrorStatus: true,
     headers: { "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}` },
     method: "GET",
@@ -221,44 +271,56 @@ export const refreshPcSession = async (client, storage) => {
 
 export const refreshTvSession = async (client, storage) => {
   const addition = storage.addition_json;
+  normalize189SessionAddition(addition);
   const accessToken = addition.access_token || addition.AccessToken;
-  if (!accessToken) throw new Error("189CloudTV access_token is empty; QR-code login is not implemented in the SiYuan kernel port yet");
+  if (!accessToken) throw new Error("189CloudTV access_token is empty; QR-code login is required");
   const url = `${API_URL}/family/manage/loginFamilyMerge.action`;
-  const target = new URL(url);
-  const tempTime = timestamp();
-  const signText = `AppKey=${TV_APP_KEY}&Operate=GET&RequestURI=${pathOfUrl(url)}&Timestamp=${tempTime}`;
-  for (const [key, value] of Object.entries({
-    clientType: "FAMILY_TV",
-    version: "6.5.5",
-    channelId: "home02",
-    clientSn: "unknown",
-    model: "PJX110",
-    osFamily: "Android",
-    osVersion: "35",
-    networkAccessMode: "WIFI",
-    telecomsOperator: "46011",
+  const resp = await requestTvAppKeyJson(client, url, {
     e189AccessToken: accessToken,
-  })) {
-    target.searchParams.set(key, String(value));
-  }
-  const resp = checkResp(await remoteJson(client, target.toString(), {
-    allowErrorStatus: true,
-    headers: {
-      AppKey: TV_APP_KEY,
-      AppSignature: hmacSha1Hex(TV_APP_SIGNATURE_SECRET, signText),
-      Timestamp: String(tempTime),
-      "User-Agent": "EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35",
-      "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    },
-    method: "GET",
-  }));
+  });
   addition.sessionKey = resp.sessionKey;
   addition.sessionSecret = resp.sessionSecret;
   addition.familySessionKey = resp.familySessionKey;
   addition.familySessionSecret = resp.familySessionSecret;
   addition.loginName = resp.loginName;
+  if (familyMode(addition) && !familyId(addition)) {
+    const familyResp = await jsonWithSignedQuery(client, `${API_URL}/family/manage/getFamilyList.action`, {
+      addition,
+      isFamily: true,
+      mode: "tv",
+    });
+    const families = Array.isArray(familyResp.familyInfoResp) ? familyResp.familyInfoResp : [];
+    const matched = families.find((item) => addition.loginName && String(item.remarkName || "").includes(addition.loginName))
+      || families.find((item) => addition.loginName && String(addition.loginName).includes(item.remarkName || "\0"))
+      || families[0];
+    if (matched?.familyId !== undefined && matched?.familyId !== null) addition.family_id = String(matched.familyId);
+  }
   await persistAddition(storage);
   return addition;
+};
+
+const loginTvByQrCode = async (client, storage) => {
+  const addition = storage.addition_json;
+  if (!addition.access_token && !addition.AccessToken) {
+    const tempUuid = addition.temp_uuid || addition.TempUuid;
+    if (!tempUuid) {
+      const resp = await requestTvAppKeyJson(client, `${API_URL}/family/manage/getQrCodeUUID.action`);
+      if (!resp.uuid) throw new Error("uuidInfo is empty");
+      addition.temp_uuid = resp.uuid;
+      await persistAddition(storage);
+      throw new Error(`need verify: \n<body>\n    <a href="${resp.uuid}">${resp.uuid}</a>\n</body>`);
+    }
+    const resp = await requestTvAppKeyJson(client, `${API_URL}/family/manage/qrcodeLoginResult.action`, {
+      uuid: tempUuid,
+    });
+    const accessToken = resp.accessToken || resp.e189AccessToken;
+    if (!accessToken) throw new Error("E189AccessToken is empty");
+    addition.access_token = accessToken;
+    delete addition.AccessToken;
+    delete addition.temp_uuid;
+    delete addition.TempUuid;
+  }
+  return refreshTvSession(client, storage);
 };
 
 const ensureSession = async (client, storage, mode) => {
@@ -395,7 +457,7 @@ const batchTask = async (client, storage, mode, type, targetFolderId, files, oth
 
 export const create189SessionDriver = ({ client, mode, provider }) => ({
   async test(storage) {
-    if (mode === "tv") await refreshTvSession(client, storage);
+    if (mode === "tv") await loginTvByQrCode(client, storage);
     else await refreshPcSession(client, storage);
     await request189Session(client, storage, `${API_URL}/getUserInfo.action`, { mode });
     return { addition: storage.addition_json };

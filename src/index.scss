@@ -28,7 +28,12 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+
+  .b3-button {
+    min-width: 72px;
+  }
 }
 
 .ol-body {
@@ -62,6 +67,22 @@
   }
 }
 
+.ol-secret-field {
+  position: relative;
+  display: block;
+
+  .b3-text-field {
+    padding-right: 32px;
+  }
+
+  .block__icon {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+  }
+}
+
 .ol-addition {
   display: block;
   width: 100%;
@@ -70,6 +91,24 @@
   box-sizing: border-box;
   resize: vertical;
   font-family: var(--b3-font-family-code);
+}
+
+.ol-addition-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ol-inline-action {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+
+  .b3-text-field {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 .ol-driver-note img {
@@ -105,6 +144,15 @@
   background: var(--b3-theme-background);
   box-sizing: border-box;
   overflow: visible;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.ol-mount-row {
+  appearance: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .ol-mount-row__cover {
@@ -168,6 +216,27 @@
   box-sizing: border-box;
 }
 
+.ol-user-permission,
+.ol-permissions {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ol-permission {
+  margin-inline: 0;
+}
+
+.ol-fold-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .b3-list-item__arrow {
+    transition: transform 0.18s ease;
+  }
+}
+
 .ol-file-tab {
   --ol-file-gap: 10px;
   --ol-file-indent: 8px;
@@ -180,6 +249,20 @@
 .ol-file-tab__main {
   min-width: 0;
   overflow: hidden;
+}
+
+.ol-file-tab__input {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  width: min(320px, 36vw);
+  min-width: 160px;
+
+  .b3-text-field {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+  }
 }
 
 .ol-file-row {
@@ -210,10 +293,23 @@
 }
 
 .ol-file-row__label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ol-file-row__name,
+.ol-file-row__parent {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ol-file-row__parent {
+  color: var(--b3-theme-on-surface-light);
+  font-size: 12px;
 }
 
 .ol-file-row__icon {

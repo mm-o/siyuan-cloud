@@ -3,6 +3,7 @@ import {
   forwardProxy,
   remoteJson,
 } from "../http.js";
+import { signAwsV4 } from "../aws4.js";
 
 const API = "https://www.123pan.com/api";
 const B_API = "https://www.123pan.com/b/api";
@@ -12,9 +13,15 @@ const USER_INFO = B_API + "/user/info";
 const FILE_LIST = B_API + "/file/list/new";
 const DOWNLOAD_INFO = B_API + "/file/download_info";
 const MKDIR = B_API + "/file/upload_request";
+const UPLOAD_REQUEST = B_API + "/file/upload_request";
+const UPLOAD_COMPLETE = B_API + "/file/upload_complete";
+const S3_PRE_SIGNED_URLS = B_API + "/file/s3_repare_upload_parts_batch";
+const S3_AUTH = B_API + "/file/s3_upload_object/auth";
+const UPLOAD_COMPLETE_V2 = B_API + "/file/upload_complete/v2";
 const MOVE = B_API + "/file/mod_pid";
 const RENAME = B_API + "/file/rename";
 const TRASH = B_API + "/file/trash";
+const UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024;
 
 const crcTable = (() => {
   const table = [];
@@ -82,6 +89,102 @@ const decodeBase64 = (value) => {
     return output;
   }
 };
+
+const base64ToBytes = (value) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = String(value || "").replace(/[\r\n\s]/g, "");
+  const out = [];
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = chars.indexOf(clean[i]);
+    const b = chars.indexOf(clean[i + 1]);
+    const c = clean[i + 2] === "=" ? -1 : chars.indexOf(clean[i + 2]);
+    const d = clean[i + 3] === "=" ? -1 : chars.indexOf(clean[i + 3]);
+    if (a < 0 || b < 0) continue;
+    out.push((a << 2) | (b >> 4));
+    if (c >= 0) out.push(((b & 15) << 4) | (c >> 2));
+    if (d >= 0) out.push(((c & 3) << 6) | d);
+  }
+  return Uint8Array.from(out);
+};
+
+const bytesToBase64 = (bytes) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const b = bytes[i + 1];
+    const c = bytes[i + 2];
+    out += chars[a >> 2];
+    out += chars[((a & 3) << 4) | ((b || 0) >> 4)];
+    out += i + 1 < bytes.length ? chars[((b & 15) << 2) | ((c || 0) >> 6)] : "=";
+    out += i + 2 < bytes.length ? chars[c & 63] : "=";
+  }
+  return out;
+};
+
+const utf8Bytes = (value) => {
+  const text = unescape(encodeURIComponent(String(value || "")));
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i += 1) out[i] = text.charCodeAt(i);
+  return out;
+};
+
+const leftRotate = (value, amount) => (value << amount) | (value >>> (32 - amount));
+const md5Hex = (input) => {
+  const source = input instanceof Uint8Array ? input : utf8Bytes(input);
+  const bitLen = source.length * 8;
+  const paddedLen = (((source.length + 9 + 63) >> 6) << 6);
+  const bytes = new Uint8Array(paddedLen);
+  bytes.set(source);
+  bytes[source.length] = 0x80;
+  const view = new DataView(bytes.buffer);
+  view.setUint32(paddedLen - 8, bitLen >>> 0, true);
+  view.setUint32(paddedLen - 4, Math.floor(bitLen / 0x100000000), true);
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+  const s = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  const k = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000) >>> 0);
+  for (let offset = 0; offset < paddedLen; offset += 64) {
+    let a = a0; let b = b0; let c = c0; let d = d0;
+    for (let i = 0; i < 64; i += 1) {
+      let f;
+      let g;
+      if (i < 16) {
+        f = (b & c) | (~b & d);
+        g = i;
+      } else if (i < 32) {
+        f = (d & b) | (~d & c);
+        g = (5 * i + 1) % 16;
+      } else if (i < 48) {
+        f = b ^ c ^ d;
+        g = (3 * i + 5) % 16;
+      } else {
+        f = c ^ (b | ~d);
+        g = (7 * i) % 16;
+      }
+      const tmp = d;
+      const word = view.getUint32(offset + g * 4, true);
+      d = c;
+      c = b;
+      b = (b + leftRotate((a + f + k[i] + word) >>> 0, s[i])) >>> 0;
+      a = tmp;
+    }
+    a0 = (a0 + a) >>> 0;
+    b0 = (b0 + b) >>> 0;
+    c0 = (c0 + c) >>> 0;
+    d0 = (d0 + d) >>> 0;
+  }
+  return [a0, b0, c0, d0]
+    .map((value) => [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]
+      .map((byte) => byte.toString(16).padStart(2, "0")).join(""))
+    .join("");
+};
+
+const uploadBytes = (content, options = {}) => options.bodyEncoding === "base64"
+  ? base64ToBytes(content || "")
+  : utf8Bytes(content || "");
 
 const platform = (addition) => addition.platform || addition.Platform || "web";
 
@@ -310,6 +413,98 @@ const linkFor = async (client, storage, file) => {
   };
 };
 
+const uploadReqData = (data = {}) => data.data || data.Data || {};
+const uploadField = (data, name) => data?.[name] ?? data?.[name.charAt(0).toLowerCase() + name.slice(1)] ?? "";
+
+const getS3UploadUrls = async (client, storage, upReq, start, end, multipart) => {
+  const data = uploadReqData(upReq);
+  const payload = await request123(client, storage, multipart ? S3_PRE_SIGNED_URLS : S3_AUTH, {
+    body: {
+      StorageNode: uploadField(data, "StorageNode"),
+      bucket: uploadField(data, "Bucket"),
+      key: uploadField(data, "Key"),
+      partNumberEnd: end,
+      partNumberStart: start,
+      uploadId: uploadField(data, "UploadId"),
+    },
+    method: "POST",
+  });
+  return uploadReqData(payload).presignedUrls || uploadReqData(payload).PreSignedUrls || {};
+};
+
+const completeS3V2 = (client, storage, upReq, size, isMultipart) => {
+  const data = uploadReqData(upReq);
+  return request123(client, storage, UPLOAD_COMPLETE_V2, {
+    body: {
+      StorageNode: uploadField(data, "StorageNode"),
+      bucket: uploadField(data, "Bucket"),
+      fileId: uploadField(data, "FileId"),
+      fileSize: size,
+      isMultipart,
+      key: uploadField(data, "Key"),
+      uploadId: uploadField(data, "UploadId"),
+    },
+    method: "POST",
+  });
+};
+
+const putPresignedChunks = async (client, storage, upReq, bytes) => {
+  const chunkCount = Math.max(1, Math.ceil(bytes.length / UPLOAD_CHUNK_SIZE));
+  const multipart = chunkCount > 1;
+  const batchSize = multipart ? 10 : 1;
+  for (let index = 1; index <= chunkCount; index += batchSize) {
+    const start = index;
+    const end = Math.min(index + batchSize, chunkCount + 1);
+    const urls = await getS3UploadUrls(client, storage, upReq, start, end, multipart);
+    for (let cur = start; cur < end; cur += 1) {
+      const offset = (cur - 1) * UPLOAD_CHUNK_SIZE;
+      const chunk = bytes.slice(offset, Math.min(offset + UPLOAD_CHUNK_SIZE, bytes.length));
+      const url = urls[String(cur)];
+      if (!url) throw new Error(`upload url is empty for 123Pan chunk ${cur}`);
+      await forwardProxy(client, url, {
+        body: bytesToBase64(chunk),
+        contentType: "application/octet-stream",
+        headers: { "Content-Length": String(chunk.length) },
+        method: "PUT",
+        payloadEncoding: "base64",
+        responseEncoding: "text",
+        timeout: 120000,
+      });
+    }
+  }
+  await completeS3V2(client, storage, upReq, bytes.length, multipart);
+};
+
+const putAwsS3 = async (client, upReq, bytes, mime) => {
+  const data = uploadReqData(upReq);
+  const endpoint = String(uploadField(data, "EndPoint")).replace(/\/+$/, "");
+  const bucket = uploadField(data, "Bucket");
+  const key = uploadField(data, "Key");
+  const url = `${endpoint}/${encodeURIComponent(bucket)}/${String(key).split("/").map(encodeURIComponent).join("/")}`;
+  const body = bytesToBase64(bytes);
+  const headers = signAwsV4({
+    accessKeyId: uploadField(data, "AccessKeyId"),
+    body: bytes,
+    headers: {
+      "content-type": mime || "application/octet-stream",
+    },
+    method: "PUT",
+    region: "123pan",
+    secretAccessKey: uploadField(data, "SecretAccessKey"),
+    sessionToken: uploadField(data, "SessionToken"),
+    url,
+  });
+  await forwardProxy(client, url, {
+    body,
+    contentType: mime || "application/octet-stream",
+    headers,
+    method: "PUT",
+    payloadEncoding: "base64",
+    responseEncoding: "text",
+    timeout: 120000,
+  });
+};
+
 export const create123PanDriver = ({ client }) => ({
   async list(storage, relPath) {
     const target = await resolveFile(client, storage, relPath);
@@ -411,8 +606,32 @@ export const create123PanDriver = ({ client }) => ({
     });
   },
 
-  async put() {
-    throw new Error("123Pan upload is not implemented in the SiYuan kernel port yet; OpenList upload_request/S3 upload_complete flow is the next migration step.");
+  async put(storage, relPath, content, mime, options = {}) {
+    const parent = await resolveFile(client, storage, dirname(relPath));
+    const bytes = uploadBytes(content, options);
+    const uploadReq = await request123(client, storage, UPLOAD_REQUEST, {
+      body: {
+        driveId: 0,
+        duplicate: 2,
+        etag: md5Hex(bytes).toLowerCase(),
+        fileName: basename(relPath),
+        parentFileId: parent.id,
+        size: Number(options.size ?? bytes.length),
+        type: 0,
+      },
+      method: "POST",
+    });
+    const data = uploadReqData(uploadReq);
+    if (uploadField(data, "Reuse") || !uploadField(data, "Key")) return;
+    if (uploadField(data, "AccessKeyId") && uploadField(data, "SecretAccessKey") && uploadField(data, "SessionToken")) {
+      await putAwsS3(client, uploadReq, bytes, mime);
+      await request123(client, storage, UPLOAD_COMPLETE, {
+        body: { fileId: uploadField(data, "FileId") },
+        method: "POST",
+      });
+      return;
+    }
+    await putPresignedChunks(client, storage, uploadReq, bytes);
   },
 
   async test(storage) {

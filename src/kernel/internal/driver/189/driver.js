@@ -7,12 +7,44 @@ import {
 } from "../common.js";
 import {
   forwardProxy,
-  remoteJson,
 } from "../http.js";
+import { login189, remember189Cookies, submit189Sms } from "./login.js";
+import { put189 } from "./upload.js";
 
 const randomNoCache = () => String(Date.now()) + String(Math.random()).slice(2, 8);
+const loginChecked = new Set();
 
 const cookieHeader = (addition) => addition.cookie || addition.Cookie || "";
+
+const storageLoginKey = (storage) => String(storage.id || storage.mount_path || JSON.stringify({
+  username: storage.addition_json?.username || "",
+  root_folder_id: storage.addition_json?.root_folder_id || "",
+}));
+
+const ensureLogin = async (client, storage, { allowSms = false, force = false } = {}) => {
+  const addition = storage.addition_json || {};
+  if (!addition.username || !addition.password) return;
+  const key = storageLoginKey(storage);
+  if (!force && loginChecked.has(key)) return;
+  if (!force && cookieHeader(addition)) {
+    loginChecked.add(key);
+    return;
+  }
+  await login189(client, storage, { allowSms });
+  loginChecked.add(key);
+};
+
+const invalidSession = (payload) => {
+  const text = [
+    payload?.errorCode,
+    payload?.errorMsg,
+    payload?.res_message,
+    payload?.resMessage,
+    payload?.msg,
+    payload?.message,
+  ].filter(Boolean).join(" ");
+  return /InvalidSessionKey|cookieUserSession/i.test(text);
+};
 
 const check189 = (payload) => {
   if (payload?.errorCode) throw new Error(payload.errorMsg || payload.errorCode);
@@ -22,17 +54,20 @@ const check189 = (payload) => {
 };
 
 const request189 = async (client, storage, url, {
+  allowRelogin = false,
   body,
   contentType = "application/json",
   method = "GET",
   query = {},
+  retried = false,
 } = {}) => {
+  await ensureLogin(client, storage);
   const target = new URL(url);
   target.searchParams.set("noCache", randomNoCache());
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== "") target.searchParams.set(key, String(value));
   }
-  const resp = await remoteJson(client, target.toString(), {
+  const response = await forwardProxy(client, target.toString(), {
     allowErrorStatus: true,
     body,
     contentType,
@@ -44,6 +79,27 @@ const request189 = async (client, storage, url, {
     },
     method,
   });
+  await remember189Cookies(storage, response);
+  let resp;
+  try {
+    resp = JSON.parse(response.body || "{}");
+  } catch (error) {
+    throw new Error(`invalid JSON response from ${target.toString()}: ${error.message}`);
+  }
+  if (invalidSession(resp) && !retried) {
+    if (!allowRelogin || cookieHeader(storage.addition_json)) {
+      throw new Error("189Cloud login cookie is invalid or expired; open the mount settings and verify SMS again before browsing files");
+    }
+    await ensureLogin(client, storage, { force: true });
+    return request189(client, storage, url, {
+      allowRelogin,
+      body,
+      contentType,
+      method,
+      query,
+      retried: true,
+    });
+  }
   return check189(resp);
 };
 
@@ -167,8 +223,14 @@ const batchTask = async (client, storage, type, targetFolderId, files) => {
 };
 
 export const create189CloudDriver = ({ client }) => ({
+  async verify(storage, verify) {
+    if (verify?.type !== "sms") throw new Error("unsupported 189Cloud verify type");
+    return submit189Sms(client, storage, verify);
+  },
+
   async test(storage) {
-    await request189(client, storage, "https://cloud.189.cn/api/portal/getUserSizeInfo.action");
+    await ensureLogin(client, storage, { allowSms: true, force: true });
+    await request189(client, storage, "https://cloud.189.cn/api/portal/getUserSizeInfo.action", { allowRelogin: true });
     return { addition: storage.addition_json };
   },
 
@@ -259,7 +321,7 @@ export const create189CloudDriver = ({ client }) => ({
     });
   },
 
-  async put() {
-    throw new Error("189Cloud upload/login encryption is not implemented in the SiYuan kernel port yet");
+  async put(storage, relPath, content, mime, options = {}) {
+    await put189(client, storage, resolveFile, relPath, content, mime, options);
   },
 });

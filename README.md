@@ -1,6 +1,31 @@
 # Siyuan Cloud
 
-> Compatibility note: this plugin can be installed on SiYuan 3.6.5 or later, but the complete kernel-plugin HTTP and streaming proxy capabilities require SiYuan 3.7.0 or later. For the full Siyuan Cloud experience, try the latest SiYuan dev build.
+> Compatibility note: this plugin requires SiYuan 3.7.0 or later.
+
+## 0.3.4 Update
+
+### Added
+
+- Added the 115 Cloud runtime adapter with Cookie/QR-token login, list, get, read, download/playback links, basic folder management, and storage details.
+- Added more upload flows: 123Pan presigned/S3 upload, 189Cloud account login, SMS second verification, and multipart upload, plus Baidu Netdisk, OneDrive, AliyundriveOpen, Quark, and QuarkOpen upload paths.
+- Added Dock user management, OpenList-compatible permission editing, share create/edit flows, mount context menus, current-tree search, QR login, SMS verification, and driver config import/export.
+- Added OpenList-compatible multi-file shares with custom share IDs, passwords, expiry, access limits, Readme/Header fields, enable/disable controls, and access counting.
+- Added local search index build, update, clear, and progress APIs with ignore paths, max depth, and mount-level disable-index support.
+
+### Improved
+
+- Bumped the release to 0.3.4 and raised the minimum supported SiYuan version to 3.7.0.
+- Improved the file manager with local workspace and host-file access, upload, new file/folder, delete, copy, move, rename, share, download/proxy links, Markdown link copying, and batch operations across search results or multiple source directories.
+- Improved driver configuration forms with field labels, option translations, secret-field visibility toggles, QR-code generation, SMS verification state, and runtime capability notes.
+- Improved kernel persistence by splitting config, runtime, and search-index files, with legacy state migration and targeted config/runtime/search saves.
+- Improved OpenList-compatible APIs for login, users, shares, tasks, archive placeholders, upload, direct-upload information, public capability discovery, status, WebDAV/S3, and route aliases.
+
+### Fixed
+
+- Fixed the mismatch between Local storage documentation and runtime behavior: the desktop frontend accesses host files through Electron fs, while the kernel HTTP runtime keeps Local metadata only.
+- Fixed compatibility gaps in share routes, share downloads, password checks, expiry checks, access counting, and multi-file share directory rendering.
+- Fixed task, archive placeholder, upload, and direct-upload response shapes that were not compatible enough with OpenList clients.
+- Fixed edge cases across multi-drive login, token refresh, upload chunks, direct-link reads, and basic file management flows; route smoke coverage was expanded accordingly.
 
 Siyuan Cloud is a standalone cloud-drive aggregation manager for SiYuan, rebuilt from OpenList and adapted for SiYuan. It does not depend on or launch the OpenList backend; instead, it brings multi-cloud mounting, cloud file management, cloud file viewing, media playback, image-hosting links, WebDAV/S3 access, and plugin APIs into SiYuan, mounting Baidu Netdisk, OneDrive, 123Pan, 189Cloud, Quark, AliyundriveOpen, WebDAV, S3, local workspace files, and remote OpenList/AList servers into one file tree.
 
@@ -33,10 +58,11 @@ Runtime adapters currently available in the Dock mount list:
 | AliyundriveOpen | List/get/link and basic management |
 | WebDAV | List, read/write, proxy playback, basic management |
 | S3 / Doge | Bucket/object list, read/write/delete/copy, lightweight multipart skeleton |
-| Local | SiYuan workspace-relative `/api/file` access |
+| 115 Cloud | Cookie/QR-token login, list/get/read/link, and basic management |
+| Local | Desktop frontend access to the host filesystem through Electron fs; the kernel HTTP runtime keeps metadata only |
 | Virtual storage | Built-in compatibility and testing file system |
 
-Drivers such as 115, Google Drive, Google Photos, AliyunDrive Share, OneDrive Sharelink, PikPak, SFTP, SMB, and Lanzou are still being ported. Drivers without runtime adapters are hidden from the Dock mount picker.
+Drivers such as Google Drive, Google Photos, AliyunDrive Share, OneDrive Sharelink, PikPak, SFTP, SMB, and Lanzou are still being ported. Drivers without runtime adapters are hidden from the Dock mount picker.
 
 ## Document-Ready Links
 
@@ -82,7 +108,7 @@ Notes:
 
 Recommended quick path:
 
-1. Use SiYuan 3.7.0 or later for full feature verification. You can install the plugin on 3.6.5+, but some kernel-plugin HTTP/proxy capabilities may be incomplete before 3.7.0.
+1. Use SiYuan 3.7.0 or later for feature verification.
 2. Open the Dock panel, go to Mounts, and add a storage. `123Pan` is recommended for the first playback test because its direct playback path is simpler.
 3. Browse the mounted files from the top bar file manager.
 4. Right-click a media file, choose Copy Link, then paste the generated Markdown link into a SiYuan document.
@@ -177,9 +203,9 @@ Siyuan Cloud is a file capability layer, not just a single-drive client:
 
 ## Current Limits
 
-- SiYuan 3.6.5 is the minimum install version. Complete file routing, playback, and proxy behavior require SiYuan 3.7.0 or later with kernel plugin HTTP `body.proxy` support, tracked by SiYuan PR #17748.
+- SiYuan 3.7.0 is the minimum install version and is required for complete file routing, playback, and proxy behavior with kernel plugin HTTP `body.proxy` support.
 - Some drivers are still being ported or are early runtime adapters. Upload, multipart upload, offline download, and full share behavior will continue to be completed.
-- Local storage is limited to SiYuan workspace-relative paths and does not expose arbitrary host absolute paths.
+- Local storage uses the desktop frontend runtime to access host filesystem paths; the kernel HTTP runtime keeps Local metadata only.
 - Network proxies may break some cloud-drive media links, especially Baidu Netdisk playback URLs.
 
 ## Development

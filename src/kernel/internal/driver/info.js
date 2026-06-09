@@ -274,14 +274,18 @@ const buildDriverInfoMap = () => withAliases({
     bool("enable_direct_upload", false),
     text("direct_upload_host"),
   ]), { check_status: true }),
-  "115 Cloud": unsupported("115 Cloud", [
+  "115 Cloud": configPatch(supported("115 Cloud", [
     rootId("0"),
     text("cookie", false, "one of QR code token and cookie required"),
     text("qrcode_token", false, "one of QR code token and cookie required"),
     select("qrcode_source", ["web", "android", "ios", "tv", "alipaymini", "wechatmini", "qandroid"], "linux"),
     number("page_size", 1000),
     float("limit_rate", 2),
-  ]),
+  ]), {
+    link_cache_mode: "ua",
+    no_upload: true,
+    note: "Runtime ports OpenList 115 Cloud cookie/QR-token login, list/get/read/link, basic management, and storage details. Upload/offline download remain structured placeholders.",
+  }),
   "115 Open": unsupported("115 Open", [
     rootId(),
     select("order_by", ["file_name", "file_size", "user_utime", "file_type"]),
@@ -351,7 +355,7 @@ const buildDriverInfoMap = () => withAliases({
     bool("rapid_upload", false),
   ]), {
     check_status: true,
-    note: "Initial runtime ports OpenList 189CloudTV list/get/read/link and basic management when an access_token/session is available. TV QR login and upload remain structured placeholders.",
+    note: "Runtime ports OpenList 189CloudTV QR login, session refresh, list/get/read/link, and basic management. Upload remains a structured placeholder.",
   }),
   Aliyundrive: unsupported("Aliyundrive", [
     rootId("root"),
@@ -530,7 +534,7 @@ const buildDriverInfoMap = () => withAliases({
   URLTree: unsupported("URLTree", [text("url", true)]),
   USS: unsupported("USS", [text("bucket", true), text("endpoint", true), text("operator", true), password("password", true)]),
   Virtual: unsupported("Virtual", []),
-  Local: configPatch(preferProxy(supported("Local", [
+  Local: configPatch(unsupported("Local", [
     rootPath("/"),
     bool("directory_size", false, "This might impact host performance"),
     bool("thumbnail", false, "enable thumbnail"),
@@ -540,7 +544,11 @@ const buildDriverInfoMap = () => withAliases({
     bool("show_hidden", true, "show hidden directories and files"),
     field("mkdir_perm", "string", "777"),
     field("recycle_bin_path", "string", "delete permanently"),
-  ])), { no_cache: true, no_link_url: true }),
+  ]), {
+    no_cache: true,
+    no_link_url: true,
+    note: "Desktop frontend runtime accesses host fs through Electron. The kernel OpenList HTTP runtime keeps Local metadata only and does not proxy local disks.",
+  }),
 });
 
 export const driverInfoMap = () => buildDriverInfoMap();
@@ -555,6 +563,7 @@ const exposedDriverNames = [
   "AList V3",
   "S3",
   "Doge",
+  "115 Cloud",
   "123Pan",
   "189Cloud",
   "189CloudPC",

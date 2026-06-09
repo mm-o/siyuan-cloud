@@ -1,11 +1,11 @@
 import { normalizePath } from "../model/path.js";
+import { create115Driver } from "./115/driver.js";
 import { create123PanDriver } from "./123/driver.js";
 import { create189CloudDriver } from "./189/driver.js";
 import { create189CloudTVDriver } from "./189_tv/driver.js";
 import { create189CloudPCDriver } from "./189pc/driver.js";
 import { createAliyundriveOpenDriver } from "./aliyundrive_open/driver.js";
 import { createBaiduNetdiskDriver } from "./baidu_netdisk/driver.js";
-import { createLocalDriver } from "./local/driver.js";
 import { createOneDriveDriver } from "./onedrive/driver.js";
 import { createOpenListDriver } from "./openlist/driver.js";
 import { createQuarkOpenDriver } from "./quark_open/driver.js";
@@ -31,7 +31,7 @@ const relPathForMount = (mountPath, path) => {
   return normalizePath(rest || "/");
 };
 
-export const createDriverRuntime = ({ client, saveStorageAddition }) => {
+export const createDriverRuntime = ({ client, getSettings, saveStorageAddition }) => {
   const drivers = {
     OpenList: createOpenListDriver({ client }),
     AListV3: createOpenListDriver({ client }),
@@ -39,6 +39,8 @@ export const createDriverRuntime = ({ client, saveStorageAddition }) => {
     S3: createS3Driver({ client }),
     Doge: createS3Driver({ client }),
     WebDav: createWebDavDriver({ client }),
+    "115 Cloud": create115Driver({ client }),
+    "115": create115Driver({ client }),
     Onedrive: createOneDriveDriver({ client }),
     OneDrive: createOneDriveDriver({ client }),
     "123Pan": create123PanDriver({ client }),
@@ -55,7 +57,6 @@ export const createDriverRuntime = ({ client, saveStorageAddition }) => {
     QuarkOpen: createQuarkOpenDriver({ client }),
     QuarkTV: createQuarkUCTVDriver({ client }),
     UCTV: createQuarkUCTVDriver({ client }),
-    Local: createLocalDriver({ client }),
   };
 
   const runtime = {
@@ -94,6 +95,7 @@ export const createDriverRuntime = ({ client, saveStorageAddition }) => {
             ...storage,
             addition_json: addition,
             mount_path: normalizePath(storage.mount_path || "/"),
+            settings: getSettings ? getSettings() : {},
             saveDriverStorage: async (updatedAddition = addition) => {
               if (saveStorageAddition) await saveStorageAddition(storage, updatedAddition);
             },
@@ -116,6 +118,7 @@ export const createDriverRuntime = ({ client, saveStorageAddition }) => {
         addition_json: addition || {},
         driver: driverName,
         mount_path: "/",
+        settings: getSettings ? getSettings() : {},
       });
     },
   };

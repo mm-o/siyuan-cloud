@@ -1,5 +1,18 @@
 export const privateBase = '/plugin/private/siyuan-cloud'
 
+export function openListCurrentUrl(path: string) {
+  if (!path)
+    return ''
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path))
+    return path
+  const route = path.startsWith('/') ? path : `/${path}`
+  return `${location.origin}${route}`
+}
+
+export async function openListShareUrl(path: string) {
+  return openListCurrentUrl(path)
+}
+
 export interface OpenListResp<T = any> {
   code: number
   message: string

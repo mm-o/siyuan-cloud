@@ -34,8 +34,11 @@ export const createFsHandlers = ({
   removeEmptyDirs,
   removeEntry,
   renameEntryInDir,
+  saveConfigState,
   saveState,
+  searchIndex,
   shareGet,
+  shareClientIP,
   shareList,
   siyuanApiJson,
   taskStore,
@@ -231,6 +234,14 @@ export const createFsHandlers = ({
       name: req.path || req.file_name || req.name || "torrent",
     },
   ), 501);
+  const fsTorrentRequiredError = (field) => jsonResponse(failure(`${field} is required`, 400), 400);
+  const fsTorrentValidate = (operation, req = {}) => {
+    if ((operation === "parse" || operation === "upload_parse" || operation === "rapid_upload") && !req.torrent_data)
+      return fsTorrentRequiredError("torrent_data");
+    if ((operation === "rapid_upload" || operation === "generate") && !req.path)
+      return fsTorrentRequiredError("path");
+    return null;
+  };
   const shouldSkipExisting = (req) => boolValue(req.skip_existing, false);
   const shouldMerge = (req) => boolValue(req.merge, false);
   const shouldOverwrite = (req) => boolValue(req.overwrite, false);
@@ -291,7 +302,7 @@ export const createFsHandlers = ({
     "ANY /api/fs/list": async (request) => {
       const req = await parseJson(request);
       const path = normalizePath(req.path);
-      const sharing = await shareList({ ...req, path });
+      const sharing = await shareList({ ...req, client_ip: shareClientIP?.(request), path });
       if (sharing?.error) return jsonResponse(sharing.error);
       if (sharing?.data) return jsonResponse(success(sharing.data));
       if (isWorkspacePath(path)) {
@@ -346,7 +357,7 @@ export const createFsHandlers = ({
     "ANY /api/fs/get": async (request) => {
       const req = await parseJson(request);
       const path = normalizePath(req.path);
-      const sharing = await shareGet({ ...req, path });
+      const sharing = await shareGet({ ...req, client_ip: shareClientIP?.(request), path });
       if (sharing?.error) return jsonResponse(sharing.error);
       if (sharing?.data) return jsonResponse(success(sharing.data));
       if (isWorkspacePath(path)) {
@@ -419,19 +430,24 @@ export const createFsHandlers = ({
     "ANY /api/fs/search": async (request) => {
       const req = await parseJson(request);
       const parent = normalizePath(req.parent || req.path || "/");
-      const keyword = String(req.keywords || req.keyword || "").toLowerCase();
-      if (isWorkspacePath(parent)) {
-        const result = await workspaceList(parent, req);
-        if (result.error) return jsonResponse(result.error);
-        const content = result.data.content
-          .filter((entry) => !keyword || entry.name.toLowerCase().includes(keyword))
-          .map((entry) => ({ parent, ...entry }));
-        return jsonResponse(success(pageResp(page(content, req), content.length)));
-      }
-      const results = Object.values(state.entries)
-        .filter((entry) => entry.path !== "/" && entry.path.startsWith(parent) && (!keyword || entry.name.toLowerCase().includes(keyword)))
-        .map((entry) => ({ parent: dirname(entry.path), ...toObjResp(entry) }));
-      return jsonResponse(success(pageResp(page(results, req), results.length)));
+      const pageIndex = Number(req.page || 0);
+      const perPage = Number(req.per_page || req.perPage || 0);
+      if (!Number.isFinite(pageIndex) || pageIndex < 1) return jsonResponse(failure("page can't < 1", 400));
+      if (!Number.isFinite(perPage) || perPage < 1) return jsonResponse(failure("per_page can't < 1", 400));
+      const result = searchIndex.search({
+        keywords: req.keywords || req.keyword || "",
+        page: pageIndex,
+        parent,
+        per_page: perPage,
+        scope: req.scope || 0,
+      });
+      return jsonResponse(success(pageResp(result.content.map((node) => ({
+        parent: node.parent,
+        name: node.name,
+        is_dir: node.is_dir,
+        size: node.size,
+        type: extensionType(node.name, node.is_dir),
+      })), result.total)));
     },
     "POST /api/fs/mkdir": async (request) => {
       const req = await parseJson(request);
@@ -503,6 +519,7 @@ export const createFsHandlers = ({
       const names = Array.isArray(req.names) ? req.names : [];
       const dir = normalizePath(req.dir || req.path || "/");
       if (!names.length) return jsonResponse(failure("Empty file names", 400));
+      let storageRemoved = false;
       if (isWorkspacePath(dir)) {
         for (const name of names) {
           const payload = await siyuanApiJson("/api/file/removeFile", { path: workspaceRelPath(normalizePath(dir + "/" + name)) });
@@ -522,9 +539,16 @@ export const createFsHandlers = ({
         }
       }
       for (const name of names) {
-        removeEntry(normalizePath(dir + "/" + name));
+        const path = normalizePath(dir + "/" + name);
+        const storage = state.storages.find((item) => Number(item.id) !== 1 && normalizePath(item.mount_path || "/") === path);
+        if (storage) {
+          state.storages = state.storages.filter((item) => item !== storage);
+          storageRemoved = true;
+        } else {
+          removeEntry(path);
+        }
       }
-      await saveState();
+      await (storageRemoved ? saveConfigState?.() : saveState());
       return jsonResponse(success());
     },
     "POST /api/fs/rename": async (request) => {
@@ -802,27 +826,47 @@ export const createFsHandlers = ({
     },
     "POST /api/fs/add_offline_download": async (request) => {
       const req = await parseJson(request);
-      const task = await taskStore.addTask("offline_download", {
-        error: "offline download is not implemented in the SiYuan kernel port yet",
-        name: req.url || req.urls?.[0] || "offline download",
-        status: "not implemented",
-      });
+      const urls = (Array.isArray(req.urls) ? req.urls : [req.url]).map((url) => String(url || "").trim()).filter(Boolean);
+      const tasks = [];
+      for (const url of urls) {
+        tasks.push(await taskStore.addTask("offline_download", {
+          delete_policy: req.delete_policy || "",
+          dst_dir_path: normalizePath(req.path || "/"),
+          error: "offline download is not implemented in the SiYuan kernel port yet",
+          name: url,
+          status: "not implemented",
+          tool: req.tool || "",
+          url,
+        }));
+      }
       return jsonResponse(failure(
         "offline download is not implemented in the SiYuan kernel port yet",
         501,
-        { task },
+        { tasks },
       ), 501);
     },
     "POST /api/fs/get_direct_upload_info": async (request) => {
       const req = await parseJson(request);
       const path = normalizePath(req.path || req.file_path || "/");
       if (!overwriteEnabled(request, req) && await uploadTargetExists(path)) return jsonResponse(failure("file exists", 403));
+      const mount = driverRuntime.resolve(state.storages, path);
+      if (mount?.driver?.getDirectUploadInfo) {
+        try {
+          const data = await mount.driver.getDirectUploadInfo(mount.storage, mount.relPath, req);
+          return jsonResponse(success(data));
+        } catch (error) {
+          return jsonResponse(failure(error.message || "get direct upload info failed", 502));
+        }
+      }
       return jsonResponse(success(null));
     },
     "ANY /api/fs/other": async () => jsonResponse(success(null)),
   };
   for (const operation of ["parse", "upload_parse", "rapid_upload", "generate"]) {
-    handlers[`POST /api/fs/torrent/${operation}`] = async (request) => fsTorrentPlaceholder(operation, await parseJson(request));
+    handlers[`POST /api/fs/torrent/${operation}`] = async (request) => {
+      const req = await parseJson(request);
+      return fsTorrentValidate(operation, req) || fsTorrentPlaceholder(operation, req);
+    };
   }
   return handlers;
 };

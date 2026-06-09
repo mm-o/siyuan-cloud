@@ -145,13 +145,246 @@ const postForm = (client, storage, pathname, query, form) => requestBaidu(client
   query,
 });
 
+const DEFAULT_UPLOAD_API = "https://d.pcs.baidu.com";
+const DEFAULT_SLICE_SIZE = 4 * 1024 * 1024;
+const VIP_SLICE_SIZE = 16 * 1024 * 1024;
+const SVIP_SLICE_SIZE = 32 * 1024 * 1024;
+const MAX_SLICE_NUM = 2048;
+const SLICE_STEP = 1024 * 1024;
+const SLICE_MD5_SIZE = 256 * 1024;
+
+const base64ToBytes = (value) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = String(value || "").replace(/[\r\n\s]/g, "");
+  const out = [];
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = chars.indexOf(clean[i]);
+    const b = chars.indexOf(clean[i + 1]);
+    const c = clean[i + 2] === "=" ? -1 : chars.indexOf(clean[i + 2]);
+    const d = clean[i + 3] === "=" ? -1 : chars.indexOf(clean[i + 3]);
+    if (a < 0 || b < 0) continue;
+    out.push((a << 2) | (b >> 4));
+    if (c >= 0) out.push(((b & 15) << 4) | (c >> 2));
+    if (d >= 0) out.push(((c & 3) << 6) | d);
+  }
+  return Uint8Array.from(out);
+};
+
+const bytesToBase64 = (bytes) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const b = bytes[i + 1];
+    const c = bytes[i + 2];
+    out += chars[a >> 2];
+    out += chars[((a & 3) << 4) | ((b || 0) >> 4)];
+    out += i + 1 < bytes.length ? chars[((b & 15) << 2) | ((c || 0) >> 6)] : "=";
+    out += i + 2 < bytes.length ? chars[c & 63] : "=";
+  }
+  return out;
+};
+
+const utf8Bytes = (value) => {
+  const text = unescape(encodeURIComponent(String(value || "")));
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i += 1) out[i] = text.charCodeAt(i);
+  return out;
+};
+
+const uploadBytes = (content, options = {}) => options.bodyEncoding === "base64"
+  ? base64ToBytes(content || "")
+  : utf8Bytes(content || "");
+
+const leftRotate = (value, amount) => (value << amount) | (value >>> (32 - amount));
+const md5Hex = (input) => {
+  const source = input instanceof Uint8Array ? input : utf8Bytes(input);
+  const bitLen = source.length * 8;
+  const paddedLen = (((source.length + 9 + 63) >> 6) << 6);
+  const bytes = new Uint8Array(paddedLen);
+  bytes.set(source);
+  bytes[source.length] = 0x80;
+  const view = new DataView(bytes.buffer);
+  view.setUint32(paddedLen - 8, bitLen >>> 0, true);
+  view.setUint32(paddedLen - 4, Math.floor(bitLen / 0x100000000), true);
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+  const s = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  const k = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000) >>> 0);
+  for (let offset = 0; offset < paddedLen; offset += 64) {
+    let a = a0; let b = b0; let c = c0; let d = d0;
+    for (let i = 0; i < 64; i += 1) {
+      let f; let g;
+      if (i < 16) { f = (b & c) | (~b & d); g = i; }
+      else if (i < 32) { f = (d & b) | (~d & c); g = (5 * i + 1) % 16; }
+      else if (i < 48) { f = b ^ c ^ d; g = (3 * i + 5) % 16; }
+      else { f = c ^ (b | ~d); g = (7 * i) % 16; }
+      const tmp = d;
+      d = c;
+      c = b;
+      b = (b + leftRotate((a + f + k[i] + view.getUint32(offset + g * 4, true)) >>> 0, s[i])) >>> 0;
+      a = tmp;
+    }
+    a0 = (a0 + a) >>> 0;
+    b0 = (b0 + b) >>> 0;
+    c0 = (c0 + c) >>> 0;
+    d0 = (d0 + d) >>> 0;
+  }
+  return [a0, b0, c0, d0]
+    .map((value) => [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]
+      .map((byte) => byte.toString(16).padStart(2, "0")).join(""))
+    .join("");
+};
+
+const joinTime = (form, ctime, mtime) => {
+  if (!mtime || !ctime) return;
+  form.local_mtime = String(mtime);
+  form.local_ctime = String(ctime);
+};
+
+const getSliceSize = (storage, filesize) => {
+  const addition = storage.addition_json || {};
+  const vipType = Number(addition.vip_type || addition.VipType || 0);
+  const custom = Number(addition.custom_upload_part_size || addition.CustomUploadPartSize || 0);
+  if (vipType === 0) return DEFAULT_SLICE_SIZE;
+  if (custom) {
+    if (custom < DEFAULT_SLICE_SIZE) return DEFAULT_SLICE_SIZE;
+    if (vipType === 1 && custom > VIP_SLICE_SIZE) return VIP_SLICE_SIZE;
+    if (vipType === 2 && custom > SVIP_SLICE_SIZE) return SVIP_SLICE_SIZE;
+    return custom;
+  }
+  const maxSliceSize = vipType === 1 ? VIP_SLICE_SIZE : SVIP_SLICE_SIZE;
+  if (boolValue(addition.low_bandwith_upload_mode ?? addition.LowBandwithUploadMode, false)) {
+    for (let size = DEFAULT_SLICE_SIZE; size <= maxSliceSize; size += SLICE_STEP) {
+      if (filesize <= MAX_SLICE_NUM * size) return size;
+    }
+  }
+  return maxSliceSize;
+};
+
+const createFile = async (client, storage, path, size, isdir, uploadid, blockList, mtime, ctime) => {
+  const form = {
+    path,
+    size: String(size),
+    isdir: String(isdir),
+    rtype: "3",
+  };
+  joinTime(form, ctime, mtime);
+  if (uploadid) form.uploadid = uploadid;
+  if (blockList) form.block_list = blockList;
+  return postForm(client, storage, "/xpan/file", { method: "create" }, form);
+};
+
+const precreate = async (client, storage, path, size, blockList, contentMd5, sliceMd5, ctime, mtime) => {
+  const form = {
+    path,
+    size: String(size),
+    isdir: "0",
+    autoinit: "1",
+    rtype: "3",
+    block_list: blockList,
+  };
+  if (contentMd5 && sliceMd5) {
+    form["content-md5"] = contentMd5;
+    form["slice-md5"] = sliceMd5;
+  }
+  joinTime(form, ctime, mtime);
+  return postForm(client, storage, "/xpan/file", { method: "precreate" }, form);
+};
+
+const requestForUploadUrl = async (client, storage, path, uploadid) => {
+  const payload = await requestBaidu(client, storage, `${DEFAULT_UPLOAD_API}/rest/2.0/pcs/file`, {
+    method: "GET",
+    query: {
+      method: "locateupload",
+      appid: "250528",
+      path,
+      uploadid,
+      upload_version: "2.0",
+    },
+  });
+  const server = payload?.servers?.[0]?.server || payload?.bak_servers?.[0]?.server || "";
+  if (!server) throw new Error("upload URL is empty");
+  return server;
+};
+
+const uploadApiOf = (storage) => {
+  const api = storage.addition_json.upload_api || storage.addition_json.UploadAPI || DEFAULT_UPLOAD_API;
+  try {
+    return new URL(api).toString().replace(/\/+$/, "");
+  } catch (_) {
+    return DEFAULT_UPLOAD_API;
+  }
+};
+
+const getUploadUrl = async (client, storage, path, uploadid) => {
+  if (!boolValue(storage.addition_json.use_dynamic_upload_api ?? storage.addition_json.UseDynamicUploadAPI, true) || !uploadid) {
+    return uploadApiOf(storage);
+  }
+  try {
+    return await requestForUploadUrl(client, storage, path, uploadid);
+  } catch (_) {
+    return uploadApiOf(storage);
+  }
+};
+
+const multipartBody = (fieldName, fileName, bytes, boundary) => {
+  const head = utf8Bytes(`--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+  const tail = utf8Bytes(`\r\n--${boundary}--\r\n`);
+  const body = new Uint8Array(head.length + bytes.length + tail.length);
+  body.set(head);
+  body.set(bytes, head.length);
+  body.set(tail, head.length + bytes.length);
+  return body;
+};
+
+const uploadSlice = async (client, storage, uploadUrl, params, fileName, bytes) => {
+  const target = new URL(`${uploadUrl.replace(/\/+$/, "")}/rest/2.0/pcs/superfile2`);
+  for (const [key, value] of Object.entries(params)) target.searchParams.set(key, String(value));
+  const boundary = `----siyuan-baidu-${Date.now().toString(16)}`;
+  const body = multipartBody("file", fileName, bytes, boundary);
+  const resp = await forwardProxy(client, target.toString(), {
+    allowErrorStatus: true,
+    body: bytesToBase64(body),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+    method: "POST",
+    payloadEncoding: "base64",
+    responseEncoding: "text",
+    timeout: Number(storage.addition_json.upload_timeout || storage.addition_json.UploadSliceTimeout || 60) * 1000,
+  });
+  let payload = {};
+  try {
+    payload = JSON.parse(resp.body || "{}");
+  } catch (_) {
+    payload = {};
+  }
+  const lower = String(resp.body || "").toLowerCase();
+  if (lower.includes("uploadid") && (lower.includes("invalid") || lower.includes("expired") || lower.includes("not found"))) {
+    throw new Error("uploadid expired");
+  }
+  const errno = Number(payload?.errno || payload?.error_code || 0);
+  if (errno) throw new Error(`error uploading to baidu, response=${resp.body || ""}`);
+};
+
+const putRapid = async (client, storage, path, bytes, mtime, ctime) => {
+  const contentMd5 = md5Hex(bytes);
+  const blockList = JSON.stringify([contentMd5]);
+  return createFile(client, storage, path, bytes.length, 0, "", blockList, mtime, ctime);
+};
+
 const fileNameOf = (file) => file?.server_filename || file?.name || basename(file?.path || "");
 const isDir = (file) => Number(file?.isdir || 0) === 1;
 const VIDEO_EXTS = new Set(["mp4", "mkv", "avi", "mov", "rmvb", "webm", "flv", "m3u8", "m4v"]);
-const isVideoFile = (file) => Number(file?.category || 0) === 1 || VIDEO_EXTS.has(fileNameOf(file).split(".").pop()?.toLowerCase() || "");
+const AUDIO_EXTS = new Set(["mp3", "flac", "ogg", "m4a", "wav", "opus", "wma"]);
+const fileExtOf = (file) => fileNameOf(file).split(".").pop()?.toLowerCase() || "";
+const isStreamMediaFile = (file) => [1, 2].includes(Number(file?.category || 0))
+  || VIDEO_EXTS.has(fileExtOf(file))
+  || AUDIO_EXTS.has(fileExtOf(file));
 const effectiveDownloadApi = (storage, file) => {
   const api = storage.addition_json.download_api || "official";
-  return api === "crack_video" && !isVideoFile(file) ? "official" : api;
+  return api === "crack_video" && !isStreamMediaFile(file) ? "official" : api;
 };
 
 const fileToObj = (file, relPath, storage) => {
@@ -433,7 +666,55 @@ export const createBaiduNetdiskDriver = ({ client }) => ({
     invalidateStorageCache(storage);
   },
 
-  async put() {
-    throw new Error("BaiduNetdisk upload is not implemented in the SiYuan kernel port yet");
+  async put(storage, relPath, content, mime, options = {}) {
+    const bytes = uploadBytes(content, options);
+    if (bytes.length < 1) throw new Error("empty files are not allowed by baidu netdisk");
+    const path = rootedPath(storage.addition_json, relPath);
+    const now = Math.floor(Date.now() / 1000);
+    const mtime = Number(options.mtime || options.modified || now);
+    const ctime = Number(options.ctime || options.created || now);
+    try {
+      await putRapid(client, storage, path, bytes, mtime, ctime);
+      invalidateStorageCache(storage);
+      return;
+    } catch (_) {
+      // OpenList falls back to precreate when rapid upload is unavailable.
+    }
+
+    const sliceSize = getSliceSize(storage, bytes.length);
+    const blockList = [];
+    for (let offset = 0; offset < bytes.length; offset += sliceSize) {
+      blockList.push(md5Hex(bytes.slice(offset, Math.min(offset + sliceSize, bytes.length))));
+    }
+    const blockListStr = JSON.stringify(blockList);
+    const contentMd5 = md5Hex(bytes);
+    const sliceMd5 = md5Hex(bytes.slice(0, Math.min(SLICE_MD5_SIZE, bytes.length)));
+    const pre = await precreate(client, storage, path, bytes.length, blockListStr, contentMd5, sliceMd5, ctime, mtime);
+    if (Number(pre?.return_type || 0) === 2) {
+      invalidateStorageCache(storage);
+      return;
+    }
+    const uploadid = pre?.uploadid || "";
+    if (!uploadid) throw new Error("baidu precreate missing uploadid");
+    const partseqs = Array.isArray(pre?.block_list) && pre.block_list.length
+      ? pre.block_list.map((part) => Number(part))
+      : blockList.map((_, index) => index);
+    const uploadUrl = await getUploadUrl(client, storage, path, uploadid);
+    const fileName = basename(path);
+    for (const partseq of partseqs) {
+      if (partseq < 0) continue;
+      const offset = partseq * sliceSize;
+      const chunk = bytes.slice(offset, Math.min(offset + sliceSize, bytes.length));
+      await uploadSlice(client, storage, uploadUrl, {
+        method: "upload",
+        access_token: storage.addition_json.access_token || storage.addition_json.AccessToken || "",
+        type: "tmpfile",
+        path,
+        uploadid,
+        partseq,
+      }, fileName, chunk);
+    }
+    await createFile(client, storage, path, bytes.length, 0, uploadid, blockListStr, mtime, ctime);
+    invalidateStorageCache(storage);
   },
 });

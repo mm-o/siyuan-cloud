@@ -1,15 +1,20 @@
 import {
   failure,
   jsonResponse,
-  pageResp,
   success,
 } from "../common/response.js";
 import { normalizePath } from "../../internal/model/path.js";
+import {
+  normalizeUser,
+  sanitizeUser,
+  USER_ROLE,
+} from "../../internal/model/user.js";
 import { defaultSettings } from "../../internal/bootstrap/data/settings.js";
 import {
   driverInfoMap,
   driverNames,
 } from "../../internal/driver/info.js";
+import { normalizeShare } from "./share.js";
 
 export const createAdminHandlers = ({
   driverRuntime,
@@ -20,6 +25,7 @@ export const createAdminHandlers = ({
   pageSlice,
   parseJson,
   queryValue,
+  reloadConfigState,
   saveState,
   saveToolSettings,
   settingItem,
@@ -33,6 +39,9 @@ export const createAdminHandlers = ({
       return true;
     },
   });
+  const refreshConfig = async () => {
+    await reloadConfigState?.();
+  };
   const storageAddition = (reqAddition, currentAddition = "{}") => {
     if (typeof reqAddition === "string") return reqAddition;
     if (reqAddition !== undefined) return JSON.stringify(reqAddition || {});
@@ -65,14 +74,25 @@ export const createAdminHandlers = ({
   const driverConfig = (driver) => driverInfoMap()[driver]?.config || {};
   const verifyDataFromError = (error, driver, addition) => {
     const message = error?.message || "driver test failed";
+    if (error?.verify) {
+      return {
+        driver,
+        addition: error.addition || addition,
+        verify: error.verify,
+      };
+    }
     const html = String(message.match(/need verify:\s*([\s\S]*)/i)?.[1] || "");
-    const qrData = html.match(/base64,([^"')\s<]+)/i)?.[1] || "";
+    const qrSrc = html.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1] || "";
+    const qrText = html.match(/<a[^>]+href=["']([^"']+)["']/i)?.[1] || "";
+    const qrData = qrSrc.match(/base64,([^"')\s<]+)/i)?.[1] || html.match(/base64,([^"')\s<]+)/i)?.[1] || "";
     return {
       driver,
       addition,
       verify: html ? {
         html,
         qr_data: qrData,
+        qr_src: qrSrc,
+        qr_text: qrText,
         type: "qrcode",
       } : null,
     };
@@ -104,22 +124,43 @@ export const createAdminHandlers = ({
       remark: storage.remark || "",
       modified: Number(storage.modified || now()),
       disabled: !!storage.disabled,
+      disable_index: boolValue(storage.disable_index),
       ...proxyDefaults(driver, storage),
     };
   };
+  const nextUserId = () => Math.max(0, ...state.users.map((item) => Number(item.id || 0))) + 1;
+  const userById = (id) => state.users.find((item) => Number(item.id) === Number(id));
+  const userList = () => state.users.map(sanitizeUser);
 
   return {
-    "GET /api/admin/user/list": async () => jsonResponse(success(pageResp(state.users.map((user) => ({ ...user, password: "", otp_secret: "" }))))),
+    "GET /api/admin/user/list": async (request) => {
+      await refreshConfig();
+      return jsonResponse(success(pageSlice(userList(), request)));
+    },
     "GET /api/admin/user/get": async (request) => {
+      await refreshConfig();
       const id = Number(queryValue(request, "id") || 1);
-      const user = state.users.find((item) => item.id === id) || state.users[0];
-      return jsonResponse(success({ ...user, password: "", otp_secret: "" }));
+      const user = userById(id);
+      if (!user) return jsonResponse(failure("user not found", 404));
+      return jsonResponse(success(sanitizeUser(user)));
     },
     "POST /api/admin/user/update": async (request) => {
       const req = await parseJson(request);
       const index = state.users.findIndex((item) => item.id === Number(req.id));
       if (index < 0) return jsonResponse(failure("user not found", 404));
-      state.users[index] = { ...state.users[index], ...req, password: req.password ? "" : state.users[index].password };
+      const current = state.users[index];
+      const role = Number(req.role ?? current.role);
+      if (role !== Number(current.role)) return jsonResponse(failure("role can not be changed", 400));
+      if (req.disabled && current.role === USER_ROLE.ADMIN) return jsonResponse(failure("admin user can not be disabled", 400));
+      const next = normalizeUser({
+        ...current,
+        ...req,
+        id: current.id,
+        role: current.role,
+        password: req.password ? req.password : current.password,
+        otp_secret: req.otp_secret || current.otp_secret || "",
+      }, index);
+      state.users[index] = next;
       await saveState();
       return jsonResponse(success());
     },
@@ -127,26 +168,26 @@ export const createAdminHandlers = ({
       const req = await parseJson(request);
       if (!req.username) return jsonResponse(failure("username is required", 400));
       if (state.users.some((item) => item.username === req.username)) return jsonResponse(failure("user already exists", 409));
-      const id = Math.max(0, ...state.users.map((item) => item.id || 0)) + 1;
-      state.users.push({
-        id,
-        username: req.username,
-        password: "",
-        role: Number(req.role ?? 0),
-        disabled: !!req.disabled,
-        base_path: normalizePath(req.base_path || "/"),
+      const role = Number(req.role ?? USER_ROLE.GENERAL);
+      if (role === USER_ROLE.ADMIN || role === USER_ROLE.GUEST) return jsonResponse(failure("admin or guest user can not be created", 400));
+      const user = normalizeUser({
+        ...req,
+        id: nextUserId(),
+        role: USER_ROLE.GENERAL,
+        password: req.password || "",
+        base_path: req.base_path || "/",
         permission: Number(req.permission ?? 0),
-        sso_id: req.sso_id || "",
-        otp: false,
-        otp_secret: "",
-      });
+      }, state.users.length);
+      state.users.push(user);
       await saveState();
-      return jsonResponse(success());
+      return jsonResponse(success(sanitizeUser(user)));
     },
     "POST /api/admin/user/delete": async (request) => {
       const req = await parseJson(request);
-      const id = Number(req.id);
-      if (id === 1) return jsonResponse(failure("admin user cannot be deleted", 403));
+      const id = Number(queryValue(request, "id") || req.id);
+      const user = userById(id);
+      if (!user) return jsonResponse(failure("user not found", 404));
+      if (user.role === USER_ROLE.ADMIN || user.role === USER_ROLE.GUEST) return jsonResponse(failure("admin or guest user can not be deleted", 400));
       state.users = state.users.filter((item) => item.id !== id);
       await saveState();
       return jsonResponse(success());
@@ -160,8 +201,12 @@ export const createAdminHandlers = ({
       await saveState();
       return jsonResponse(success());
     },
-    "GET /api/admin/storage/list": async (request) => jsonResponse(success(pageSlice(state.storages.map(storageResp), request))),
+    "GET /api/admin/storage/list": async (request) => {
+      await refreshConfig();
+      return jsonResponse(success(pageSlice(state.storages.map(storageResp), request)));
+    },
     "GET /api/admin/storage/get": async (request) => {
+      await refreshConfig();
       const id = Number(queryValue(request, "id") || 1);
       return jsonResponse(success(storageResp(state.storages.find((item) => item.id === id) || state.storages[0])));
     },
@@ -181,6 +226,7 @@ export const createAdminHandlers = ({
           remark: req.remark ?? existing.remark ?? "",
           modified: now(),
           disabled: !!req.disabled,
+          disable_index: boolValue(req.disable_index, existing.disable_index),
           ...proxyDefaults(driver, { ...existing, ...req }),
         });
         await saveState();
@@ -200,6 +246,7 @@ export const createAdminHandlers = ({
         remark: req.remark || "",
         modified: now(),
         disabled: !!req.disabled,
+        disable_index: boolValue(req.disable_index),
         ...proxyDefaults(driver, req),
       });
       await saveState();
@@ -215,6 +262,7 @@ export const createAdminHandlers = ({
         addition: storageAddition(req.addition, storage.addition),
         cache_expiration: Number(req.cache_expiration ?? storage.cache_expiration ?? 30),
         disabled: !!req.disabled,
+        disable_index: boolValue(req.disable_index, storage.disable_index),
         modified: now(),
         ...proxyDefaults(req.driver || storage.driver, { ...storage, ...req }),
       });
@@ -260,18 +308,7 @@ export const createAdminHandlers = ({
         state.settings = mode === "merge" ? { ...state.settings, ...payload.settings } : { ...defaultSettings(), ...payload.settings };
       }
       if (payload.users) {
-        const importedUsers = asArray(payload.users).map((user, index) => ({
-          id: Number(user.id || index + 1),
-          username: user.username || `user-${index + 1}`,
-          password: user.password || "",
-          role: Number(user.role ?? 0),
-          disabled: !!user.disabled,
-          base_path: normalizePath(user.base_path || "/"),
-          permission: Number(user.permission ?? 0),
-          sso_id: user.sso_id || "",
-          otp: !!user.otp,
-          otp_secret: user.otp_secret || "",
-        }));
+        const importedUsers = asArray(payload.users).map(normalizeUser);
         state.users = importedUsers.length ? importedUsers : state.users;
       }
       if (payload.storages) {
@@ -282,7 +319,7 @@ export const createAdminHandlers = ({
         state.storages = importedStorages;
       }
       if (payload.metas) state.metas = asArray(payload.metas).map((meta, index) => ({ ...meta, id: Number(meta.id || index + 1) }));
-      if (payload.sharings) state.sharings = asArray(payload.sharings).map((share, index) => ({ ...share, id: Number(share.id || index + 1) }));
+      if (payload.sharings) state.sharings = asArray(payload.sharings).map((share) => normalizeShare(share, now));
       await saveState();
       return jsonResponse(success({
         users: state.users.length,
@@ -311,7 +348,16 @@ export const createAdminHandlers = ({
       if (!driverRuntime?.drivers?.[driver]) return jsonResponse(failure(`driver [${driver}] not found`, 404));
       if (!driverRuntime.drivers[driver].test) return jsonResponse(failure(`driver [${driver}] does not expose a test method yet`, 501));
       try {
-        return jsonResponse(success(await driverRuntime.test(driver, addition)));
+        if (req.verify?.type === "sms") {
+          if (!driverRuntime.drivers[driver].verify) return jsonResponse(failure(`driver [${driver}] does not expose a verify method yet`, 501));
+          return jsonResponse(success(await driverRuntime.drivers[driver].verify({
+            addition_json: addition,
+            driver,
+            mount_path: "/",
+            settings: state.settings || {},
+          }, req.verify)));
+        }
+        return jsonResponse(success(await driverRuntime.test(driver, addition, req.verify)));
       } catch (error) {
         return jsonResponse(failure(error.message || "driver test failed", 502, verifyDataFromError(error, driver, addition)));
       }

@@ -1,13 +1,9 @@
-import { showMessage, type Plugin } from 'siyuan'
+import { Menu, confirm, showMessage, type Plugin } from 'siyuan'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  fsGet,
-  fsMkdir,
-  fsNewFile,
-} from '@/utils/api'
+import QRCode from 'qrcode'
 import {
   fetchOpenListJson,
-  fetchOpenListText,
+  openListShareUrl,
   openListJson,
   privateBase,
 } from '@/utils/request'
@@ -39,24 +35,43 @@ interface DriverInfo {
 }
 
 const DOCK_SETTINGS = 'siyuan-cloud-dock-settings.json'
+const USER_PERMISSION_KEYS = [
+  'see_hides',
+  'access_without_password',
+  'offline_download',
+  'write_content',
+  'rename',
+  'move',
+  'copy',
+  'delete',
+  'webdav_read',
+  'webdav_manage',
+  'ftp_read',
+  'ftp_manage',
+  'read_archives',
+  'decompress',
+  'share',
+  'customize_share_id',
+] as const
 
 export function useDock(plugin: Plugin) {
   const tabs = [
-    { key: 'mounts', labelKey: 'tabMounts', icon: '#iconDatabase' },
     { key: 'files', labelKey: 'fileManagerTitle', icon: '#iconFolder' },
+    { key: 'mounts', labelKey: 'tabMounts', icon: '#iconDatabase' },
+    { key: 'users', labelKey: 'tabUsers', icon: '#iconAccount' },
     { key: 'tasks', labelKey: 'tabTask', icon: '#iconList' },
     { key: 'shares', labelKey: 'tabShares', icon: '#iconLink' },
     { key: 'settings', labelKey: 'openSettings', icon: '#iconSettings' },
     { key: 'about', labelKey: 'tabAbout', icon: '#iconInfo' },
   ]
-  const currentTab = ref('mounts')
+  const currentTab = ref('files')
   const status = ref<Status>('checking')
   const statusDetail = ref(t('waitingKernel'))
   const storageInfo = ref<StorageInfo>({})
   const accountInfo = ref('')
   const verifyUsername = ref('admin')
   const verifyPassword = ref('')
-  const verifyMountPath = ref(`/verify-${new Date().toISOString().slice(0, 10)}`)
+  const verifyMountPath = ref('/')
   const verifyDriver = ref('SiYuanKernel')
   const verifyAddition = ref('{}')
   const verifySession = ref('')
@@ -73,11 +88,22 @@ export function useDock(plugin: Plugin) {
   const driverVerifyQr = ref('')
   const driverVerifyMessage = ref('')
   const driverVerifyPolling = ref(false)
+  const driverVerifySmsCode = ref('')
+  const driverVerifySmsContext = ref<Record<string, any> | null>(null)
+  const driverVerifySmsRequired = ref(false)
   const configText = ref('')
   const externalPreviews = ref('')
   const shareItems = ref<any[]>([])
+  const shareFormOpen = ref(false)
+  const selectedShareId = ref('')
+  const shareForm = ref<Record<string, any>>({})
+  const userItems = ref<any[]>([])
+  const userFormOpen = ref(false)
+  const selectedUserId = ref<number | null>(null)
+  const userForm = ref<Record<string, any>>({})
   const verifyLog = ref<Array<{ id: string, ok: boolean, title: string, detail: string }>>([])
   let driverVerifyTimer: ReturnType<typeof window.setInterval> | undefined
+  let loadingMountEdit = false
 
   function t(key: string) {
     return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -146,7 +172,14 @@ export function useDock(plugin: Plugin) {
 
   function driverNote(value: string, fallback = '') {
     const driver = normalizeDriverName(value)
-    return tFallback(`driverNote.${driver}`, fallback)
+    const translated = tFallback(`driverNote.${driver}`, '')
+    if (translated)
+      return translated
+    if (/placeholder|notimplement|remain|metadata/i.test(fallback))
+      return t('driverRuntimePartial')
+    if (/runtime|ported|wired|ports/i.test(fallback))
+      return t('driverRuntimePorted')
+    return fallback || t('driverMetadataOnly')
   }
 
   function defaultMountPathForDriver(driver: string) {
@@ -199,7 +232,9 @@ export function useDock(plugin: Plugin) {
 
   const driverVerifyQrSrc = computed(() =>
     driverVerifyQr.value
-      ? `data:image/jpeg;base64,${driverVerifyQr.value.replace(/^data:image\/[^;]+;base64,/, '')}`
+      ? driverVerifyQr.value.startsWith('data:image/')
+        ? driverVerifyQr.value
+        : `data:image/jpeg;base64,${driverVerifyQr.value.replace(/^data:image\/[^;]+;base64,/, '')}`
       : '',
   )
 
@@ -224,6 +259,77 @@ export function useDock(plugin: Plugin) {
     ]
   }
 
+  function defaultUserForm(user?: any) {
+    return {
+      username: user?.username || '',
+      password: '',
+      base_path: user?.base_path || '/',
+      permission: Number(user?.permission ?? 0),
+      disabled: !!user?.disabled,
+      allow_ldap: !!user?.allow_ldap,
+      sso_id: user?.sso_id || '',
+    }
+  }
+
+  function userRoleLabel(user: any) {
+    const role = Number(user?.role ?? 0)
+    if (role === 2)
+      return t('userRoleAdmin')
+    if (role === 1)
+      return t('userRoleGuest')
+    return t('userRoleGeneral')
+  }
+
+  function userDetail(user: any) {
+    return [
+      user?.base_path || '/',
+      userPermissionSummary(user),
+      user?.siyuan_account ? t('siyuanAccount') : '',
+      user?.sso_id ? `sso=${user.sso_id}` : '',
+    ].filter(Boolean).join(' / ')
+  }
+
+  function userPermissionLabel(key: string) {
+    return tFallback(`userPermission.${key}`, key)
+  }
+
+  function userPermissionNames(permission: any) {
+    const value = Number(permission || 0)
+    return USER_PERMISSION_KEYS.filter((_, index) => ((value >> index) & 1) === 1)
+  }
+
+  function userPermissionSummary(user: any) {
+    if (Number(user?.role) === 2)
+      return t('userPermissionAdmin')
+    const names = userPermissionNames(user?.permission).map(userPermissionLabel)
+    if (!names.length)
+      return t('userPermissionNone')
+    const visible = names.slice(0, 2).join(', ')
+    return names.length > 2 ? `${visible} +${names.length - 2}` : visible
+  }
+
+  function userPermissionFormSummary() {
+    return userPermissionSummary(userForm.value)
+  }
+
+  function userPermissionChecked(index: number) {
+    return ((Number(userForm.value.permission || 0) >> index) & 1) === 1
+  }
+
+  function toggleUserPermission(index: number, checked: boolean) {
+    const current = Number(userForm.value.permission || 0)
+    userForm.value.permission = checked
+      ? current | (1 << index)
+      : current & ~(1 << index)
+  }
+
+  function userTags(user: any) {
+    return [
+      { key: 'role', text: userRoleLabel(user), className: Number(user?.role) === 2 ? 'b3-chip--success' : 'b3-chip--info' },
+      { key: 'status', text: user?.disabled ? t('disabled') : t('enabled'), className: user?.disabled ? 'b3-chip--error' : 'b3-chip--success' },
+    ]
+  }
+
   async function loadDockSettings() {
     try {
       const settings = await plugin.loadData(DOCK_SETTINGS)
@@ -231,7 +337,7 @@ export function useDock(plugin: Plugin) {
       if (tabs.some(item => item.key === tab))
         currentTab.value = tab
     } catch {
-      currentTab.value = 'mounts'
+      currentTab.value = 'files'
     }
   }
 
@@ -271,6 +377,7 @@ export function useDock(plugin: Plugin) {
       const payload = await fetchOpenListJson('/api/me')
       accountInfo.value = JSON.stringify(payload.data || {})
       verifySession.value = payload.data?.username || verifySession.value
+      verifyUsername.value = payload.data?.username || verifyUsername.value
     } catch (error) {
       showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
     }
@@ -291,6 +398,10 @@ export function useDock(plugin: Plugin) {
     return String(field.options || '').split(',').map(item => item.trim()).filter(Boolean)
   }
 
+  function fieldOptionLabel(field: DriverField, option: string) {
+    return tFallback(`driverFieldOption.${field.name}.${option}`, option)
+  }
+
   function normalizeFieldValue(field: DriverField, value: any) {
     if (field.type === 'bool')
       return value === true || value === 'true'
@@ -308,8 +419,8 @@ export function useDock(plugin: Plugin) {
     return next
   }
 
-  function additionFromForm() {
-    const addition: Record<string, any> = {}
+  function additionFromForm(preserve = true) {
+    const addition: Record<string, any> = preserve ? parseAddition(verifyAddition.value) : {}
     for (const field of driverFields.value) {
       const value = normalizeFieldValue(field, driverForm.value[field.name])
       if (field.type === 'bool' || value !== '')
@@ -318,8 +429,8 @@ export function useDock(plugin: Plugin) {
     return addition
   }
 
-  function syncJsonFromForm() {
-    verifyAddition.value = JSON.stringify(additionFromForm(), null, 2)
+  function syncJsonFromForm(preserve = true) {
+    verifyAddition.value = JSON.stringify(additionFromForm(preserve), null, 2)
   }
 
   function syncFormFromJson() {
@@ -341,10 +452,9 @@ export function useDock(plugin: Plugin) {
   }
 
   function syncAddition(clearQrSession = false) {
-    const rawAddition = JSON.parse(verifyAddition.value || '{}')
-    const addition = { ...rawAddition, ...additionFromForm() }
+    const addition = additionFromForm()
     if (clearQrSession) {
-      for (const key of ['query_token', 'QueryToken', 'access_token', 'AccessToken', 'refresh_token', 'RefreshToken'])
+      for (const key of ['query_token', 'QueryToken', 'access_token', 'AccessToken', 'refresh_token', 'RefreshToken', 'temp_uuid', 'TempUuid'])
         delete addition[key]
     }
     verifyAddition.value = JSON.stringify(addition, null, 2)
@@ -352,24 +462,45 @@ export function useDock(plugin: Plugin) {
     return addition
   }
 
-  function applyDriverTestData(data: any) {
+  function validateMountAddition(addition: Record<string, any>) {
+    if (normalizeDriverName(verifyDriver.value) === '115 Cloud' && !String(addition.cookie || '').trim() && !String(addition.qrcode_token || '').trim())
+      throw new Error(t('driverValidation.115CloudLoginRequired'))
+  }
+
+  async function applyDriverTestData(data: any) {
     if (data?.addition) {
       verifyAddition.value = JSON.stringify(data.addition, null, 2)
       syncFormFromJson()
     }
     const verify = data?.verify || {}
-    driverVerifyQr.value = verify.qr_data || ''
+    if (verify.type === 'sms') {
+      driverVerifySmsRequired.value = true
+      driverVerifySmsContext.value = verify.second_context || null
+      const mobile = verify.show_name || verify.mobile || ''
+      driverVerifyMessage.value = mobile ? `${t('smsCodeSent')}: ${mobile}` : t('smsCodeRequired')
+      return
+    }
+    const qrValue = verify.qr_src || verify.qr_data || ''
+    if (qrValue) {
+      driverVerifyQr.value = qrValue
+    } else if (verify.qr_text) {
+      driverVerifyQr.value = await QRCode.toDataURL(verify.qr_text, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 200,
+      })
+    }
     if (driverVerifyQr.value)
       driverVerifyMessage.value = t('qrScanPrompt')
   }
 
-  async function requestDriverTest(addition: Record<string, any>) {
+  async function requestDriverTest(addition: Record<string, any>, verify?: Record<string, any>) {
     const payload = await fetchOpenListJson('/api/admin/driver/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ driver: verifyDriver.value, addition }),
+      body: JSON.stringify({ driver: verifyDriver.value, addition, verify }),
     })
-    applyDriverTestData(payload.data)
+    await applyDriverTestData(payload.data)
     return payload
   }
 
@@ -391,8 +522,10 @@ export function useDock(plugin: Plugin) {
           driverVerifyQr.value = ''
           driverVerifyMessage.value = t('qrLoginDone')
           mountCreateOk.value = true
-          mountCreateResult.value = t('driverTestPassed')
+          mountCreateResult.value = `${t('qrLoginDone')} / ${t('mountCreating')}`
           showMessage(t('qrLoginDone'))
+          if (await saveMount())
+            closeMountForm()
         }
       } catch {
         // Keep polling while the QR session is waiting for scan confirmation.
@@ -433,15 +566,56 @@ export function useDock(plugin: Plugin) {
     }
   }
 
+  async function submitDriverSmsCode() {
+    if (mountCreating.value || !driverVerifySmsCode.value.trim())
+      return
+    mountCreating.value = true
+    mountCreateOk.value = false
+    mountCreateResult.value = t('smsVerifying')
+    try {
+      const addition = parseAddition(verifyAddition.value)
+      const secondContext = driverVerifySmsContext.value
+      const payload = await requestDriverTest(addition, {
+        type: 'sms',
+        sms_code: driverVerifySmsCode.value.trim(),
+        second_context: secondContext,
+      })
+      if (payload.code && payload.code !== 200)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      await applyDriverTestData(payload.data)
+      driverVerifySmsCode.value = ''
+      driverVerifySmsContext.value = null
+      driverVerifySmsRequired.value = false
+      driverVerifyMessage.value = t('smsLoginDone')
+      mountCreateOk.value = true
+      mountCreateResult.value = `${t('smsLoginDone')} / ${t('mountCreating')}`
+      showMessage(t('smsLoginDone'))
+      mountCreating.value = false
+      if (await saveMount({ skipDriverTest: true }))
+        closeMountForm()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      mountCreateOk.value = false
+      mountCreateResult.value = message
+      driverVerifyMessage.value = message
+      showMessage(message, 3000, 'error')
+    } finally {
+      mountCreating.value = false
+    }
+  }
+
   async function loadDriverInfo() {
     try {
       stopDriverQrPolling()
       driverVerifyQr.value = ''
       driverVerifyMessage.value = ''
+      driverVerifySmsCode.value = ''
+      driverVerifySmsContext.value = null
+      driverVerifySmsRequired.value = false
       const payload = await fetchOpenListJson(`/api/admin/driver/info?driver=${encodeURIComponent(verifyDriver.value)}`)
       driverInfo.value = payload.data || null
       driverForm.value = defaultDriverForm(driverInfo.value || {})
-      syncJsonFromForm()
+      syncJsonFromForm(false)
       mountCreateResult.value = ''
       mountCreateOk.value = false
     } catch (error) {
@@ -458,46 +632,18 @@ export function useDock(plugin: Plugin) {
     driverForm.value = defaultDriverForm(driverInfo.value || {})
   }
 
-  async function verifyCreateMount() {
-    if (mountCreating.value)
-      return false
-    mountCreating.value = true
-    mountCreateOk.value = false
-    mountCreateResult.value = t('mountCreating')
-    try {
-      const addition = syncAddition()
-      const payload = await openListJson('/api/admin/storage/create', {
-        mount_path: verifyMountPath.value,
-        driver: verifyDriver.value,
-        addition,
-        order: 0,
-      })
-      await verifyStorageList()
-      mountCreateOk.value = true
-      mountCreateResult.value = `${t('mountCreatePassed')}: id=${payload.data?.id ?? ''}, path=${verifyMountPath.value}`
-      pushVerify(true, t('verifyCreateMount'), mountCreateResult.value)
-      return true
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      mountCreateResult.value = message
-      pushVerify(false, t('verifyCreateMount'), message)
-      return false
-    } finally {
-      mountCreating.value = false
-    }
-  }
-
   async function tryDriverTest(addition: Record<string, any>) {
     const payload = await requestDriverTest(addition)
     if (payload.code === 501 || payload.message?.includes('does not expose a test method yet') || payload.message?.includes('not found'))
       return ''
     if (payload.code && payload.code !== 200)
       throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+    driverVerifySmsRequired.value = false
     const user = payload.data?.user || {}
     return user.nickname ? `${t('driverTestPassed')}: ${user.nickname}` : t('driverTestPassed')
   }
 
-  async function saveMount() {
+  async function saveMount(options: { skipDriverTest?: boolean } = {}) {
     if (mountCreating.value)
       return false
     mountCreating.value = true
@@ -505,7 +651,8 @@ export function useDock(plugin: Plugin) {
     mountCreateResult.value = t('mountCreating')
     try {
       const addition = syncAddition()
-      const testMessage = await tryDriverTest(addition)
+      validateMountAddition(addition)
+      const testMessage = options.skipDriverTest ? '' : await tryDriverTest(addition)
       const isUpdate = !!selectedStorageId.value
       const payload = await openListJson(isUpdate ? '/api/admin/storage/update' : '/api/admin/storage/create', isUpdate
         ? {
@@ -523,7 +670,7 @@ export function useDock(plugin: Plugin) {
             addition,
             order: 0,
           })
-      await verifyStorageList()
+      await refreshMounts()
       mountCreateOk.value = true
       const title = isUpdate ? t('mountUpdate') : t('mountAdd')
       mountCreateResult.value = [
@@ -531,6 +678,7 @@ export function useDock(plugin: Plugin) {
         `${t(isUpdate ? 'mountUpdatePassed' : 'mountCreatePassed')}: id=${isUpdate ? selectedStorageId.value : payload.data?.id ?? ''}, path=${verifyMountPath.value}`,
       ].filter(Boolean).join(' / ')
       pushVerify(true, title, mountCreateResult.value)
+      notifyChanged()
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -551,22 +699,31 @@ export function useDock(plugin: Plugin) {
   }
 
   function openAddMount() {
-    clearMountEdit()
+    selectedStorageId.value = null
+    selectedStorage.value = null
+    mountCreateOk.value = false
+    mountCreateResult.value = ''
     verifyMountPath.value = defaultMountPathForDriver(verifyDriver.value)
     mountFormOpen.value = true
+    loadDriverInfo()
   }
 
   async function editMount(item: any) {
     const storage = item?.id ? (await fetchOpenListJson(`/api/admin/storage/get?id=${encodeURIComponent(item.id)}`)).data : item
-    selectedStorageId.value = Number(storage.id)
-    selectedStorage.value = storage
-    verifyMountPath.value = storage.mount_path || '/'
-    verifyDriver.value = storage.driver || 'SiYuanKernel'
-    await loadDriverInfoForEdit(verifyDriver.value)
-    verifyAddition.value = JSON.stringify(parseAddition(storage.addition), null, 2)
-    syncFormFromJson()
-    mountCreateOk.value = true
-    mountCreateResult.value = `${t('mountEditing')}: id=${selectedStorageId.value}, path=${verifyMountPath.value}`
+    loadingMountEdit = true
+    try {
+      selectedStorageId.value = Number(storage.id)
+      selectedStorage.value = storage
+      verifyMountPath.value = storage.mount_path || '/'
+      verifyDriver.value = storage.driver || 'SiYuanKernel'
+      await loadDriverInfoForEdit(verifyDriver.value)
+      verifyAddition.value = JSON.stringify(parseAddition(storage.addition), null, 2)
+      syncFormFromJson()
+      mountCreateOk.value = true
+      mountCreateResult.value = `${t('mountEditing')}: id=${selectedStorageId.value}, path=${verifyMountPath.value}`
+    } finally {
+      loadingMountEdit = false
+    }
   }
 
   async function openEditMount(item: any) {
@@ -577,6 +734,9 @@ export function useDock(plugin: Plugin) {
   function closeMountForm() {
     stopDriverQrPolling()
     mountFormOpen.value = false
+    driverVerifySmsCode.value = ''
+    driverVerifySmsContext.value = null
+    driverVerifySmsRequired.value = false
   }
 
   async function submitMount() {
@@ -589,17 +749,21 @@ export function useDock(plugin: Plugin) {
     if (!id)
       return
     await openListJson(item.disabled ? '/api/admin/storage/enable' : '/api/admin/storage/disable', { id })
-    await verifyStorageList()
+    await refreshMounts()
+    notifyChanged()
   }
 
   async function deleteMount(item: any) {
     const id = Number(item.id)
     if (!id || id === 1)
       return
-    await openListJson('/api/admin/storage/delete', { id })
-    if (selectedStorageId.value === id)
-      clearMountEdit()
-    await verifyStorageList()
+    confirm(t('mountDelete'), `${t('mountDelete')} ${item.mount_path || `#${id}`}?`, async () => {
+      await openListJson('/api/admin/storage/delete', { id })
+      if (selectedStorageId.value === id)
+        clearMountEdit()
+      await refreshMounts()
+      notifyChanged()
+    })
   }
 
   async function exportAddition() {
@@ -660,8 +824,9 @@ export function useDock(plugin: Plugin) {
     try {
       const config = JSON.parse(configText.value || '{}')
       const payload = await openListJson('/api/admin/config/import', { config, mode: 'replace' })
-      await verifyStorageList()
+      await refreshMounts()
       await refreshStatus()
+      notifyChanged()
       showMessage(`${t('configImported')}: ${JSON.stringify(payload.data || {})}`)
     } catch (error) {
       showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
@@ -698,6 +863,14 @@ export function useDock(plugin: Plugin) {
     return verifyStorages.value
   }
 
+  function notifyChanged() {
+    window.dispatchEvent(new CustomEvent('siyuan-cloud:changed'))
+  }
+
+  async function refreshMounts() {
+    await loadStorageList()
+  }
+
   async function loadShareList() {
     const payload = await fetchOpenListJson('/api/share/list', {
       method: 'POST',
@@ -707,27 +880,180 @@ export function useDock(plugin: Plugin) {
     shareItems.value = payload.data?.content || payload.data || []
     return shareItems.value
   }
+  const refreshShareList = () => loadShareList()
 
-  function shareTitle(item: any) {
-    return item?.remark || item?.path || item?.sid || t('tabShares')
+  async function loadUserList() {
+    const payload = await fetchOpenListJson('/api/admin/user/list')
+    userItems.value = payload.data?.content || payload.data || []
+    return userItems.value
+  }
+
+  function openAddUser() {
+    selectedUserId.value = null
+    userForm.value = defaultUserForm()
+    userFormOpen.value = true
+  }
+
+  async function openEditUser(user: any) {
+    const payload = await fetchOpenListJson(`/api/admin/user/get?id=${encodeURIComponent(user.id)}`)
+    selectedUserId.value = Number(payload.data?.id || user.id)
+    userForm.value = defaultUserForm(payload.data || user)
+    userFormOpen.value = true
+  }
+
+  function closeUserForm() {
+    userFormOpen.value = false
+    selectedUserId.value = null
+    userForm.value = {}
+  }
+
+  async function saveUser() {
+    const isUpdate = !!selectedUserId.value
+    const body = {
+      id: selectedUserId.value,
+      username: userForm.value.username,
+      password: userForm.value.password,
+      base_path: userForm.value.base_path || '/',
+      permission: Number(userForm.value.permission || 0),
+      disabled: !!userForm.value.disabled,
+      allow_ldap: !!userForm.value.allow_ldap,
+      sso_id: userForm.value.sso_id || '',
+      role: selectedUserId.value ? userItems.value.find(item => Number(item.id) === selectedUserId.value)?.role : 0,
+    }
+    await openListJson(isUpdate ? '/api/admin/user/update' : '/api/admin/user/create', body)
+    await loadUserList()
+    closeUserForm()
+    showMessage(t(isUpdate ? 'userUpdated' : 'userCreated'))
+  }
+
+  async function toggleUser(user: any) {
+    await openListJson('/api/admin/user/update', {
+      ...user,
+      disabled: !user.disabled,
+    })
+    await loadUserList()
+  }
+
+  async function deleteUser(user: any) {
+    confirm(t('userDelete'), `${t('userDelete')} ${user.username || user.id}?`, async () => {
+      await openListJson('/api/admin/user/delete', { id: user.id })
+      await loadUserList()
+    })
+  }
+
+  async function cancelUser2fa(user: any) {
+    await openListJson('/api/admin/user/cancel_2fa', { id: user.id })
+    await loadUserList()
   }
 
   function shareDetail(item: any) {
     return [
-      item?.sid ? `sid=${item.sid}` : '',
-      item?.path || '',
+      item?.id ? `id=${item.id}` : '',
+      shareLinkPath(item),
+      Array.isArray(item?.files) ? item.files.join(', ') : '',
+      item?.pwd ? `${t('sharePwd')}=${item.pwd}` : '',
+      `${t('shareAccessed')}=${shareAccessed(item)}`,
       item?.expires ? `expires=${item.expires}` : '',
     ].filter(Boolean).join(' / ')
   }
 
-  function shareUrl(item: any) {
-    const sid = encodeURIComponent(String(item?.sid || ''))
-    const password = item?.password ? `?pwd=${encodeURIComponent(String(item.password))}` : ''
-    return `${location.origin}${privateBase}/sd/${sid}${password}`
+  function shareAccessed(item: any) {
+    const accessed = Number(item?.accessed || 0)
+    const max = Number(item?.max_accessed || 0)
+    return max > 0 ? `${accessed} / ${max}` : String(accessed)
+  }
+
+  function shareFilesText(item: any) {
+    return Array.isArray(item?.files) ? item.files.join('\n') : ''
+  }
+
+  function shareLinkPath(item: any) {
+    const id = encodeURIComponent(String(item?.id || ''))
+    return `${privateBase}/sd/${id}`
+  }
+
+  function shareDescription(item: any) {
+    return item?.pwd ? `${shareLinkPath(item)} / ${t('sharePwd')}: ${item.pwd}` : shareLinkPath(item)
+  }
+
+  function shareStatus(item: any) {
+    if (item?.disabled)
+      return { key: 'disabled', text: t('disabled'), className: 'b3-chip--error' }
+    const max = Number(item?.max_accessed || 0)
+    const expired = item?.expires && Date.parse(item.expires) < Date.now()
+    if ((max > 0 && Number(item?.accessed || 0) >= max) || expired || !Array.isArray(item?.files) || !item.files.length)
+      return { key: 'invalid', text: t('shareInvalid'), className: 'b3-chip--warning' }
+    return { key: 'work', text: t('enabled'), className: 'b3-chip--success' }
+  }
+
+  function shareTags(item: any) {
+    return [
+      { key: 'accessed', text: `${t('shareAccessed')}: ${shareAccessed(item)}`, className: 'b3-chip--info' },
+      item?.expires ? { key: 'expires', text: new Date(item.expires).toLocaleString(), className: 'b3-chip--info' } : null,
+      shareStatus(item),
+    ].filter(Boolean) as Array<{ key: string, text: string, className: string }>
+  }
+
+  function defaultShareForm(share?: any) {
+    return {
+      id: share?.id || '',
+      new_id: share?.id || '',
+      files: shareFilesText(share),
+      remark: share?.remark || '',
+      extract_folder: share?.extract_folder || '',
+      order_by: share?.order_by || '',
+      order_direction: share?.order_direction || '',
+      pwd: share?.pwd || '',
+      max_accessed: Number(share?.max_accessed || 0),
+      accessed: Number(share?.accessed || 0),
+      expires: share?.expires || '',
+      readme: share?.readme || '',
+      header: share?.header || '',
+      disabled: !!share?.disabled,
+    }
+  }
+
+  function openEditShare(item: any) {
+    selectedShareId.value = String(item?.id || '')
+    shareForm.value = defaultShareForm(item)
+    shareFormOpen.value = true
+  }
+
+  function closeShareForm() {
+    selectedShareId.value = ''
+    shareForm.value = {}
+    shareFormOpen.value = false
+  }
+
+  async function saveShare() {
+    const files = String(shareForm.value.files || '').split('\n').map(item => item.trim()).filter(Boolean)
+    await openListJson('/api/share/update', {
+      id: selectedShareId.value,
+      new_id: shareForm.value.new_id || selectedShareId.value,
+      files,
+      remark: shareForm.value.remark || '',
+      extract_folder: shareForm.value.extract_folder || '',
+      order_by: shareForm.value.order_by || '',
+      order_direction: shareForm.value.order_direction || '',
+      pwd: shareForm.value.pwd || '',
+      max_accessed: Number(shareForm.value.max_accessed || 0),
+      accessed: Number(shareForm.value.accessed || 0),
+      expires: shareForm.value.expires || null,
+      readme: shareForm.value.readme || '',
+      header: shareForm.value.header || '',
+      disabled: !!shareForm.value.disabled,
+    })
+    await loadShareList()
+    closeShareForm()
+    showMessage(t('shareUpdated'))
+  }
+
+  async function shareUrl(item: any) {
+    return openListShareUrl(shareLinkPath(item))
   }
 
   async function copyShare(item: any) {
-    const url = shareUrl(item)
+    const url = await shareUrl(item)
     try {
       await navigator.clipboard.writeText(url)
       showMessage(t('routeCopied'))
@@ -742,57 +1068,31 @@ export function useDock(plugin: Plugin) {
   }
 
   async function deleteShare(item: any) {
-    await openListJson('/api/share/delete', { id: item.id })
-    await loadShareList()
+    confirm(t('shareDelete'), `${t('shareDelete')} ${item.id}?`, async () => {
+      await openListJson('/api/share/delete', { id: item.id })
+      if (selectedShareId.value === String(item.id))
+        closeShareForm()
+      await loadShareList()
+    })
+  }
+
+  function openShareMenu(item: any, event: MouseEvent | KeyboardEvent) {
+    const menu = new Menu('siyuan-cloud-share')
+    menu.addItem({ icon: 'iconCopy', label: t('copyRoute'), click: () => copyShare(item) })
+    menu.addItem({ icon: item?.disabled ? 'iconEye' : 'iconEyeoff', label: item?.disabled ? t('shareEnable') : t('shareDisable'), click: () => toggleShare(item) })
+    menu.addSeparator()
+    menu.addItem({ icon: 'iconTrashcan', label: t('shareDelete'), click: () => deleteShare(item) })
+    const target = event.currentTarget as HTMLElement | null
+    const rect = target?.getBoundingClientRect()
+    const x = event instanceof MouseEvent ? event.clientX : rect?.left || 0
+    const y = event instanceof MouseEvent ? event.clientY : rect?.bottom || 0
+    menu.open({ x, y })
   }
 
   async function verifyStorageList() {
     return verifyStep(t('verifyStorageList'), async () => {
       await loadStorageList()
       return `${verifyStorages.value.length} ${t('verifyStorages')}`
-    })
-  }
-
-  async function verifyFsRoundTrip() {
-    return verifyStep(t('verifyFsRoundTrip'), async () => {
-      const dir = `${verifyMountPath.value}/fs`
-      const path = `${dir}/note.txt`
-      await fsMkdir(dir)
-      await fsNewFile(path, '', true)
-      const got = await fsGet(path)
-      if (got.code !== 200)
-        throw new Error(got.message || `Siyuan Cloud code ${got.code}`)
-      return got.data?.name || path
-    })
-  }
-
-  async function verifyWebDavRoundTrip() {
-    return verifyStep(t('verifyWebDavRoundTrip'), async () => {
-      const path = `${verifyMountPath.value}/webdav.txt`
-      await fetchOpenListText(`/dav${path}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'text/plain' },
-        body: 'hello webdav',
-      })
-      const got = await fetchOpenListText(`/dav${path}`)
-      if (got.text !== 'hello webdav')
-        throw new Error('WebDAV readback mismatch')
-      return path
-    })
-  }
-
-  async function verifyS3RoundTrip() {
-    return verifyStep(t('verifyS3RoundTrip'), async () => {
-      const key = `${verifyMountPath.value.replace(/^\/+/, '')}/s3.txt`
-      await fetchOpenListText(`/s3/siyuan-cloud/${key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'text/plain' },
-        body: 'hello s3',
-      })
-      const got = await fetchOpenListText(`/s3/siyuan-cloud/${key}`)
-      if (got.text !== 'hello s3')
-        throw new Error('S3 readback mismatch')
-      return key
     })
   }
 
@@ -806,10 +1106,7 @@ export function useDock(plugin: Plugin) {
   async function runVerifySuite() {
     verifyLog.value = []
     await verifyLogin()
-    await verifyCreateMount()
-    await verifyFsRoundTrip()
-    await verifyWebDavRoundTrip()
-    await verifyS3RoundTrip()
+    await verifyStorageList()
     await verifyTaskList()
     await refreshAll()
   }
@@ -834,7 +1131,9 @@ export function useDock(plugin: Plugin) {
     await loadDriverOptions()
     await loadStorageList()
     await loadShareList()
+    await loadUserList()
     await loadExternalPreviews()
+    await loadMe()
     await refreshStatus()
   }
 
@@ -847,7 +1146,7 @@ export function useDock(plugin: Plugin) {
   }
 
   async function copyRoute() {
-    const route = `${location.origin}${privateBase}/`
+    const route = await openListShareUrl(`${privateBase}/`)
     try {
       await navigator.clipboard.writeText(route)
       showMessage(t('routeCopied'))
@@ -872,32 +1171,54 @@ export function useDock(plugin: Plugin) {
       { key: 'list', icon: '#iconRefresh', label: t('verifyTaskList'), run: verifyTaskList },
       { key: 'run', icon: '#iconPlay', label: t('verifyRunAll'), run: runVerifySuite },
     ],
-    shares: [],
+    shares: [
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: loadShareList },
+    ],
+    mounts: [
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: loadStorageList },
+      { key: 'add', icon: '#iconAdd', label: t('mountAdd'), run: openAddMount },
+    ],
+    users: [
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: loadUserList },
+      { key: 'add', icon: '#iconAdd', label: t('userAdd'), run: openAddUser },
+    ],
     about: [
       { key: 'api', icon: '#iconOpenWindow', label: t('openApi'), run: openPrivateEntry },
       { key: 'copy', icon: '#iconCopy', label: t('copyRoute'), run: copyRoute },
     ],
   }))
 
-  watch(currentTab, saveDockSettings)
+  watch(currentTab, async (tab) => {
+    await saveDockSettings()
+    if (tab === 'shares')
+      await loadShareList()
+    else if (tab === 'users')
+      await loadUserList()
+    else if (tab === 'mounts')
+      await loadStorageList()
+  })
   watch(verifyDriver, async (driver) => {
+    if (loadingMountEdit)
+      return
     if (!selectedStorageId.value)
       verifyMountPath.value = defaultMountPathForDriver(driver)
     await loadDriverInfo()
   })
   onMounted(async () => {
+    window.addEventListener('siyuan-cloud:shares-changed', refreshShareList)
     await loadDockSettings()
     await refreshAll()
   })
-  onBeforeUnmount(stopDriverQrPolling)
+  onBeforeUnmount(() => {
+    window.removeEventListener('siyuan-cloud:shares-changed', refreshShareList)
+    stopDriverQrPolling()
+  })
 
   return {
     accountInfo,
     configText,
-    copyShare,
     currentTab,
     deleteMount,
-    deleteShare,
     driverDisplayName,
     driverFields,
     driverForm,
@@ -908,10 +1229,13 @@ export function useDock(plugin: Plugin) {
     driverVerifyMessage,
     driverVerifyPolling,
     driverVerifyQrSrc,
+    driverVerifySmsCode,
+    driverVerifySmsRequired,
     exportAddition,
     externalPreviews,
     fieldHelp,
     fieldLabel,
+    fieldOptionLabel,
     fieldOptions,
     importAddition,
     mountCreateOk,
@@ -922,11 +1246,15 @@ export function useDock(plugin: Plugin) {
     openAddMount,
     openEditMount,
     refreshDriverQrCode,
+    submitDriverSmsCode,
     refreshAll,
     selectedStorageId,
+    shareDescription,
     shareDetail,
+    shareForm,
+    shareFormOpen,
     shareItems,
-    shareTitle,
+    shareTags,
     sectionActions,
     statusClass,
     statusDetail,
@@ -941,7 +1269,18 @@ export function useDock(plugin: Plugin) {
     closeMountForm,
     submitMount,
     toggleMount,
-    toggleShare,
+    toggleUser,
+    userDetail,
+    userForm,
+    userFormOpen,
+    userItems,
+    userRoleLabel,
+    userTags,
+    userPermissionChecked,
+    userPermissionFormSummary,
+    userPermissionLabel,
+    userPermissionOptions: USER_PERMISSION_KEYS,
+    toggleUserPermission,
     verifyAddition,
     verifyDriver,
     verifyLogin,
@@ -951,5 +1290,15 @@ export function useDock(plugin: Plugin) {
     verifySession,
     verifyStorages,
     verifyUsername,
+    cancelUser2fa,
+    closeUserForm,
+    deleteUser,
+    openAddUser,
+    openEditShare,
+    openShareMenu,
+    openEditUser,
+    closeShareForm,
+    saveShare,
+    saveUser,
   }
 }

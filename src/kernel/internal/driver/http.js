@@ -8,7 +8,7 @@ const proxyPayload = (body, contentType) => {
   if (typeof body !== "string" && String(contentType || "").includes("application/json")) {
     return { payload: body, payloadEncoding: "json" };
   }
-  return { payload: encodePayload(body), payloadEncoding: "text" };
+  return { payload: encodePayload(body), payloadEncoding: "json" };
 };
 
 export const forwardProxy = async (client, url, {

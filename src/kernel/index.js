@@ -21,6 +21,10 @@ import {
   SETTING_GROUP,
 } from "./internal/model/setting.js";
 import {
+  accountFromSiyuanConf,
+  syncDefaultUserWithSiyuan,
+} from "./internal/model/user.js";
+import {
   driverInfoMap,
   driverNames,
 } from "./internal/driver/info.js";
@@ -34,6 +38,11 @@ import { createVirtualFs } from "./internal/fs/virtual.js";
 import { createWorkspaceAdapter } from "./internal/fs/workspace.js";
 import { createTaskStore } from "./internal/task/manager.js";
 import {
+  createSearchIndex,
+  ensureSearchState,
+} from "./internal/search/index.js";
+import {
+  loadConfigState,
   loadState as loadStoredState,
   saveState as saveStoredState,
 } from "./internal/state.js";
@@ -56,6 +65,7 @@ import {
 import {
   createShareHandlers,
   createShareReader,
+  shareClientIP,
 } from "./server/handles/share.js";
 import {
   proxy,
@@ -262,9 +272,12 @@ import { createWebDavServer } from "./server/webdav.js";
     return types[ext] || "application/octet-stream";
   };
 
-  const saveState = async () => {
-    await saveStoredState(siyuan.storage, state);
+  const saveState = async (domains) => {
+    await saveStoredState(siyuan.storage, state, domains);
   };
+  const saveConfigState = async () => saveState("config");
+  const saveRuntimeState = async () => saveState("runtime");
+  const saveSearchState = async () => saveState("search");
 
   const saveStorageAddition = async (storage, addition) => {
     const target = state.storages.find((item) => item.id === storage.id)
@@ -272,21 +285,103 @@ import { createWebDavServer } from "./server/webdav.js";
     if (!target) return;
     target.addition = JSON.stringify(addition || {});
     target.modified = now();
-    await saveState();
+    await saveConfigState();
   };
 
   const driverRuntime = createDriverRuntime({
     client: siyuan.client,
+    getSettings: () => state.settings,
     saveStorageAddition,
+  });
+  const searchFs = {
+    async get(path) {
+      const normalized = normalizePath(path);
+      if (normalized === "/") return { name: "", is_dir: true, size: 0 };
+      if (isWorkspacePath(normalized)) {
+        const result = await workspaceGet(normalized);
+        if (result.error) return null;
+        return result.data;
+      }
+      const mount = driverRuntime.resolve(state.storages, normalized);
+      if (mount) {
+        return mount.driver.get(mount.storage, mount.relPath, { skipLink: true });
+      }
+      const entry = state.entries[normalized];
+      if (entry) return toObjResp(entry);
+      const mountName = normalized === "/" ? "" : normalized.split("/").filter(Boolean)[0];
+      if (
+        normalized !== "/"
+        && state.storages.some((storage) => !storage.disabled && normalizePath(storage.mount_path || "/").split("/").filter(Boolean)[0] === mountName)
+      ) {
+        return { name: basename(normalized), is_dir: true, size: 0 };
+      }
+      return null;
+    },
+    async list(path) {
+      const normalized = normalizePath(path);
+      if (isWorkspacePath(normalized)) {
+        const result = await workspaceList(normalized, { page: 1, per_page: 100000 });
+        if (result.error) return [];
+        return result.data.content || [];
+      }
+      const mount = driverRuntime.resolve(state.storages, normalized);
+      if (mount) {
+        const data = await mount.driver.list(mount.storage, mount.relPath, { page: 1, per_page: 100000 });
+        return data.content || [];
+      }
+      const entry = state.entries[normalized];
+      const children = entry?.is_dir
+        ? (entry.children || []).map((childPath) => state.entries[childPath]).filter(Boolean).map(toObjResp)
+        : [];
+      if (normalized === "/") {
+        children.unshift({ name: "@workspace", is_dir: true, size: 0 });
+        for (const mountEntry of driverRuntime.mountEntries(state.storages, now)) {
+          if (!children.some((item) => item.name === mountEntry.name)) children.unshift(toObjResp(mountEntry));
+        }
+      }
+      return children;
+    },
+  };
+  const searchIndex = createSearchIndex({
+    getObj: searchFs.get,
+    getState: () => state,
+    isIndexDisabled: (path) => {
+      const normalized = normalizePath(path);
+      return state.storages.some((storage) => {
+        const mountPath = normalizePath(storage.mount_path || "/");
+        return !!storage.disable_index && normalized !== "/" && (normalized === mountPath || normalized.startsWith(`${mountPath}/`));
+      });
+    },
+    listObjs: searchFs.list,
+    now,
+    saveState: saveSearchState,
   });
 
   const loadState = async () => {
     const loaded = await loadStoredState({ now, storage: siyuan.storage });
     state = loaded.state;
+    let userChanged = false;
+    try {
+      const conf = await siyuanApiJson("/api/system/getConf", {});
+      userChanged = syncDefaultUserWithSiyuan(state, accountFromSiyuanConf(conf?.data?.conf || conf?.data || conf));
+    } catch (error) {
+      warn("failed to sync SiYuan account user", error?.message || String(error));
+    }
     if (loaded.shouldSave) {
       await saveState();
+    } else if (userChanged) {
+      await saveConfigState();
     }
     ensureDir("/");
+    ensureSearchState(state);
+  };
+  const reloadConfigState = async () => {
+    const config = await loadConfigState({ storage: siyuan.storage });
+    if (!config) return false;
+    Object.assign(state, config);
+    ensureDir("/");
+    ensureSearchState(state);
+    return true;
   };
 
   const settingItem = (key, value, index) => {
@@ -334,7 +429,7 @@ import { createWebDavServer } from "./server/webdav.js";
     for (const [settingKey, reqKey] of Object.entries(keyMap)) {
       state.settings[settingKey] = String(req[reqKey] ?? "");
     }
-    await saveState();
+    await saveConfigState();
     return jsonResponse(success(responseValue === undefined ? "ok" : responseValue));
   };
 
@@ -355,9 +450,11 @@ import { createWebDavServer } from "./server/webdav.js";
   });
 
   const { shareGet, shareList } = createShareReader({
+    driverRuntime,
     getState: () => state,
     isWorkspacePath,
     page,
+    saveState: saveConfigState,
     toFsGetResp,
     toObjResp,
     workspaceGet,
@@ -367,7 +464,7 @@ import { createWebDavServer } from "./server/webdav.js";
   const taskStore = createTaskStore({
     getState: () => state,
     now,
-    saveState,
+    saveState: saveRuntimeState,
   });
 
   const readFileResponse = async (filePath, request) => {
@@ -422,7 +519,7 @@ import { createWebDavServer } from "./server/webdav.js";
     readFileResponse,
     removeEntry,
     requestPath,
-    saveState,
+    saveState: saveRuntimeState,
     toObjResp,
     workspaceGet,
     workspaceList,
@@ -434,7 +531,7 @@ import { createWebDavServer } from "./server/webdav.js";
     getState: () => state,
     removeEntry,
     requestPath,
-    saveState,
+    saveState: saveRuntimeState,
   });
 
   let handlers = {};
@@ -447,47 +544,47 @@ import { createWebDavServer } from "./server/webdav.js";
     ...createTaskHandlers({
       parseJson,
       queryValue,
-      saveState,
+      saveState: saveRuntimeState,
       taskStore,
     }),
     ...createAuthHandlers({
       getState: () => state,
       parseJson,
-      saveState,
+      saveState: saveConfigState,
     }),
     ...createCompatHandlers({
       getState: () => state,
       parseJson,
-      saveState,
+      saveState: saveConfigState,
     }),
     ...createMetaHandlers({
       getState: () => state,
       pageSlice,
       parseJson,
       queryValue,
-      saveState,
+      saveState: saveConfigState,
     }),
     ...createMessageHandlers({
       getState: () => state,
       now,
       parseJson,
-      saveState,
+      saveState: saveRuntimeState,
     }),
     ...createIndexHandlers({
-      getState: () => state,
-      saveState,
+      parseJson,
+      searchIndex,
     }),
     ...createScanHandlers({
       getState: () => state,
       now,
-      saveState,
+      saveState: saveRuntimeState,
     }),
     ...createSecurityHandlers({
       getState: () => state,
       now,
       parseJson,
       queryValue,
-      saveState,
+      saveState: saveConfigState,
     }),
     ...createPublicHandlers({
       getState: () => state,
@@ -503,7 +600,8 @@ import { createWebDavServer } from "./server/webdav.js";
       pageSlice,
       parseJson,
       queryValue,
-      saveState,
+      reloadConfigState,
+      saveState: saveConfigState,
       saveToolSettings,
       settingItem,
       storageResp,
@@ -523,8 +621,11 @@ import { createWebDavServer } from "./server/webdav.js";
       removeEmptyDirs,
       removeEntry,
       renameEntryInDir,
-      saveState,
+      saveConfigState,
+      saveState: saveRuntimeState,
+      searchIndex,
       shareGet,
+      shareClientIP,
       shareList,
       siyuanApiJson,
       taskStore,
@@ -539,13 +640,14 @@ import { createWebDavServer } from "./server/webdav.js";
       taskStore,
     }),
     ...createShareHandlers({
+      driverRuntime,
       getState: () => state,
       isWorkspacePath,
       now,
       page,
       parseJson,
       queryValue,
-      saveState,
+      saveState: saveConfigState,
       workspaceGet,
     }),
   };
@@ -560,6 +662,7 @@ import { createWebDavServer } from "./server/webdav.js";
     queryValue,
     readFileResponse,
     requestPath,
+    saveState: saveConfigState,
     warn,
     workspaceReadText,
   });
@@ -575,7 +678,7 @@ import { createWebDavServer } from "./server/webdav.js";
   };
 
   siyuan.plugin.lifecycle.onunload = async () => {
-    await saveState();
+    await saveState(["config", "runtime", "search"]);
     await log("kernel plugin unloaded");
   };
 

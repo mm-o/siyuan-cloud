@@ -1,14 +1,19 @@
-import { OPENLIST_VERSION } from "../../internal/conf/const.js";
+import {
+  CONFIG_FILE,
+  OPENLIST_VERSION,
+  RUNTIME_FILE,
+  SEARCH_INDEX_FILE,
+} from "../../internal/conf/const.js";
 import { jsonResponse, success, textResponse } from "../common/response.js";
 
 const ADAPTERS = [
   "siyuan-storage",
   "siyuan-workspace",
-  "local",
   "openlist",
   "alist_v3",
   "webdav",
   "s3",
+  "115_cloud",
   "onedrive",
   "123pan",
   "baidu_netdisk",
@@ -27,6 +32,7 @@ const STAGES = [
   ["kernel", "done"],
   ["auth", "done"],
   ["fs", "done"],
+  ["search-index", "active"],
   ["torrent", "active"],
   ["streaming-proxy", "done"],
   ["admin", "done"],
@@ -56,19 +62,27 @@ const getSyncInfo = async (client) => {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
-  const storagePath = "/storage/petal/siyuan-cloud/siyuan-cloud/state.json";
+  const storageBase = "/storage/petal/siyuan-cloud";
+  const configPath = `${storageBase}/${CONFIG_FILE}`;
+  const runtimePath = `${storageBase}/${RUNTIME_FILE}`;
+  const searchIndexPath = `${storageBase}/${SEARCH_INDEX_FILE}`;
   const ignored = lines.some((line) => (
     line === "/storage/petal/**/*"
     || line === "/storage/petal/**"
     || line === "/storage/petal/siyuan-cloud/**/*"
     || line === "/storage/petal/siyuan-cloud/**"
-    || line === storagePath
+    || line === configPath
+    || line === runtimePath
+    || line === searchIndexPath
   ));
   return {
     persistent: true,
     syncable_by_default: true,
     ignored_by_syncignore: ignored,
-    state_file: storagePath,
+    state_file: configPath,
+    config_file: configPath,
+    runtime_file: runtimePath,
+    search_index_file: searchIndexPath,
     source: "kernel/plugin/plugin.go + kernel/model/repository.go + kernel/model/sync.go",
   };
 };

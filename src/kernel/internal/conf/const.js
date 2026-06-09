@@ -1,5 +1,8 @@
 export const OPENLIST_VERSION = "siyuan-cloud-port-0.3.0"
-export const STATE_FILE = "siyuan-cloud/state.json"
+export const CONFIG_FILE = "config.json"
+export const LEGACY_STATE_FILE = "siyuan-cloud/state.json"
+export const RUNTIME_FILE = "runtime.json"
+export const SEARCH_INDEX_FILE = "search-index.json"
 
 export const TASK_TYPES = [
   "copy",

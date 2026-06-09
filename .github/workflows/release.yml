@@ -1,65 +1,103 @@
-name: Create Release on Tag Push
+name: Release from Package
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+    paths:
+      - "package.json"
+      - "plugin.json"
+      - "package.zip"
+      - "CHANGELOG.md"
+      - "README.md"
+      - "README_zh_CN.md"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
-      # Checkout
       - name: Checkout
-        uses: actions/checkout@v3
-
-      # Install Node.js
-      - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/checkout@v4
         with:
-          node-version: 18
-          registry-url: "https://registry.npmjs.org"
+          fetch-depth: 0
 
-        # Install pnpm
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        id: pnpm-install
-        with:
-          version: 8
-          run_install: false
-
-      # Get pnpm store directory
-      - name: Get pnpm store directory
-        id: pnpm-cache
+      - name: Read version
+        id: version
         shell: bash
         run: |
-          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      # Setup pnpm cache
-      - name: Setup pnpm cache
-        uses: actions/cache@v3
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+      - name: Verify package
+        shell: bash
+        run: |
+          test -f package.zip
+          unzip -t package.zip
+          ls -lh package.zip
 
-      # Install dependencies
-      - name: Install dependencies
-        run: pnpm install
+      - name: Create tag
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+            git push origin "${{ steps.version.outputs.tag }}"
+          fi
 
-      # Build for production, 这一步会生成一个 package.zip
-      - name: Build for production
-        run: pnpm build
+      - name: Build release notes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import json
+          import os
+          import re
 
-      - name: Release
+          version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
+          heading = re.compile(rf"^##\s+v?{re.escape(version)}(?:\s+.*)?$", re.M)
+          next_heading = re.compile(r"^##\s+v?\d+\.\d+\.\d+(?:\s+.*)?$", re.M)
+
+          body = None
+          source = "N/A"
+          for path in [Path("CHANGELOG.md"), Path("README_zh_CN.md"), Path("README.md")]:
+            if not path.exists():
+              continue
+            text = path.read_text(encoding="utf-8")
+            match = heading.search(text)
+            if not match:
+              continue
+            rest = text[match.start():]
+            next_match = next_heading.search(rest, match.end() - match.start())
+            body = rest[:next_match.start()].strip() if next_match else rest.strip()
+            source = path.name
+            break
+
+          if not body:
+            body = f"## v{version}"
+
+          body += (
+            f"\n\n---\n\n"
+            f"Source: {source}\n"
+            f"Package: package.zip\n"
+            f"Commit: {os.environ.get('GITHUB_SHA', '')}\n"
+          )
+          Path("release-body.md").write_text(body, encoding="utf-8")
+          PY
+
+      - name: Create or update release
         uses: ncipollo/release-action@v1
         with:
-          allowUpdates: true
+          tag: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          artifacts: package.zip
           artifactErrorsFailBuild: true
-          artifacts: "package.zip"
+          allowUpdates: true
+          makeLatest: true
+          bodyFile: release-body.md
           token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: false

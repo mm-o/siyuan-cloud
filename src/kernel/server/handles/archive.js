@@ -1,17 +1,37 @@
-import { archiveNotImplemented } from "../../internal/fs/archive.js";
+import { archiveNotImplemented, sharingArchiveNotImplemented } from "../../internal/fs/archive.js";
 import { failure, jsonResponse } from "../common/response.js";
 
+const parseArchiveRequest = async (request, parseJson) => {
+  if (request.method === "GET" || request.method === "HEAD")
+    return Object.fromEntries(new URL(request.url).searchParams.entries());
+  return parseJson(request);
+};
+
+const isSharingArchivePath = (path) => typeof path === "string" && path.startsWith("/@s");
+
 export const createArchiveHandlers = ({ parseJson, taskStore }) => ({
-  "ANY /api/fs/archive/meta": async () => jsonResponse(failure(
-    "archive preview is not implemented in the SiYuan kernel port yet",
-    501,
-    archiveNotImplemented("meta"),
-  ), 501),
-  "ANY /api/fs/archive/list": async () => jsonResponse(failure(
-    "archive preview is not implemented in the SiYuan kernel port yet",
-    501,
-    archiveNotImplemented("list"),
-  ), 501),
+  "ANY /api/fs/archive/meta": async (request) => {
+    const req = await parseArchiveRequest(request, parseJson);
+    const data = isSharingArchivePath(req.path)
+      ? sharingArchiveNotImplemented("share_meta")
+      : archiveNotImplemented("meta");
+    return jsonResponse(failure(
+      "archive preview is not implemented in the SiYuan kernel port yet",
+      501,
+      data,
+    ), 501);
+  },
+  "ANY /api/fs/archive/list": async (request) => {
+    const req = await parseArchiveRequest(request, parseJson);
+    const data = isSharingArchivePath(req.path)
+      ? sharingArchiveNotImplemented("share_list")
+      : archiveNotImplemented("list");
+    return jsonResponse(failure(
+      "archive preview is not implemented in the SiYuan kernel port yet",
+      501,
+      data,
+    ), 501);
+  },
   "POST /api/fs/archive/decompress": async (request) => {
     const req = await parseJson(request);
     const task = await taskStore.addTask("decompress", {

@@ -1,9 +1,10 @@
 import { basename, dirname, normalizePath } from "../../model/path.js";
 import { forwardProxy, joinUrl } from "../http.js";
-import { signAwsV4 } from "../aws4.js";
+import { hmacSha256, sha256Hex, signAwsV4 } from "../aws4.js";
 
 const tagText = (xml, name) => String(xml || "").match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`, "i"))?.[1] || "";
 const decodeXml = (value) => String(value || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 const keyFor = (path, dir = false) => {
   const key = normalizePath(path).replace(/^\/+/, "");
   return key && dir ? `${key}/` : key;
@@ -33,6 +34,67 @@ const s3Url = (addition, key = "", query = "") => {
   const path = forcePathStyle ? normalizePath(`/${bucket}/${key}`) : normalizePath(`/${key}`);
   const base = forcePathStyle ? endpoint : endpoint.replace("://", `://${bucket}.`);
   return `${joinUrl(base, path)}${query ? `?${query}` : ""}`;
+};
+
+const directUploadUrl = (addition, key = "") => {
+  const url = new URL(s3Url(addition, key));
+  const directHost = addition.direct_upload_host || addition.DirectUploadHost || "";
+  if (directHost) {
+    const split = String(directHost).split("://");
+    if (split.length === 2 && ["http", "https"].includes(split[0])) {
+      url.protocol = `${split[0]}:`;
+      url.host = split[1];
+    } else {
+      url.host = directHost;
+    }
+  }
+  return url.toString();
+};
+
+const amzDate = (date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
+const dateStamp = (date) => amzDate(date).slice(0, 8);
+const encodeRfc3986 = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+const presignPutObject = (addition, key) => {
+  const now = new Date();
+  const amz = amzDate(now);
+  const date = dateStamp(now);
+  const region = addition.region || "us-east-1";
+  const scope = `${date}/${region}/s3/aws4_request`;
+  const url = new URL(directUploadUrl(addition, key));
+  const params = {
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${addition.access_key_id}/${scope}`,
+    "X-Amz-Date": amz,
+    "X-Amz-Expires": String(Number(addition.sign_url_expire || 4) * 3600),
+    "X-Amz-SignedHeaders": "host",
+  };
+  if (addition.session_token) params["X-Amz-Security-Token"] = addition.session_token;
+  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+  const query = [...url.searchParams.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
+    .join("&");
+  const canonicalRequest = [
+    "PUT",
+    url.pathname || "/",
+    query,
+    `host:${url.host}\n`,
+    "host",
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amz,
+    scope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const kDate = hmacSha256(`AWS4${addition.secret_access_key}`, date);
+  const kRegion = hmacSha256(kDate, region);
+  const kService = hmacSha256(kRegion, "s3");
+  const kSigning = hmacSha256(kService, "aws4_request");
+  url.searchParams.set("X-Amz-Signature", hex(hmacSha256(kSigning, stringToSign)));
+  return url.toString();
 };
 
 const signedRequest = (client, addition, method, key, {
@@ -183,5 +245,13 @@ export const createS3Driver = ({ client }) => ({
       payloadEncoding: options.bodyEncoding === "base64" ? "base64" : undefined,
       signingBody,
     });
+  },
+  async getDirectUploadInfo(storage, relPath) {
+    const addition = storage.addition_json;
+    if (!addition.enable_direct_upload) throw new Error("direct upload is not implemented for this storage");
+    return {
+      upload_url: presignPutObject(addition, keyFor(relPath)),
+      method: "PUT",
+    };
   },
 });

@@ -1,20 +1,14 @@
 import { defaultSettings } from "./settings.js";
+import {
+  defaultAdminUser,
+  defaultGuestUser,
+} from "../../model/user.js";
 
 export const defaultState = (now) => ({
   settings: defaultSettings(),
   users: [
-    {
-      id: 1,
-      username: "admin",
-      password: "",
-      role: 2,
-      disabled: false,
-      base_path: "/",
-      permission: 67108863,
-      sso_id: "",
-      otp: false,
-      otp_secret: "",
-    },
+    defaultAdminUser(),
+    defaultGuestUser(),
   ],
   storages: [
     {
@@ -49,4 +43,5 @@ export const defaultState = (now) => ({
   webdav_locks: {},
   s3_multipart_uploads: {},
   sharings: [],
+  search_nodes: [],
 });

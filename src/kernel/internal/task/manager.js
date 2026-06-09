@@ -1,6 +1,7 @@
 import { TASK_TYPES } from "../conf/const.js";
 
-const DONE_STATES = new Set(["succeeded", "failed", "canceled"]);
+const DONE_STATES = new Set(["canceled", "failed", "succeeded"]);
+const UNDONE_STATES = new Set(["pending", "running", "canceling", "errored", "failing", "waiting_retry", "before_retry"]);
 
 export const ensureTaskBuckets = (state) => {
   state.tasks = state.tasks || {};
@@ -35,6 +36,20 @@ export const createTaskRecord = ({
   };
 };
 
+export const normalizeTaskRecord = (task = {}) => ({
+  id: String(task.id || ""),
+  name: String(task.name || ""),
+  creator: String(task.creator || "admin"),
+  creator_role: Number(task.creator_role ?? 2),
+  state: String(task.state || "succeeded"),
+  status: String(task.status || ""),
+  progress: Number.isFinite(Number(task.progress)) ? Number(task.progress) : 100,
+  start_time: task.start_time || null,
+  end_time: task.end_time || null,
+  total_bytes: Number(task.total_bytes || 0),
+  error: String(task.error || ""),
+});
+
 export const createTaskStore = ({
   getState,
   now,
@@ -49,42 +64,75 @@ export const createTaskStore = ({
       now,
       type,
     });
-    tasks[type][task.id] = task;
+    tasks[type][task.id] = normalizeTaskRecord(task);
     await saveState();
-    return task;
+    return tasks[type][task.id];
   };
 
   const getTask = (type, id) => {
     const tasks = ensureTaskBuckets(getState());
-    return tasks[type]?.[id] || null;
+    const task = tasks[type]?.[id] || null;
+    return task ? normalizeTaskRecord(task) : null;
   };
 
   const listTasks = (type, done) => {
     const tasks = ensureTaskBuckets(getState());
     return Object.values(tasks[type] || {})
-      .filter((task) => done ? DONE_STATES.has(task.state) : !DONE_STATES.has(task.state))
+      .map(normalizeTaskRecord)
+      .filter((task) => done ? DONE_STATES.has(task.state) : UNDONE_STATES.has(task.state))
       .sort((a, b) => String(b.start_time || "").localeCompare(String(a.start_time || "")));
   };
 
   const removeTask = async (type, id) => {
     const tasks = ensureTaskBuckets(getState());
-    if (tasks[type]) delete tasks[type][id];
+    if (!tasks[type]?.[id]) return false;
+    delete tasks[type][id];
     await saveState();
+    return true;
   };
 
-  const clearDone = async (type) => {
+  const clearByState = async (type, states) => {
     const tasks = ensureTaskBuckets(getState());
     for (const task of Object.values(tasks[type] || {})) {
-      if (DONE_STATES.has(task.state)) delete tasks[type][task.id];
+      if (states.has(task.state)) delete tasks[type][task.id];
     }
     await saveState();
   };
 
   const markCanceled = async (type, id) => {
-    const task = getTask(type, id);
+    const tasks = ensureTaskBuckets(getState());
+    const task = tasks[type]?.[id];
+    if (!task) return false;
     if (task) {
       task.state = "canceled";
       task.status = "canceled";
+      task.end_time = now();
+    }
+    await saveState();
+    return true;
+  };
+
+  const retryTask = async (type, id) => {
+    const tasks = ensureTaskBuckets(getState());
+    const task = tasks[type]?.[id];
+    if (!task) return false;
+    task.state = "succeeded";
+    task.status = "completed";
+    task.progress = 100;
+    task.error = "";
+    task.end_time = now();
+    await saveState();
+    return true;
+  };
+
+  const retryFailed = async (type) => {
+    const tasks = ensureTaskBuckets(getState());
+    for (const task of Object.values(tasks[type] || {})) {
+      if (task.state !== "failed") continue;
+      task.state = "succeeded";
+      task.status = "completed";
+      task.progress = 100;
+      task.error = "";
       task.end_time = now();
     }
     await saveState();
@@ -92,10 +140,13 @@ export const createTaskStore = ({
 
   return {
     addTask,
-    clearDone,
+    clearDone: (type) => clearByState(type, DONE_STATES),
+    clearSucceeded: (type) => clearByState(type, new Set(["succeeded"])),
     getTask,
     listTasks,
     markCanceled,
     removeTask,
+    retryFailed,
+    retryTask,
   };
 };

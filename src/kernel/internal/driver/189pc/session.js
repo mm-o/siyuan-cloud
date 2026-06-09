@@ -8,7 +8,6 @@ import {
 } from "../common.js";
 import {
   forwardProxy,
-  remoteJson,
 } from "../http.js";
 
 const API_URL = "https://api.cloud.189.cn";
@@ -119,6 +118,23 @@ const checkResp = (payload) => {
   return payload;
 };
 
+const parse189Json = (text, url) => {
+  const safe = String(text || "{}").replace(
+    /"((?:id|parentId|familyId|fileId|folderId|targetFolderId|uploadFileId|userFileId|operId|srcFileOwnerId|taskId))"\s*:\s*(-?\d{15,})/gi,
+    (_, key, value) => `"${key}":"${value}"`,
+  );
+  try {
+    return JSON.parse(safe);
+  } catch (error) {
+    throw new Error(`invalid JSON response from ${url}: ${error.message}`);
+  }
+};
+
+const remote189Json = async (client, url, options) => {
+  const data = await forwardProxy(client, url, options);
+  return parse189Json(data.body, url);
+};
+
 const headerValue = (headers = {}, name) => {
   const target = String(name).toLowerCase();
   for (const [key, value] of Object.entries(headers || {})) {
@@ -183,7 +199,7 @@ const jsonWithSignedQuery = async (client, url, {
     "User-Agent": mode === "tv" ? "EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35" : "Mozilla/5.0",
     "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   };
-  const resp = await remoteJson(client, target.toString(), {
+  const resp = await remote189Json(client, target.toString(), {
     allowErrorStatus: true,
     body,
     contentType: "application/x-www-form-urlencoded",
@@ -205,7 +221,7 @@ export const refreshPcSession = async (client, storage) => {
   url.searchParams.set("rand", randomSuffix());
   url.searchParams.set("appId", "8025431004");
   url.searchParams.set("accessToken", accessToken);
-  const resp = checkResp(await remoteJson(client, url.toString(), {
+  const resp = checkResp(await remote189Json(client, url.toString(), {
     allowErrorStatus: true,
     headers: { "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}` },
     method: "GET",
@@ -241,7 +257,7 @@ export const refreshTvSession = async (client, storage) => {
   })) {
     target.searchParams.set(key, String(value));
   }
-  const resp = checkResp(await remoteJson(client, target.toString(), {
+  const resp = checkResp(await remote189Json(client, target.toString(), {
     allowErrorStatus: true,
     headers: {
       AppKey: TV_APP_KEY,

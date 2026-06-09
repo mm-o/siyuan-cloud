@@ -38,29 +38,20 @@
           </template>
         </div>
         <div
-          v-if="pathOpen"
-          class="fn__flex-1"
+          v-if="searchInputOpen"
+          class="fn__flex-1 ol-file-tab__input"
         >
           <input
-            ref="pathInputRef"
-            v-model="pathInput"
+            ref="searchInputRef"
+            v-model="searchInput"
             class="b3-text-field fn__block"
-            :placeholder="tf('pathPlaceholder', 'Enter path and press Enter')"
+            :placeholder="tf('searchPlaceholder', 'Search current tree')"
             spellcheck="false"
-            @keydown.enter="goPath(pathInput)"
-            @keydown.esc="pathOpen = false"
-            @blur="pathOpen = false"
+            @keydown.enter="runSearch"
+            @keydown.esc="closeSearchInput"
+            @blur="closeSearchInput"
           >
         </div>
-        <button
-          v-else
-          class="block__icon fn__flex-center ariaLabel"
-          type="button"
-          :aria-label="tf('pathJump', 'Jump to Path')"
-          @click="openPathInput"
-        >
-          <svg><use xlink:href="#iconSearch" /></svg>
-        </button>
         <button
           v-for="action in toolbarActions"
           :key="action.key"
@@ -105,7 +96,7 @@
           </li>
           <li
             v-for="item in sortedItems"
-            :key="item.name"
+            :key="itemKey(item)"
             class="b3-list-item ol-file-row"
             :class="{
               'ol-file-row--selecting': selectionMode,
@@ -132,7 +123,13 @@
               >
                 <use :xlink:href="openListFileIconHref(item.name, item.is_dir)" />
               </svg>
-              <span class="ol-file-row__label">{{ item.name }}</span>
+              <span class="ol-file-row__label">
+                <span class="ol-file-row__name">{{ item.name }}</span>
+                <span
+                  v-if="searchActive && item.parent"
+                  class="ol-file-row__parent"
+                >{{ item.parent }}</span>
+              </span>
             </span>
             <span class="b3-list-item__meta">{{ item.is_dir ? '' : formatSize(item.size) }}</span>
             <span class="b3-list-item__meta">{{ formatModified(item.modified) }}</span>
@@ -155,12 +152,12 @@
 import {
   Dialog,
   Menu,
-  confirm,
   showMessage,
 } from 'siyuan'
 import {
   computed,
   nextTick,
+  onBeforeUnmount,
   onMounted,
   ref,
 } from 'vue'
@@ -172,22 +169,36 @@ import {
   fsMkdir,
   fsMove,
   fsNewFile,
-  fsRemove,
   fsRename,
+  fsSearch,
+  fsWriteFile,
   openListAbsoluteUrl,
   resolveOpenListFile,
+  shareCreate,
 } from '@/utils/api'
 import { handleResp, handleRespWithNotifySuccess } from '@/utils/handle_resp'
+import {
+  baseOpenListName,
+  deleteOpenListSelection,
+  itemOpenListPath,
+  joinOpenListPath,
+  normalizeOpenListPath,
+  openOpenListFileItemMenu,
+  parentOpenListPath,
+  selectedOpenListGroups,
+} from '@/utils/file_actions'
 import {
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
-import { privateBase } from '@/utils/request'
+import { openListShareUrl, privateBase } from '@/utils/request'
 
 interface FsItem {
   name: string
   size: number
   is_dir: boolean
+  path?: string
+  parent?: string
   modified?: string
   raw_url?: string
   url?: string
@@ -195,13 +206,14 @@ interface FsItem {
 
 const plugin = usePlugin()
 const currentPath = ref('/')
-const pathInput = ref('/')
+const searchInput = ref('')
+const searchActive = ref(false)
+const searchInputOpen = ref(false)
 const items = ref<FsItem[]>([])
 const loading = ref(false)
-const pathOpen = ref(false)
-const pathInputRef = ref<HTMLInputElement>()
+const searchInputRef = ref<HTMLInputElement>()
 const uploadInputRef = ref<HTMLInputElement>()
-const selectedNames = ref<string[]>([])
+const selectedPaths = ref<string[]>([])
 const selectionMode = ref(false)
 let refreshSeq = 0
 const sortedItems = computed(() =>
@@ -216,7 +228,7 @@ const crumbs = computed(() => {
   return list
 })
 const selectedItems = computed(() =>
-  items.value.filter(item => selectedNames.value.includes(item.name)),
+  items.value.filter(item => selectedPaths.value.includes(itemKey(item))),
 )
 const primarySelectedItem = computed(() => selectedItems.value[0] || null)
 const downloadableSelection = computed(() => selectedItems.value.filter(item => !item.is_dir))
@@ -228,6 +240,8 @@ const selectedSummary = computed(() =>
 )
 const toolbarActions = computed(() => [
   { key: 'refresh', icon: 'iconRefresh', label: tf('refresh', 'Refresh'), run: refresh },
+  { key: 'search', icon: 'iconSearch', label: tf('search', 'Search'), run: openSearchInput },
+  { key: 'clearSearch', icon: 'iconClose', label: tf('clearSearch', 'Clear Search'), disabled: !searchActive.value, run: clearSearch },
   { key: 'upload', icon: 'iconUpload', label: tf('upload', 'Upload'), run: openUpload },
   { key: 'selection', icon: selectionMode.value ? 'iconCheck' : 'iconUncheck', label: tf('toggleCheckbox', 'Toggle selection'), run: toggleSelectionMode },
   { key: 'download', icon: 'iconDownload', label: tf('download', 'Download'), disabled: !downloadableSelection.value.length, run: downloadSelection },
@@ -236,6 +250,7 @@ const toolbarActions = computed(() => [
   { key: 'rename', icon: 'iconEdit', label: tf('rename', 'Rename'), disabled: selectedItems.value.length !== 1, run: renameSelection },
   { key: 'copy', icon: 'iconCopy', label: tf('copy', 'Copy'), disabled: !selectedItems.value.length, run: copySelection },
   { key: 'move', icon: 'iconMove', label: tf('move', 'Move'), disabled: !selectedItems.value.length, run: moveSelection },
+  { key: 'share', icon: 'iconLink', label: tf('share', 'Share'), disabled: !selectedItems.value.length, run: shareSelection },
   { key: 'delete', icon: 'iconTrashcan', label: t('deleteFile'), disabled: !selectedItems.value.length, run: deleteSelection },
   { key: 'settings', icon: 'iconSettings', label: t('openSettings'), run: openSettings },
 ])
@@ -258,45 +273,46 @@ function tf(key: string, fallback: string) {
 }
 
 function normalizePath(path: string) {
-  const input = path === undefined || path === null || path === '' ? '/' : String(path)
-  if (!input)
-    return '/'
-  const slash = input.startsWith('/') ? input : `/${input}`
-  const normalized = slash.replace(/\/+/g, '/')
-  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '')
+  return normalizeOpenListPath(path)
 }
 
 function joinPath(dir: string, name: string) {
-  return normalizePath(`${normalizePath(dir)}/${String(name || '').replace(/^\/+/, '')}`)
+  return joinOpenListPath(dir, name)
 }
 
 function parentPath(path: string) {
-  const clean = normalizePath(path)
-  if (clean === '/')
-    return '/'
-  return clean.slice(0, clean.lastIndexOf('/')) || '/'
+  return parentOpenListPath(path)
+}
+
+function baseName(path: string) {
+  return baseOpenListName(path)
 }
 
 function itemPath(item: FsItem) {
-  return joinPath(currentPath.value, item.name)
+  return itemOpenListPath(item, currentPath.value)
+}
+
+function itemKey(item: FsItem) {
+  return itemPath(item)
 }
 
 function isSelected(item: FsItem) {
-  return selectedNames.value.includes(item.name)
+  return selectedPaths.value.includes(itemKey(item))
 }
 
 function clearSelection() {
-  selectedNames.value = []
+  selectedPaths.value = []
 }
 
 function selectOnly(item: FsItem) {
-  selectedNames.value = [item.name]
+  selectedPaths.value = [itemKey(item)]
 }
 
 function setSelected(item: FsItem, checked: boolean) {
-  selectedNames.value = checked
-    ? Array.from(new Set([...selectedNames.value, item.name]))
-    : selectedNames.value.filter(name => name !== item.name)
+  const key = itemKey(item)
+  selectedPaths.value = checked
+    ? Array.from(new Set([...selectedPaths.value, key]))
+    : selectedPaths.value.filter(path => path !== key)
 }
 
 function changeSelection(item: FsItem, event: Event) {
@@ -304,8 +320,8 @@ function changeSelection(item: FsItem, event: Event) {
 }
 
 function changeAllSelection(event: Event) {
-  selectedNames.value = (event.target as HTMLInputElement).checked
-    ? sortedItems.value.map(item => item.name)
+  selectedPaths.value = (event.target as HTMLInputElement).checked
+    ? sortedItems.value.map(itemKey)
     : []
 }
 
@@ -350,10 +366,12 @@ const isImageFile = (item: FsItem) => fileKind(item) === 'image'
 const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
 const escapeMdDest = (url: string) => url.replace(/([\\()])/g, '\\$1')
 const docProxyUrl = (path: string) => decodeURI(encodeURI(`${privateBase}/p${path}`)).replace(/#/g, '%23').replace(/\?/g, '%3F')
-const companionHref = (item: FsItem) => !item.is_dir && companionExts.has(extensionOf(item.name)) ? openListAbsoluteUrl(docProxyUrl(itemPath(item))) : undefined
+const itemUrl = (item: FsItem) => String(item.raw_url || item.url || '')
+const itemOpenUrl = (item: FsItem) => itemUrl(item) || docProxyUrl(itemPath(item))
+const companionHref = (item: FsItem) => !item.is_dir && companionExts.has(extensionOf(item.name)) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
 function documentLink(item: FsItem, path: string) {
   const kind = fileKind(item)
-  const url = docProxyUrl(path)
+  const url = itemOpenUrl(item) || docProxyUrl(path)
   if (kind === 'video')
     return `<video controls src="${escapeHtml(url)}"></video>`
   return `${kind === 'image' ? '!' : ''}[${escapeMdText(item.name)}](${escapeMdDest(url)})`
@@ -372,6 +390,9 @@ function triggerDownload(url: string, filename?: string) {
 }
 
 async function resolveDownloadUrl(path: string) {
+  const local = items.value.find(item => itemPath(item) === path)
+  if (local?.raw_url || local?.url)
+    return String(local.raw_url || local.url)
   return (await resolveOpenListFile(path)).url
 }
 
@@ -474,6 +495,10 @@ function escapeHtml(value: string) {
 }
 
 async function refresh() {
+  if (searchActive.value && searchInput.value.trim()) {
+    await runSearch()
+    return
+  }
   const seq = ++refreshSeq
   loading.value = true
   const payload = await fsList(currentPath.value, '', 1, 200)
@@ -481,10 +506,46 @@ async function refresh() {
     return
   handleResp(payload, (data: any) => {
     items.value = data?.content || []
-    pathInput.value = currentPath.value
-    selectedNames.value = selectedNames.value.filter(name => items.value.some(item => item.name === name))
+    selectedPaths.value = selectedPaths.value.filter(path => items.value.some(item => itemKey(item) === path))
   })
   loading.value = false
+}
+
+async function runSearch() {
+  const keywords = searchInput.value.trim()
+  if (!keywords) {
+    await clearSearch()
+    return
+  }
+  const seq = ++refreshSeq
+  loading.value = true
+  const payload = await fsSearch(currentPath.value, keywords, 0, 1, 200)
+  if (seq !== refreshSeq)
+    return
+  handleResp(payload, (data: any) => {
+    items.value = (data?.content || []).map((entry: any) => {
+      const path = normalizePath(`${entry.parent || '/'}/${entry.name}`)
+      const parent = parentPath(path)
+      return {
+        name: entry.name,
+        path,
+        parent: parent === currentPath.value ? '' : parent,
+        size: Number(entry.size || 0),
+        is_dir: !!entry.is_dir,
+        modified: entry.modified,
+      }
+    })
+    searchActive.value = true
+    clearSelection()
+  })
+  loading.value = false
+}
+
+async function clearSearch() {
+  searchInput.value = ''
+  searchActive.value = false
+  searchInputOpen.value = false
+  await refresh()
 }
 
 async function locatePath(path = '') {
@@ -495,32 +556,45 @@ async function locatePath(path = '') {
   }
   const dir = parentPath(target)
   const name = target.split('/').pop() || ''
-  currentPath.value = dir
-  pathInput.value = dir
-  await refresh()
+  if (!await goPath(dir))
+    return
   const item = items.value.find(item => item.name === name)
   if (item?.is_dir) {
     await goPath(target)
     return
   }
-  selectedNames.value = item ? [name] : []
+  selectedPaths.value = item ? [target] : []
 }
 
 defineExpose({ openPath: locatePath })
 
 async function goPath(path: string) {
-  currentPath.value = normalizePath(path || '/')
-  pathOpen.value = false
+  const nextPath = normalizePath(path || '/')
+  searchInputOpen.value = false
+  loading.value = true
+  const payload = await fsList(nextPath, '', 1, 200)
+  loading.value = false
+  if (payload.code !== 200) {
+    handleResp(payload)
+    return false
+  }
+  currentPath.value = nextPath
+  items.value = payload.data?.content || []
+  searchInput.value = ''
+  searchActive.value = false
   clearSelection()
-  await refresh()
+  return true
 }
 
-async function openPathInput() {
-  pathInput.value = currentPath.value
-  pathOpen.value = true
+async function openSearchInput() {
+  searchInputOpen.value = true
   await nextTick()
-  pathInputRef.value?.focus()
-  pathInputRef.value?.select()
+  searchInputRef.value?.focus()
+  searchInputRef.value?.select()
+}
+
+function closeSearchInput() {
+  searchInputOpen.value = false
 }
 
 async function goParent() {
@@ -535,6 +609,7 @@ async function createFolder() {
   const resp = await fsMkdir(joinPath(currentPath.value, name))
   handleRespWithNotifySuccess(resp, async () => {
     await refresh()
+    notifyChanged()
   })
 }
 
@@ -546,6 +621,7 @@ async function createFile() {
   const resp = await fsNewFile(joinPath(currentPath.value, name), '', false)
   handleRespWithNotifySuccess(resp, async () => {
     await refresh()
+    notifyChanged()
   })
 }
 
@@ -585,27 +661,19 @@ function showTextPreview(name: string, content: string) {
   })
 }
 
-async function removeItems(names: string[]) {
-  if (!names.length)
-    return
-  const resp = await fsRemove(currentPath.value, names)
-  handleRespWithNotifySuccess(resp, async () => {
-    clearSelection()
-    await refresh()
-  })
+function selectedGroups() {
+  return selectedOpenListGroups(selectedItems.value, currentPath.value)
 }
 
 async function deleteSelection() {
-  const names = selectedItems.value.map(item => item.name)
-  if (!names.length)
-    return
-  confirm(
-    tf('deleteFile', 'Delete'),
-    tf('deleteConfirm', 'Delete selected items?'),
-    async () => {
-      await removeItems(names)
-    },
-  )
+  await deleteOpenListSelection({
+    clearSelection,
+    currentPath: currentPath.value,
+    items: selectedItems.value,
+    refresh,
+    t,
+    tf,
+  })
 }
 
 async function renameSelection() {
@@ -619,6 +687,7 @@ async function renameSelection() {
   const resp = await fsRename(itemPath(item), nextName, false)
   handleRespWithNotifySuccess(resp, async () => {
     await refresh()
+    notifyChanged()
     const nextItem = items.value.find(entry => entry.name === nextName)
     if (nextItem)
       selectOnly(nextItem)
@@ -634,16 +703,24 @@ async function runTransferAction(type: 'copy' | 'move') {
     tf(type === 'copy' ? 'copyTargetPlaceholder' : 'moveTargetPlaceholder', 'Target directory path'),
   )
   const dstDir = normalizePath(String(value || ''))
-  if (!dstDir || dstDir === currentPath.value && type === 'move')
+  if (!dstDir)
     return
-  const resp = type === 'copy'
-    ? await fsCopy(currentPath.value, dstDir, selectedItems.value.map(item => item.name), false, false, false)
-    : await fsMove(currentPath.value, dstDir, selectedItems.value.map(item => item.name), false, false)
-  handleRespWithNotifySuccess(resp, async () => {
-    if (type === 'move')
-      clearSelection()
-    await refresh()
-  })
+  for (const group of selectedGroups()) {
+    if (type === 'move' && group.dir === dstDir)
+      continue
+    const resp = type === 'copy'
+      ? await fsCopy(group.dir, dstDir, group.names, false, false, false)
+      : await fsMove(group.dir, dstDir, group.names, false, false)
+    if (resp.code !== 200) {
+      handleResp(resp)
+      return
+    }
+  }
+  showMessage(tf(type === 'copy' ? 'copyDone' : 'moveDone', type === 'copy' ? 'Copied' : 'Moved'), 2000)
+  if (type === 'move')
+    clearSelection()
+  await refresh()
+  notifyChanged()
 }
 
 async function copySelection() {
@@ -654,24 +731,39 @@ async function moveSelection() {
   await runTransferAction('move')
 }
 
+async function shareSelection() {
+  if (!selectedItems.value.length)
+    return
+  const files = selectedItems.value.map(item => itemPath(item))
+  const id = await promptText(tf('shareCreate', 'Create Share'), '', tf('shareIdPlaceholder', 'Share ID, optional'))
+  if (id === null)
+    return
+  const pwd = await promptText(tf('sharePassword', 'Share Password'), '', tf('sharePasswordPlaceholder', 'Password, optional'))
+  if (pwd === null)
+    return
+  const resp = await shareCreate({
+    id: String(id || '').trim() || undefined,
+    files,
+    pwd: String(pwd || ''),
+    remark: files.length === 1 ? files[0] : `${files.length} files`,
+  })
+  handleRespWithNotifySuccess(resp, async (data: any) => {
+    const shareId = encodeURIComponent(String(data?.id || ''))
+    const url = await openListShareUrl(`${privateBase}/sd/${shareId}`)
+    await navigator.clipboard?.writeText(url)
+    window.dispatchEvent(new CustomEvent('siyuan-cloud:shares-changed'))
+    showMessage(tf('shareCreated', 'Share created and copied'), 2000)
+  })
+}
+
 function openUpload() {
   uploadInputRef.value?.click()
 }
 
 async function uploadFile(file: File) {
-  const form = new FormData()
-  form.append('file', file, file.name)
-  const response = await fetch(`${privateBase}/api/fs/form`, {
-    method: 'PUT',
-    headers: {
-      'File-Path': encodeURIComponent(joinPath(currentPath.value, file.name)),
-      Overwrite: 'false',
-    },
-    body: form,
-  })
-  const payload = await response.json()
-  if (!response.ok || (payload.code && payload.code !== 200))
-    throw new Error(payload.message || `HTTP ${response.status}`)
+  const payload = await fsWriteFile(joinPath(currentPath.value, file.name), file)
+  if (payload.code !== 200)
+    throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
 }
 
 async function onUploadChange(event: Event) {
@@ -684,6 +776,7 @@ async function onUploadChange(event: Event) {
       await uploadFile(file)
     showMessage(tf('uploadDone', 'Upload completed'), 2000)
     await refresh()
+    notifyChanged()
   } catch (error) {
     showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
   } finally {
@@ -705,6 +798,10 @@ async function downloadSelection() {
 
 function openSettings() {
   window._siyuan_cloud?.openDock?.()
+}
+
+function notifyChanged() {
+  window.dispatchEvent(new CustomEvent('siyuan-cloud:changed'))
 }
 
 function openBackgroundMenu(event: MouseEvent) {
@@ -736,51 +833,30 @@ function openBackgroundMenu(event: MouseEvent) {
 }
 
 function openItemMenu(event: MouseEvent, item: FsItem) {
-  if (!isSelected(item))
-    selectOnly(item)
-  const menu = new Menu('siyuan-cloud-file-item')
-  const path = itemPath(item)
-  menu.addItem({
-    icon: item.is_dir ? 'iconFolder' : 'iconOpen',
-    label: t('open'),
-    click: () => openFile(item),
+  openOpenListFileItemMenu({
+    copyLink,
+    copySelection,
+    deleteSelection,
+    downloadItem,
+    event,
+    isSelected,
+    item,
+    itemPath,
+    moveSelection,
+    openFile,
+    renameSelection,
+    selectOnly,
+    shareSelection,
+    t,
+    tf,
   })
-  if (!item.is_dir) {
-    menu.addItem({
-      icon: 'iconDownload',
-      label: tf('download', 'Download'),
-      click: () => downloadItem(item),
-    })
-    menu.addItem({
-      icon: 'iconLink',
-      label: t('copyLink'),
-      click: () => copyLink(item, path),
-    })
-  }
-  menu.addSeparator({ id: 'separator_edit' })
-  menu.addItem({
-    icon: 'iconEdit',
-    label: tf('rename', 'Rename'),
-    click: () => renameSelection(),
-  })
-  menu.addItem({
-    icon: 'iconCopy',
-    label: tf('copy', 'Copy'),
-    click: () => copySelection(),
-  })
-  menu.addItem({
-    icon: 'iconMove',
-    label: tf('move', 'Move'),
-    click: () => moveSelection(),
-  })
-  menu.addSeparator({ id: 'separator_remove' })
-  menu.addItem({
-    icon: 'iconTrashcan',
-    label: t('deleteFile'),
-    click: () => deleteSelection(),
-  })
-  menu.open({ x: event.clientX, y: event.clientY })
 }
 
-onMounted(() => locatePath('/'))
+onMounted(() => {
+  window.addEventListener('siyuan-cloud:changed', refresh)
+  locatePath('/')
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('siyuan-cloud:changed', refresh)
+})
 </script>
