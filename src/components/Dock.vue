@@ -56,6 +56,54 @@
       </template>
 
       <template v-else-if="currentTab === 'tasks'">
+        <DockSectionHeader icon="#iconAccount" :title="t('loginTitle')" :actions="sectionActions.account" />
+        <div class="b3-list b3-list--background">
+          <div class="b3-list-item">
+            <label class="ol-field">
+              <span>{{ t('verifyUsername') }}</span>
+              <input v-model="verifyUsername" class="b3-text-field" type="text">
+            </label>
+          </div>
+          <div class="b3-list-item">
+            <label class="ol-field">
+              <span>{{ t('verifyPassword') }}</span>
+              <input v-model="verifyPassword" class="b3-text-field" type="password">
+            </label>
+          </div>
+          <div class="b3-list-item">
+            <span class="b3-list-item__text">{{ t('currentSession') }}</span>
+            <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="verifySession || accountInfo">{{ verifySession || accountInfo || t('unknown') }}</span>
+            <button class="b3-list-item__action b3-tooltips b3-tooltips__w" type="button" :aria-label="t('verifyLogin')" @click.stop="verifyLogin">
+              <svg><use xlink:href="#iconPlay" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <DockSectionHeader icon="#iconList" :title="t('torrentTools')" :actions="[]" />
+        <div class="b3-list b3-list--background">
+          <div class="b3-list-item">
+            <label class="ol-field">
+              <span>{{ t('torrentPath') }}</span>
+              <input v-model="torrentPath" class="b3-text-field" type="text" :placeholder="t('torrentPathPlaceholder')">
+            </label>
+          </div>
+          <div class="b3-list-item">
+            <label class="ol-field">
+              <span>{{ t('torrentData') }}</span>
+              <textarea v-model="torrentData" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('torrentDataPlaceholder')" />
+            </label>
+          </div>
+          <div class="b3-list-item">
+            <button class="b3-button" type="button" @click="generateTorrent">{{ t('torrentGenerate') }}</button>
+            <span class="fn__space" />
+            <button class="b3-button b3-button--outline" type="button" @click="parseTorrent">{{ t('torrentParse') }}</button>
+          </div>
+          <div v-if="torrentResult" class="b3-list-item">
+            <textarea class="b3-text-field ol-addition" readonly spellcheck="false" :value="torrentResult" />
+          </div>
+        </div>
+
+        <DockSectionHeader icon="#iconList" :title="t('verifyTaskList')" :actions="[]" />
         <div class="b3-list b3-list--background">
           <div v-for="item in verifyLog" :key="item.id" class="b3-list-item">
             <svg class="b3-list-item__graphic" :class="{ 'ft__error': !item.ok }"><use :xlink:href="item.ok ? '#iconCheck' : '#iconClose'" /></svg>
@@ -73,7 +121,7 @@
               <button v-if="item.otp" class="b3-chip b3-chip--small" type="button" @click.stop="cancelUser2fa(item)">{{ t('userCancel2fa') }}</button>
             </template>
           </DockRow>
-          <DockRow v-if="!userFormOpen" icon="#iconAdd" :title="t('userAdd')" :desc="t('userAddHelp')" clickable @open="openAddUser" />
+          <DockRow v-if="!userFormOpen" icon="#iconAdd" :title="t('userAdd')" :desc="t('userAddHelp')" :open="openAddUser" />
           <div v-else class="ol-mount-form">
             <label class="ol-field">
               <span>{{ t('verifyUsername') }}</span>
@@ -165,7 +213,7 @@
 
       <template v-else>
         <div class="ol-mount-list">
-          <DockRow v-for="item in verifyStorages" :key="item.id || item.mount_path" icon="#iconDatabase" :title="mountPath(item)" :desc="storageDescription(item)" :tags="storageTags(item)" :actions="mountActions(item)" clickable @open="openMount(item)" />
+          <DockRow v-for="item in verifyStorages" :key="item.id || item.mount_path" icon="#iconDatabase" :title="mountPath(item)" :desc="storageDescription(item)" :tags="storageTags(item)" :actions="mountActions(item)" :open="() => openMount(item)" />
           <button v-if="!mountFormOpen" class="ol-mount-row b3-list-item--hide-action" type="button" @click.stop="openAddMount">
             <span class="ol-mount-row__cover"><svg><use xlink:href="#iconAdd" /></svg></span>
             <span class="ol-mount-row__title ariaLabel" :aria-label="t('mountAdd')">{{ t('mountAdd') }}</span>
@@ -281,6 +329,10 @@ import {
 } from '@/utils/api'
 import { useDock } from '@/utils/dock'
 import {
+  isArchiveFileName,
+  openArchiveBrowser,
+} from '@/utils/archive'
+import {
   deleteOpenListSelection,
   itemOpenListPath,
   joinOpenListPath,
@@ -292,6 +344,7 @@ import {
   openListFileIconName,
 } from '@/utils/icon'
 import { privateBase } from '@/utils/request'
+import { createShareForPaths } from '@/utils/share'
 
 interface DockAction {
   key: string
@@ -360,15 +413,15 @@ const DockSectionHeader = defineComponent({
 
 const DockRow = (props: any, { emit, slots }: any) => {
   const open = (event: MouseEvent | KeyboardEvent) => {
-    if (!props.clickable)
+    if (!props.open)
       return
     event.stopPropagation()
-    emit('open', event)
+    props.open(event)
   }
   return h('div', {
     class: 'ol-mount-row b3-list-item--hide-action',
-    role: props.clickable ? 'button' : undefined,
-    tabindex: props.clickable ? 0 : undefined,
+    role: props.open ? 'button' : undefined,
+    tabindex: props.open ? 0 : undefined,
     onClick: open,
     onKeydown: (event: KeyboardEvent) => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -387,7 +440,8 @@ const DockRow = (props: any, { emit, slots }: any) => {
     ]),
   ])
 }
-DockRow.emits = ['open']
+
+const plugin = usePlugin()
 
 const {
   accountInfo,
@@ -470,10 +524,15 @@ const {
   verifyLog,
   verifyMountPath,
   verifyPassword,
+  torrentData,
+  torrentPath,
+  torrentResult,
+  generateTorrent,
+  parseTorrent,
   verifySession,
   verifyStorages,
   verifyUsername,
-} = useDock(usePlugin())
+} = useDock(plugin)
 
 const onUserPermissionChange = (index: number, event: Event) => {
   toggleUserPermission(index, (event.target as HTMLInputElement | null)?.checked === true)
@@ -603,6 +662,7 @@ function extensionOf(name: string) {
 
 const isImageFile = (item: DockTreeItem) => !item.is_dir && imageExts.has(extensionOf(item.name))
 const isCompanionFile = (item: DockTreeItem) => !item.is_dir && companionExts.has(extensionOf(item.name))
+const isArchiveFile = (item: DockTreeItem) => !item.is_dir && isArchiveFileName(item.name)
 const docProxyUrl = (path: string) => decodeURI(encodeURI(`${privateBase}/p${path}`)).replace(/#/g, '%23').replace(/\?/g, '%3F')
 const itemOpenUrl = (item: DockTreeItem) => String(item.raw_url || item.url || '') || docProxyUrl(item.path)
 const companionHref = (item: DockTreeItem) => isCompanionFile(item) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
@@ -658,6 +718,10 @@ async function openNode(node: DockTreeItem) {
   if (!node.is_dir) {
     if (isImageFile(node)) {
       await openImageViewer(node)
+      return
+    }
+    if (isArchiveFile(node)) {
+      await browseTreeArchive(node)
       return
     }
     if (!isCompanionFile(node))
@@ -719,8 +783,20 @@ async function downloadTreeItem(item: DockTreeItem) {
   triggerDownload(await resolveDownloadUrl(item.path), item.name)
 }
 
+async function browseTreeArchive(item: DockTreeItem) {
+  const tfLocal = (key: string, fallback: string) => {
+    const value = t(key)
+    return value === key ? fallback : value
+  }
+  await openArchiveBrowser({
+    archivePath: item.path,
+    tf: tfLocal,
+    title: `${tfLocal('browseArchive', 'Browse archive')} - ${item.name}`,
+  })
+}
+
 async function copyTreeLink(item: DockTreeItem, path: string) {
-  await navigator.clipboard?.writeText(openListAbsoluteUrl(docProxyUrl(path)))
+  await navigator.clipboard?.writeText(`[${item.name}](${docProxyUrl(path)})`)
   showMessage(t('linkCopied'), 2000)
 }
 
@@ -743,12 +819,23 @@ async function deleteTreeSelection() {
   })
 }
 
+async function shareTreeSelection() {
+  await createShareForPaths({
+    paths: selectedTreeItems.value.map(item => treeItemPath(item)),
+    tf: (key, fallback) => {
+      const value = t(key)
+      return value === key ? fallback : value
+    },
+  })
+}
+
 function onTreeContextMenu(event: MouseEvent) {
   const li = (event.target as HTMLElement).closest('li[data-path]') as HTMLElement | null
   const node = li ? visibleNodeMap.value.get(li.dataset.path || '') : null
   if (!node)
     return
   openOpenListFileItemMenu({
+    browseArchive: isArchiveFile(node) ? browseTreeArchive : undefined,
     copyLink: copyTreeLink,
     copySelection: openTreeInFileManager,
     deleteSelection: deleteTreeSelection,
@@ -761,7 +848,7 @@ function onTreeContextMenu(event: MouseEvent) {
     openFile: openNode,
     renameSelection: openTreeInFileManager,
     selectOnly: selectOnlyTree,
-    shareSelection: openTreeInFileManager,
+    shareSelection: shareTreeSelection,
     t,
     tf: (key, fallback) => {
       const value = t(key)

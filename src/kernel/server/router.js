@@ -72,6 +72,7 @@ const sharePreviewPage = ({ info, path, pwd, text }) => {
 };
 
 export const createRouter = ({
+  archiveDownloadResponse,
   getState,
   handleWebDav,
   handleS3,
@@ -85,6 +86,16 @@ export const createRouter = ({
   warn,
   workspaceReadText,
 }) => {
+  const sharePasswordAction = (path, request, keys = []) => {
+    const params = new URLSearchParams();
+    for (const key of keys) {
+      const value = queryValue(request, key);
+      if (value) params.set(key, value);
+    }
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  };
+
   const fallbackReadFileResponse = async (filePath) => {
     const state = getState();
     if (isWorkspacePath(filePath)) {
@@ -128,19 +139,42 @@ export const createRouter = ({
       const info = sharePathInfo({ path: sharePath, password: pwd, state });
       const needsPassword = shareNeedsPassword({ path: sharePath, password: pwd, state });
       const text = shareText(request);
-      if (!info && needsPassword) return sharePasswordPage({ action: path, message: pwd ? text.tryAgain : "", text });
-      if (!info) return sharePasswordPage({ action: path, message: text.notFoundMessage, text, title: text.notFound });
+      const passwordAction = sharePasswordAction(path, request, ["download"]);
+      if (!info && needsPassword) return sharePasswordPage({ action: passwordAction, message: pwd ? text.tryAgain : "", text });
+      if (!info) return sharePasswordPage({ action: passwordAction, message: text.notFoundMessage, text, title: text.notFound });
       await countShareAccess({ info, ip: shareClientIP(request), saveState });
-      return queryValue(request, "download") ? readFileResponse(info.targetPath, request) : sharePreviewPage({ info, path, pwd, text });
+      return queryValue(request, "download") ? readFileResponse(info.targetPath, request, { shareDownload: true }) : sharePreviewPage({ info, path, pwd, text });
     }
     if (path.startsWith("/d/") || path.startsWith("/p/")) {
       return readFileResponse(normalizePath(path.replace(/^\/[dp]/, "")), request);
     }
     if (path === "/sad" || path.startsWith("/sad/")) {
-      return textResponse("sharing archive extract is not implemented in the SiYuan kernel port yet", 501);
+      const sharePath = normalizePath(path.replace(/^\/sad/, ""));
+      const pwd = queryValue(request, "pwd");
+      const state = getState();
+      const info = sharePathInfo({ path: sharePath, password: pwd, state });
+      const needsPassword = shareNeedsPassword({ path: sharePath, password: pwd, state });
+      const text = shareText(request);
+      const passwordAction = sharePasswordAction(path, request, ["download", "inner", "pass"]);
+      if (!info && needsPassword) return sharePasswordPage({ action: passwordAction, message: pwd ? text.tryAgain : "", text });
+      if (!info) return sharePasswordPage({ action: passwordAction, message: text.notFoundMessage, text, title: text.notFound });
+      await countShareAccess({ info, ip: shareClientIP(request), saveState });
+      if (!archiveDownloadResponse) return textResponse("sharing archive extract is not implemented in the SiYuan kernel port yet", 501);
+      return archiveDownloadResponse({
+        archivePath: info.targetPath,
+        download: queryValue(request, "download") === "1",
+        innerPath: queryValue(request, "inner"),
+        pass: queryValue(request, "pass"),
+      });
     }
-    if (path.startsWith("/ad/") || path.startsWith("/ap/") || path.startsWith("/ae/")) {
-      return textResponse("archive download is not implemented in the SiYuan kernel port yet", 501);
+    if ((path.startsWith("/ae/") || path.startsWith("/ad/") || path.startsWith("/ap/")) && archiveDownloadResponse) {
+      const archivePath = normalizePath(path.replace(/^\/a[edp]/, ""));
+      return archiveDownloadResponse({
+        archivePath,
+        download: queryValue(request, "download") === "1",
+        innerPath: queryValue(request, "inner"),
+        pass: queryValue(request, "pass"),
+      });
     }
     return jsonResponse(failure("route not implemented: " + key, 404), 404);
   };

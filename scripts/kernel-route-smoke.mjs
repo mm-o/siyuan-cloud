@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import {
+  gzipSync,
+  zipSync,
+} from "fflate";
+import {
+  BlobWriter,
+  TextReader,
+  ZipWriter,
+  configure as configureZipJs,
+} from "@zip.js/zip.js";
 import { create115Driver } from "../src/kernel/internal/driver/115/driver.js";
 import { createOneDriveDriver } from "../src/kernel/internal/driver/onedrive/driver.js";
+
+configureZipJs({ useWebWorkers: false });
 
 const storageData = new Map();
 const rpcHandlers = new Map();
@@ -21,6 +33,7 @@ let pan123UploadCompleteBody = null;
 let pan123UploadedBody = "";
 const aliOpenCreateBodies = [];
 const aliOpenCompleteBodies = [];
+let aliOpenPreviewBody = null;
 let aliOpenUploadedBody = "";
 let aliOpenPutCount = 0;
 let quarkOpenUploadPreBody = null;
@@ -32,6 +45,7 @@ let baiduPrecreateBody = null;
 let baiduLocateQuery = null;
 let baiduSuperfileQuery = null;
 let baiduUploadedBody = "";
+const baiduArchiveRanges = [];
 const oneDriveSessionBodies = [];
 const oneDriveUploadRanges = [];
 const oneDrivePatchBodies = [];
@@ -46,6 +60,10 @@ let cloud189SmsMode = false;
 let cloud189SmsSentBody = null;
 let cloud189SmsSentCount = 0;
 let cloud189SmsSubmitBody = null;
+let openListOtherBody = null;
+const openListRenameBodies = [];
+const openListMoveBodies = [];
+const openListRemoveBodies = [];
 
 const cloud189RsaKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 1024 });
 const cloud189RsaPubKey = cloud189RsaKeyPair.publicKey.export({ format: "der", type: "spki" }).toString("base64");
@@ -64,6 +82,102 @@ const jsonBody = (payload) => ({
 });
 
 const parseForm = (payload) => Object.fromEntries(new URLSearchParams(String(payload || "")));
+
+const makeZip = (files) => {
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  const dosTime = 0;
+  const dosDate = 0x5c21;
+  for (const file of files) {
+    const name = file.nameBytes ? Buffer.from(file.nameBytes) : Buffer.from(file.name, "utf8");
+    const data = Buffer.from(file.content || "", "utf8");
+    const flags = file.utf8 === false ? 0 : 0x0800;
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(flags, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(dosTime, 10);
+    local.writeUInt16LE(dosDate, 12);
+    local.writeUInt32LE(0, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    chunks.push(local, data);
+
+    const dir = file.name.endsWith("/");
+    const record = Buffer.alloc(46 + name.length);
+    record.writeUInt32LE(0x02014b50, 0);
+    record.writeUInt16LE(20, 4);
+    record.writeUInt16LE(20, 6);
+    record.writeUInt16LE(flags, 8);
+    record.writeUInt16LE(0, 10);
+    record.writeUInt16LE(dosTime, 12);
+    record.writeUInt16LE(dosDate, 14);
+    record.writeUInt32LE(0, 16);
+    record.writeUInt32LE(data.length, 20);
+    record.writeUInt32LE(data.length, 24);
+    record.writeUInt16LE(name.length, 28);
+    record.writeUInt32LE(dir ? (0o40755 << 16) : 0, 38);
+    record.writeUInt32LE(offset, 42);
+    name.copy(record, 46);
+    central.push(record);
+    offset += local.length + data.length;
+  }
+  const centralOffset = offset;
+  const centralSize = central.reduce((sum, item) => sum + item.length, 0);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralSize, 12);
+  eocd.writeUInt32LE(centralOffset, 16);
+  return Buffer.concat([...chunks, ...central, eocd]);
+};
+
+const baiduZipBytes = makeZip([
+  { name: "hello.txt", content: "zip from baidu" },
+  { name: "Cap 中文版_0.4.0-cn_x64-setup.exe", nameBytes: Buffer.from("43617020d6d0cec4b0e65f302e342e302d636e5f7836342d73657475702e657865", "hex"), content: "setup" },
+  { name: "Cap 中文版安装包/", nameBytes: Buffer.from("43617020d6d0cec4b0e6b0b2d7b0b0fc2f", "hex"), content: "" },
+].map((item) => ({ ...item, utf8: item.nameBytes ? false : item.utf8 })));
+
+const makeEncryptedZip = async (files, password) => {
+  const writer = new ZipWriter(new BlobWriter("application/zip"), { password });
+  for (const file of files) await writer.add(file.name, new TextReader(file.content || ""));
+  const blob = await writer.close();
+  return Buffer.from(await blob.arrayBuffer());
+};
+
+const makeTar = (files) => {
+  const chunks = [];
+  for (const file of files) {
+    const name = Buffer.from(file.name, "utf8");
+    const data = Buffer.from(file.content || "", "utf8");
+    const header = Buffer.alloc(512);
+    name.copy(header, 0, 0, Math.min(name.length, 100));
+    header.write("0000644\0", 100, "ascii");
+    header.write("0000000\0", 108, "ascii");
+    header.write("0000000\0", 116, "ascii");
+    header.write((file.name.endsWith("/") ? 0 : data.length).toString(8).padStart(11, "0") + "\0", 124, "ascii");
+    header.write(Math.floor(Date.UTC(2026, 0, 1) / 1000).toString(8).padStart(11, "0") + "\0", 136, "ascii");
+    header.fill(0x20, 148, 156);
+    header[156] = file.name.endsWith("/") ? 53 : 48;
+    header.write("ustar\0", 257, "ascii");
+    let sum = 0;
+    for (const byte of header) sum += byte;
+    header.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
+    chunks.push(header);
+    if (!file.name.endsWith("/")) {
+      chunks.push(data);
+      const pad = (512 - (data.length % 512)) % 512;
+      if (pad) chunks.push(Buffer.alloc(pad));
+    }
+  }
+  chunks.push(Buffer.alloc(1024));
+  return Buffer.concat(chunks);
+};
 
 globalThis.siyuan = {
   client: {
@@ -263,8 +377,28 @@ globalThis.siyuan = {
           };
         } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/openFile/list")) {
           body = {
-            items: [],
+            items: req.payload?.parent_file_id === "root"
+              ? [{
+                  file_id: "ali-open-video-file",
+                  name: "ali-video.mp4",
+                  size: 1024,
+                  type: "file",
+                  created_at: "2026-01-01T00:00:00.000Z",
+                  updated_at: "2026-01-01T00:00:00.000Z",
+                }]
+              : [],
             next_marker: "",
+          };
+        } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/openFile/getVideoPreviewPlayInfo")) {
+          aliOpenPreviewBody = req.payload;
+          body = {
+            video_preview_play_info: {
+              live_transcoding_task_list: [{
+                template_id: "FHD",
+                status: "finished",
+                url: "https://ali-preview.example.test/ali-video.m3u8",
+              }],
+            },
           };
         } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/openFile/create")) {
           aliOpenCreateBodies.push(req.payload);
@@ -809,9 +943,19 @@ globalThis.siyuan = {
         } else if (url.hostname === "pan.baidu.com" && url.pathname.endsWith("/rest/2.0/xpan/file") && url.searchParams.get("method") === "list") {
           const isImageMount = url.searchParams.get("dir") === "/image";
           const isPdfMount = url.searchParams.get("dir") === "/pdf";
+          const isZipMount = url.searchParams.get("dir") === "/zip";
           body = {
             errno: 0,
-            list: [isPdfMount ? {
+            list: [isZipMount ? {
+              fs_id: 99004,
+              server_filename: "baidu.zip",
+              path: "/zip/baidu.zip",
+              size: baiduZipBytes.length,
+              isdir: 0,
+              server_mtime: 1767225600,
+              server_ctime: 1767225600,
+              category: 6,
+            } : isPdfMount ? {
               fs_id: 99003,
               server_filename: "baidu-doc.pdf",
               path: "/pdf/baidu-doc.pdf",
@@ -872,10 +1016,11 @@ globalThis.siyuan = {
         } else if (url.hostname === "pan.baidu.com" && url.pathname.endsWith("/rest/2.0/xpan/multimedia") && url.searchParams.get("method") === "filemetas") {
           const isImage = url.searchParams.get("fsids") === "[99002]";
           const isPdf = url.searchParams.get("fsids") === "[99003]";
+          const isZip = url.searchParams.get("fsids") === "[99004]";
           body = {
             errno: 0,
             list: [{
-              dlink: isPdf ? "https://d.pcs.baidu.com/file/baidu-doc.pdf?fid=99003" : isImage ? "https://d.pcs.baidu.com/file/baidu-image.png?fid=99002" : "https://d.pcs.baidu.com/file/baidu-video.mp4?fid=99001",
+              dlink: isZip ? "https://d.pcs.baidu.com/file/baidu.zip?fid=99004" : isPdf ? "https://d.pcs.baidu.com/file/baidu-doc.pdf?fid=99003" : isImage ? "https://d.pcs.baidu.com/file/baidu-image.png?fid=99002" : "https://d.pcs.baidu.com/file/baidu-video.mp4?fid=99001",
             }],
           };
         } else if (url.hostname === "pan.baidu.com" && url.pathname.endsWith("/api/mediainfo") && url.searchParams.get("type") === "VideoURL") {
@@ -887,7 +1032,7 @@ globalThis.siyuan = {
           };
         } else if (url.hostname === "d.pcs.baidu.com" && req.method === "HEAD") {
           assert.equal(req.redirect, false);
-          headers = { Location: url.pathname.endsWith("baidu-doc.pdf") ? "https://baidu-cdn.example.test/baidu-doc.pdf?final=1" : url.pathname.endsWith("baidu-image.png") ? "https://baidu-cdn.example.test/baidu-image.png?final=1" : "https://baidu-cdn.example.test/baidu-video.mp4?final=1" };
+          headers = { Location: url.pathname.endsWith("baidu.zip") ? "https://baidu-cdn.example.test/baidu.zip?final=1" : url.pathname.endsWith("baidu-doc.pdf") ? "https://baidu-cdn.example.test/baidu-doc.pdf?final=1" : url.pathname.endsWith("baidu-image.png") ? "https://baidu-cdn.example.test/baidu-image.png?final=1" : "https://baidu-cdn.example.test/baidu-video.mp4?final=1" };
           body = "";
         } else if (url.hostname === "d.pcs.baidu.com" && url.pathname.endsWith("/rest/2.0/pcs/file") && url.searchParams.get("method") === "locateupload") {
           baiduLocateQuery = Object.fromEntries(url.searchParams);
@@ -909,14 +1054,25 @@ globalThis.siyuan = {
           };
         } else if (url.hostname === "baidu-cdn.example.test" && req.method === "GET") {
           const range = req.headers.find((item) => item.Range)?.Range || "";
+          assert.equal(Object.hasOwn(req, "contentType"), false);
+          assert.equal(Object.hasOwn(req, "payload"), false);
+          assert.equal(Object.hasOwn(req, "payloadEncoding"), false);
           if (range) status = 206;
-          contentType = url.pathname.endsWith("baidu-doc.pdf") ? "application/pdf" : url.pathname.endsWith("baidu-image.png") ? "image/png" : "video/mp4";
+          contentType = url.pathname.endsWith("baidu.zip") ? "application/zip" : url.pathname.endsWith("baidu-doc.pdf") ? "application/pdf" : url.pathname.endsWith("baidu-image.png") ? "image/png" : "video/mp4";
+          const source = url.pathname.endsWith("baidu.zip")
+            ? baiduZipBytes
+            : Buffer.from(url.pathname.endsWith("baidu-doc.pdf") ? "pdf" : url.pathname.endsWith("baidu-image.png") ? "image" : "baidu video");
+          const rangeMatch = range.match(/^bytes=(\d+)-(\d*)$/);
+          const start = rangeMatch ? Number(rangeMatch[1]) : 0;
+          const end = rangeMatch && rangeMatch[2] ? Number(rangeMatch[2]) : source.length - 1;
+          const slice = source.subarray(Math.min(start, source.length), Math.min(end + 1, source.length));
+          if (url.pathname.endsWith("baidu.zip")) baiduArchiveRanges.push(range);
           headers = {
             "Accept-Ranges": "bytes",
-            "Content-Range": range === "bytes=0-65535" ? "bytes 0-65535/4096" : range === "bytes=0-8388607" ? "bytes 0-8388607/16777216" : "bytes 0-1023/4096",
-            "Content-Length": range === "bytes=0-65535" ? "4096" : range === "bytes=0-8388607" ? "8388608" : "1024",
+            "Content-Range": `bytes ${start}-${Math.max(start, start + slice.length - 1)}/${source.length}`,
+            "Content-Length": String(slice.length),
           };
-          body = Buffer.from(url.pathname.endsWith("baidu-doc.pdf") ? "pdf" : url.pathname.endsWith("baidu-image.png") ? "image" : "baidu video").toString("base64");
+          body = slice.toString("base64");
         } else if (url.hostname === "passportapi.115.com" && url.pathname.endsWith("/check/sso")) {
           body = {
             code: 0,
@@ -998,13 +1154,55 @@ globalThis.siyuan = {
                 message: "unauthorized",
                 data: null,
               };
-        } else if (url.pathname.endsWith("/api/fs/list")) {
+        } else if (url.pathname.endsWith("/api/fs/other")) {
+          openListOtherBody = req.payload;
           body = {
             code: 200,
             message: "success",
             data: {
-              content: [{ name: "remote.txt", size: 11, is_dir: false, modified: new Date().toISOString(), created: new Date().toISOString() }],
-              total: 1,
+              echoed_method: req.payload?.method || "",
+              echoed_path: req.payload?.path || "",
+              echoed_data: req.payload?.data || null,
+            },
+          };
+        } else if (url.pathname.endsWith("/api/fs/rename")) {
+          openListRenameBodies.push(req.payload);
+          body = {
+            code: 200,
+            message: "success",
+            data: null,
+          };
+        } else if (url.pathname.endsWith("/api/fs/move")) {
+          openListMoveBodies.push(req.payload);
+          body = {
+            code: 200,
+            message: "success",
+            data: null,
+          };
+        } else if (url.pathname.endsWith("/api/fs/remove")) {
+          openListRemoveBodies.push(req.payload);
+          body = {
+            code: 200,
+            message: "success",
+            data: null,
+          };
+        } else if (url.pathname.endsWith("/api/fs/list")) {
+          const listPath = req.payload?.path || "/";
+          const content = listPath === "/folder"
+            ? [{ name: "nested.txt", size: 12, is_dir: false, modified: new Date().toISOString(), created: new Date().toISOString() }]
+            : listPath === "/empty-dir" || listPath === "/target"
+              ? []
+              : [
+                  { name: "remote.txt", size: 11, is_dir: false, modified: new Date().toISOString(), created: new Date().toISOString() },
+                  { name: "folder", size: 0, is_dir: true, modified: new Date().toISOString(), created: new Date().toISOString() },
+                  { name: "empty-dir", size: 0, is_dir: true, modified: new Date().toISOString(), created: new Date().toISOString() },
+                ];
+          body = {
+            code: 200,
+            message: "success",
+            data: {
+              content,
+              total: content.length,
               write: true,
               provider: "OpenList",
             },
@@ -1119,6 +1317,7 @@ const rpcStatus = await rpcHandlers.get("siyuan-cloud.status")?.();
 assert.equal(rpcStatus?.ok, true);
 assert.ok(rpcStatus.routes.includes("POST /api/fs/torrent/parse"));
 assert.ok(rpcStatus.stages.some((item) => item.key === "torrent" && item.status === "active"));
+assert.ok(rpcStatus.stages.some((item) => item.key === "archive" && item.status === "active"));
 
 const request = ({ method = "GET", path = "/", query = "", body, headers = {} }) => ({
   context: { path },
@@ -1156,6 +1355,7 @@ assert.ok(status.data.routes.includes("POST /api/fs/mkdir"));
 assert.ok(status.data.routes.includes("POST /api/fs/get_direct_upload_info"));
 assert.ok(status.data.routes.includes("POST /api/fs/torrent/parse"));
 assert.ok(status.data.stages.some((item) => item.key === "torrent" && item.status === "active"));
+assert.ok(status.data.stages.some((item) => item.key === "archive" && item.status === "active"));
 assert.ok(status.data.adapters.includes("115_cloud"));
 assert.ok(status.data.routes.includes("GET /api/authn/webauthn_begin_login"));
 
@@ -1238,7 +1438,20 @@ assert.equal(apiIndex.data.endpoints.proxy, "/plugin/private/siyuan-cloud/p/{pat
 assert.equal(apiIndex.data.endpoints.webdav, "/plugin/private/siyuan-cloud/dav");
 assert.equal(apiIndex.data.endpoints.s3, "/plugin/private/siyuan-cloud/s3");
 assert.ok(apiIndex.data.capabilities.includes("openlist.http-api"));
-assert.ok(apiIndex.data.capabilities.includes("openlist.fs.torrent.placeholder"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.torrent.parse"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.torrent.generate"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.torrent.rapid-upload.driver-boundary"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.zip-list"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.zip-extract-stored"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.zip-extract-deflate"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.zip-encrypted-detect"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.zip-decompress-virtual"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.decompress-upload-mounted"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.tar-list"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.tgz-extract"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.share.archive.zip-extract"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.share.archive.meta-list"));
+assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.driver-paths"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/fs/get"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/public/api"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "POST" && item.path === "/api/fs/torrent/generate"));
@@ -1301,6 +1514,25 @@ const formUpload = await call({
 });
 assert.equal(formUpload.statusCode, 200);
 
+const spacedPut = await json({
+  body: { content: "space", path: "/smoke/spaced .txt" },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(spacedPut.code, 200);
+const spacedBatchRename = await json({
+  body: {
+    rename_objects: [{
+      new_name: "renamed spaced .txt",
+      src_name: "spaced .txt",
+    }],
+    src_dir: "/smoke",
+  },
+  method: "POST",
+  path: "/api/fs/batch_rename",
+});
+assert.equal(spacedBatchRename.code, 200);
+
 const list = await json({
   body: { path: "/smoke", page: 1, per_page: 20 },
   method: "POST",
@@ -1310,6 +1542,7 @@ assert.equal(list.code, 200);
 assert.equal(list.data.content.some((item) => item.name === "a.txt"), true);
 assert.equal(list.data.content.some((item) => item.name === "binary.bin"), true);
 assert.equal(list.data.content.some((item) => item.name === "form.txt"), true);
+assert.equal(list.data.content.some((item) => item.name === "renamed spaced .txt"), true);
 
 const binaryRead = await call({
   method: "GET",
@@ -1349,28 +1582,291 @@ const archive = await json({
 });
 assert.equal(archive.code, 501);
 assert.equal(archive.data.operation, "meta");
-const shareArchiveMeta = await json({
-  body: { path: "/@s/share-smoke/a.zip" },
+const archiveZipBytes = makeZip([
+  { name: "archive-root/", content: "" },
+  { name: "archive-root/hello.txt", content: "hello archive" },
+  { name: "nested/", content: "" },
+  { name: "nested/world.txt", content: "world" },
+]);
+const archiveZipPut = await call({
+  body: archiveZipBytes,
+  headers: {
+    "Content-Type": "application/zip",
+    "File-Path": "/smoke/test.zip",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(archiveZipPut.statusCode, 200);
+const archiveZipMeta = await json({
+  body: { path: "/smoke/test.zip" },
   method: "POST",
   path: "/api/fs/archive/meta",
 });
-assert.equal(shareArchiveMeta.code, 501);
-assert.equal(shareArchiveMeta.data.operation, "share_meta");
-assert.match(shareArchiveMeta.data.upstream_source, /server\/handles\/sharing\.go/);
-const shareArchiveList = await json({
-  body: { inner_path: "/", page: 1, path: "/@s/share-smoke/a.zip", per_page: 10 },
+assert.equal(archiveZipMeta.code, 200);
+assert.equal(archiveZipMeta.data.raw_url, "/plugin/private/siyuan-cloud/ae/smoke/test.zip");
+assert.equal(archiveZipMeta.data.content.some((item) => item.name === "archive-root"), true);
+assert.equal(archiveZipMeta.data.content.some((item) => item.name === "nested"), true);
+assert.equal(archiveZipMeta.data.content.find((item) => item.name === "archive-root").children.some((child) => child.name === "hello.txt"), true);
+const archiveZipList = await json({
+  body: { inner_path: "archive-root", page: 1, path: "/smoke/test.zip", per_page: 10 },
   method: "POST",
   path: "/api/fs/archive/list",
 });
-assert.equal(shareArchiveList.code, 501);
-assert.equal(shareArchiveList.data.operation, "share_list");
-assert.match(shareArchiveList.data.upstream_source, /server\/handles\/sharing\.go/);
+assert.equal(archiveZipList.code, 200);
+assert.equal(archiveZipList.data.total, 1);
+assert.equal(archiveZipList.data.content[0].name, "hello.txt");
+const gbkZipBytes = makeZip([
+  { name: "Cap 中文版_0.4.0-cn_x64-setup.exe", nameBytes: Buffer.from("43617020d6d0cec4b0e65f302e342e302d636e5f7836342d73657475702e657865", "hex"), content: "setup" },
+  { name: "视频.mp4", nameBytes: Buffer.from("cad3c6b52e6d7034", "hex"), content: "video" },
+].map((item) => ({ ...item, utf8: false })));
+const gbkZipPut = await call({
+  body: gbkZipBytes,
+  headers: {
+    "Content-Type": "application/zip",
+    "File-Path": "/smoke/gbk.zip",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(gbkZipPut.statusCode, 200);
+const gbkZipMeta = await json({
+  body: { path: "/smoke/gbk.zip" },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(gbkZipMeta.code, 200);
+assert.equal(gbkZipMeta.data.content.some((item) => item.name === "Cap 中文版_0.4.0-cn_x64-setup.exe"), true);
+assert.equal(gbkZipMeta.data.content.some((item) => item.name === "视频.mp4"), true);
+const archiveZipExtract = await text({
+  method: "GET",
+  path: "/ae/smoke/test.zip",
+  query: "inner=archive-root%2Fhello.txt",
+});
+assert.equal(archiveZipExtract.response.statusCode, 200);
+assert.equal(archiveZipExtract.text, "hello archive");
+assert.equal(archiveZipExtract.response.headers["Content-Disposition"], undefined);
+const archiveZipDownload = await text({
+  method: "GET",
+  path: "/ae/smoke/test.zip",
+  query: "inner=archive-root%2Fhello.txt&download=1",
+});
+assert.equal(archiveZipDownload.response.statusCode, 200);
+assert.equal(archiveZipDownload.response.headers["Content-Disposition"][0], 'attachment; filename="hello.txt"');
+const archiveDriverDown = await text({
+  method: "GET",
+  path: "/ad/smoke/test.zip",
+  query: "inner=archive-root%2Fhello.txt",
+});
+assert.equal(archiveDriverDown.response.statusCode, 200);
+assert.equal(archiveDriverDown.text, "hello archive");
+const archiveDriverProxy = await text({
+  method: "GET",
+  path: "/ap/smoke/test.zip",
+  query: "inner=nested%2Fworld.txt",
+});
+assert.equal(archiveDriverProxy.response.statusCode, 200);
+assert.equal(archiveDriverProxy.text, "world");
+const deflatedZipPut = await call({
+  body: zipSync({ "deflated.txt": new TextEncoder().encode("hello deflate") }),
+  headers: {
+    "Content-Type": "application/zip",
+    "File-Path": "/smoke/deflated.zip",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(deflatedZipPut.statusCode, 200);
+const deflatedZipExtract = await text({
+  method: "GET",
+  path: "/ae/smoke/deflated.zip",
+  query: "inner=deflated.txt",
+});
+assert.equal(deflatedZipExtract.response.statusCode, 200);
+assert.equal(deflatedZipExtract.text, "hello deflate");
+const encryptedZipBytes = await makeEncryptedZip([{ name: "secret.txt", content: "secret" }], "secret");
+const encryptedZipPut = await call({
+  body: encryptedZipBytes,
+  headers: {
+    "Content-Type": "application/zip",
+    "File-Path": "/smoke/encrypted.zip",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(encryptedZipPut.statusCode, 200);
+const encryptedZipMeta = await json({
+  body: { path: "/smoke/encrypted.zip" },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(encryptedZipMeta.code, 200);
+assert.equal(encryptedZipMeta.data.encrypted, true);
+const encryptedZipExtract = await text({
+  method: "GET",
+  path: "/ae/smoke/encrypted.zip",
+  query: "inner=secret.txt",
+});
+assert.equal(encryptedZipExtract.response.statusCode, 501);
+assert.match(encryptedZipExtract.text, /wrong archive password/);
+const encryptedZipWrongExtract = await text({
+  method: "GET",
+  path: "/ae/smoke/encrypted.zip",
+  query: "inner=secret.txt&pass=bad",
+});
+assert.equal(encryptedZipWrongExtract.response.statusCode, 501);
+assert.match(encryptedZipWrongExtract.text, /wrong archive password/);
+const encryptedZipGoodExtract = await text({
+  method: "GET",
+  path: "/ae/smoke/encrypted.zip",
+  query: "inner=secret.txt&pass=secret",
+});
+assert.equal(encryptedZipGoodExtract.response.statusCode, 501);
+assert.match(encryptedZipGoodExtract.text, /wrong archive password/);
+const tarBytes = makeTar([
+  { name: "tar-root/", content: "" },
+  { name: "tar-root/a.txt", content: "hello tar" },
+  { name: "tar-root/deep/b.txt", content: "deep tar" },
+]);
+const archiveTarPut = await call({
+  body: tarBytes,
+  headers: {
+    "Content-Type": "application/x-tar",
+    "File-Path": "/smoke/test.tar",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(archiveTarPut.statusCode, 200);
+const archiveTarMeta = await json({
+  body: { path: "/smoke/test.tar" },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(archiveTarMeta.code, 200);
+assert.equal(archiveTarMeta.data.content.some((item) => item.name === "tar-root"), true);
+const archiveTarExtract = await text({
+  method: "GET",
+  path: "/ae/smoke/test.tar",
+  query: "inner=tar-root%2Fa.txt",
+});
+assert.equal(archiveTarExtract.response.statusCode, 200);
+assert.equal(archiveTarExtract.text, "hello tar");
+const archiveTgzPut = await call({
+  body: gzipSync(tarBytes),
+  headers: {
+    "Content-Type": "application/gzip",
+    "File-Path": "/smoke/test.tgz",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(archiveTgzPut.statusCode, 200);
+const archiveTgzList = await json({
+  body: { inner_path: "tar-root/deep", page: 1, path: "/smoke/test.tgz", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/archive/list",
+});
+assert.equal(archiveTgzList.code, 200);
+assert.equal(archiveTgzList.data.content[0].name, "b.txt");
+const archiveZipDecompress = await json({
+  body: {
+    dst_dir: "/smoke/unzip",
+    inner_path: "nested",
+    name: ["test.zip"],
+    overwrite: true,
+    put_into_new_dir: true,
+    src_dir: "/smoke",
+  },
+  method: "POST",
+  path: "/api/fs/archive/decompress",
+});
+assert.equal(archiveZipDecompress.code, 200);
+assert.equal(archiveZipDecompress.data.task.length, 1);
+assert.equal(archiveZipDecompress.data.task[0].state, "succeeded");
+const archiveZipDecompressedGet = await json({
+  body: { path: "/smoke/unzip/test/world.txt" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(archiveZipDecompressedGet.code, 200);
+assert.equal(archiveZipDecompressedGet.data.size, 5);
+const archiveTarDecompress = await json({
+  body: {
+    dst_dir: "/smoke/untar",
+    inner_path: "tar-root/deep",
+    name: ["test.tgz"],
+    overwrite: true,
+    put_into_new_dir: false,
+    src_dir: "/smoke",
+  },
+  method: "POST",
+  path: "/api/fs/archive/decompress",
+});
+assert.equal(archiveTarDecompress.code, 200);
+const archiveTarDecompressedGet = await json({
+  body: { path: "/smoke/untar/b.txt" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(archiveTarDecompressedGet.code, 200);
+assert.equal(archiveTarDecompressedGet.data.size, 8);
+const encryptedZipDecompress = await json({
+  body: {
+    archive_pass: "secret",
+    dst_dir: "/smoke/secret-unzip",
+    inner_path: "/",
+    name: ["encrypted.zip"],
+    overwrite: true,
+    put_into_new_dir: false,
+    src_dir: "/smoke",
+  },
+  method: "POST",
+  path: "/api/fs/archive/decompress",
+});
+assert.equal(encryptedZipDecompress.code, 501);
+assert.match(String(encryptedZipDecompress.message || ""), /wrong archive password/);
+const shareArchiveCreate = await json({
+  body: { files: ["/smoke/test.zip"], id: "share-archive-smoke", pwd: "zip" },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(shareArchiveCreate.code, 200);
+const shareArchiveMeta = await json({
+  body: { password: "zip", path: "/@s/share-archive-smoke/" },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(shareArchiveMeta.code, 200);
+assert.equal(shareArchiveMeta.data.raw_url, "/plugin/private/siyuan-cloud/sad/share-archive-smoke?pwd=zip");
+assert.equal(shareArchiveMeta.data.content.some((item) => item.name === "archive-root"), true);
+const shareArchiveList = await json({
+  body: { inner_path: "/", page: 1, password: "zip", path: "/@s/share-archive-smoke/", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/archive/list",
+});
+assert.equal(shareArchiveList.code, 200);
+assert.equal(shareArchiveList.data.content.some((item) => item.name === "archive-root"), true);
+const shareArchivePasswordPage = await text({
+  method: "GET",
+  path: "/sad/share-archive-smoke/",
+});
+assert.equal(shareArchivePasswordPage.response.statusCode, 200);
+assert.match(shareArchivePasswordPage.text, /Share password/);
 const shareArchiveExtract = await text({
   method: "GET",
-  path: "/sad/share-smoke/a.zip",
+  path: "/sad/share-archive-smoke/",
+  query: "pwd=zip&inner=archive-root%2Fhello.txt",
 });
-assert.equal(shareArchiveExtract.response.statusCode, 501);
-assert.match(shareArchiveExtract.text, /sharing archive extract is not implemented/);
+assert.equal(shareArchiveExtract.response.statusCode, 200);
+assert.equal(shareArchiveExtract.text, "hello archive");
+const shareArchiveRawDownload = await text({
+  method: "GET",
+  path: "/sd/share-archive-smoke",
+  query: "download=1&pwd=zip",
+});
+assert.equal(shareArchiveRawDownload.response.statusCode, 200);
+assert.equal(Buffer.from(shareArchiveRawDownload.response.body.raw.data).subarray(0, 4).toString("hex"), "504b0304");
 
 const offlineDownload = await json({
   body: {
@@ -1386,27 +1882,94 @@ assert.equal(offlineDownload.code, 501);
 assert.equal(offlineDownload.data.tasks.length, 1);
 assert.equal(offlineDownload.data.tasks[0].name, "https://example.test/a.iso");
 
-for (const [path, operation] of [
-  ["/api/fs/torrent/parse", "parse"],
-  ["/api/fs/torrent/upload_parse", "upload_parse"],
-  ["/api/fs/torrent/rapid_upload", "rapid_upload"],
-  ["/api/fs/torrent/generate", "generate"],
-]) {
-  const missingRequired = await json({
-    body: {},
-    method: "POST",
-    path,
-  });
-  assert.equal(missingRequired.code, 400);
-  const torrent = await json({
-    body: { path: "/smoke/a.txt", torrent_data: "AA==" },
-    method: "POST",
-    path,
-  });
-  assert.equal(torrent.code, 501);
-  assert.equal(torrent.data.operation, operation);
-  assert.match(torrent.data.upstream_source, /server\/handles\/torrent\.go/);
-}
+const torrentInfoBytes = Buffer.from("d6:lengthi123e4:name8:demo.txt12:piece lengthi16e6:pieces20:01234567890123456789e", "utf8");
+const torrentRootBytes = Buffer.concat([
+  Buffer.from("d4:info", "utf8"),
+  torrentInfoBytes,
+  Buffer.from("5:x-casd5:cloud3:1898:file_md532:ABCDEF0123456789ABCDEF01234567899:slice_md532:0123456789ABCDEF0123456789ABCDEF10:slice_sizei16eee", "utf8"),
+]);
+const torrentBase64 = torrentRootBytes.toString("base64");
+const torrentParsed = await json({
+  body: { torrent_data: torrentBase64 },
+  method: "POST",
+  path: "/api/fs/torrent/parse",
+});
+assert.equal(torrentParsed.code, 200);
+assert.equal(torrentParsed.data.name, "demo.txt");
+assert.equal(torrentParsed.data.total_size, 123);
+assert.equal(torrentParsed.data.piece_length, 16);
+assert.equal(torrentParsed.data.piece_count, 1);
+assert.equal(torrentParsed.data.has_cas, true);
+assert.equal(torrentParsed.data.cas.file_md5, "ABCDEF0123456789ABCDEF0123456789");
+assert.equal(torrentParsed.data.cas.slice_md5, "0123456789ABCDEF0123456789ABCDEF");
+assert.equal(torrentParsed.data.cas.slice_size, 16);
+assert.equal(torrentParsed.data.cas.cloud, "189");
+assert.equal(torrentParsed.data.files[0].path, "demo.txt");
+assert.equal(torrentParsed.data.files[0].size, 123);
+assert.equal(torrentParsed.data.info_hash, crypto.createHash("sha1").update(torrentInfoBytes).digest("hex"));
+const torrentUploaded = await json({
+  body: {
+    files: {
+      torrent: [{
+        data: Buffer.from(torrentRootBytes),
+        filename: "demo.torrent",
+        headers: { "Content-Type": ["application/x-bittorrent"] },
+        size: torrentRootBytes.length,
+      }],
+    },
+  },
+  method: "POST",
+  path: "/api/fs/torrent/upload_parse",
+});
+assert.equal(torrentUploaded.code, 200);
+assert.equal(torrentUploaded.data.info.name, "demo.txt");
+assert.equal(torrentUploaded.data.torrent_data, torrentBase64);
+const torrentRapidMissingRequired = await json({
+  body: {},
+  method: "POST",
+  path: "/api/fs/torrent/rapid_upload",
+});
+assert.equal(torrentRapidMissingRequired.code, 400);
+const torrentRapidNoStorage = await json({
+  body: { path: "/smoke", torrent_data: torrentBase64 },
+  method: "POST",
+  path: "/api/fs/torrent/rapid_upload",
+});
+assert.equal(torrentRapidNoStorage.code, 400);
+assert.match(torrentRapidNoStorage.message, /target storage/);
+
+const torrentGenerateMissingRequired = await json({
+  body: {},
+  method: "POST",
+  path: "/api/fs/torrent/generate",
+});
+assert.equal(torrentGenerateMissingRequired.code, 400);
+const torrentGenerated = await json({
+  body: { path: "/smoke/a.txt" },
+  method: "POST",
+  path: "/api/fs/torrent/generate",
+});
+assert.equal(torrentGenerated.code, 200);
+assert.equal(torrentGenerated.data.file_name, "a.txt.torrent");
+assert.equal(torrentGenerated.data.with_cas, false);
+assert.equal(Boolean(torrentGenerated.data.torrent_data), true);
+const torrentGeneratedParsed = await json({
+  body: { torrent_data: torrentGenerated.data.torrent_data },
+  method: "POST",
+  path: "/api/fs/torrent/parse",
+});
+assert.equal(torrentGeneratedParsed.code, 200);
+assert.equal(torrentGeneratedParsed.data.name, "a.txt");
+assert.equal(torrentGeneratedParsed.data.total_size, 5);
+assert.equal(torrentGeneratedParsed.data.files[0].path, "a.txt");
+assert.equal(torrentGeneratedParsed.data.has_cas, false);
+const torrentGeneratedCasWrongStorage = await json({
+  body: { path: "/smoke/a.txt", with_cas: true },
+  method: "POST",
+  path: "/api/fs/torrent/generate",
+});
+assert.equal(torrentGeneratedCasWrongStorage.code, 400);
+assert.match(torrentGeneratedCasWrongStorage.message, /CAS torrent generation/);
 
 const mkdirCopies = await json({
   body: { path: "/copies" },
@@ -1506,6 +2069,12 @@ const sharePasswordPage = await text({
 assert.equal(sharePasswordPage.response.statusCode, 200);
 assert.match(sharePasswordPage.text, /Share password/);
 assert.match(sharePasswordPage.text, /action="\/plugin\/private\/siyuan-cloud\/sd\/share-smoke\/a.txt"/);
+const shareDownloadPasswordPage = await text({
+  method: "GET",
+  path: "/sd/share-smoke/a.txt",
+  query: "download=1",
+});
+assert.match(shareDownloadPasswordPage.text, /action="\/plugin\/private\/siyuan-cloud\/sd\/share-smoke\/a.txt\?download=1"/);
 const shareWrongPasswordPage = await text({
   method: "GET",
   path: "/sd/share-smoke/a.txt",
@@ -1690,6 +2259,90 @@ const shareRenameBStillExists = await json({
 });
 assert.equal(shareRenameBStillExists.code, 200);
 
+const shareLimitedUserCreate = await json({
+  body: {
+    base_path: "/moved",
+    permission: (1 << 14) | (1 << 15),
+    username: "share-limited",
+  },
+  method: "POST",
+  path: "/api/admin/user/create",
+});
+assert.equal(shareLimitedUserCreate.code, 200);
+const limitedToken = "siyuan-cloud-port:" + shareLimitedUserCreate.data.id;
+const limitedShareCreate = await json({
+  body: { files: ["/moved/a.txt"], id: "share-limited-ok" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(limitedShareCreate.code, 200);
+assert.equal(limitedShareCreate.data.creator, "share-limited");
+assert.equal(limitedShareCreate.data.creator_id, shareLimitedUserCreate.data.id);
+const limitedShareList = await json({
+  body: { page: 1, per_page: 50 },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/share/list",
+});
+assert.deepEqual(limitedShareList.data.content.map((item) => item.id), ["share-limited-ok"]);
+const limitedCannotGetAdminShare = await json({
+  headers: { Authorization: limitedToken },
+  method: "GET",
+  path: "/api/share/get",
+  query: "id=share-rename-a",
+});
+assert.equal(limitedCannotGetAdminShare.code, 404);
+const limitedOutsideBaseShare = await json({
+  body: { files: ["/copies/smoke"], id: "share-limited-bad-path" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(limitedOutsideBaseShare.code, 500);
+assert.match(limitedOutsideBaseShare.message, /permission denied to share path/);
+await json({
+  body: {
+    path: "/moved/private",
+  },
+  method: "POST",
+  path: "/api/fs/mkdir",
+});
+await json({
+  body: {
+    path: "/moved/private/secret.txt",
+    content: "secret",
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+const metaProtectMovedPrivate = await json({
+  body: {
+    path: "/moved/private",
+    read_users: [1],
+    read_users_sub: true,
+  },
+  method: "POST",
+  path: "/api/admin/meta/create",
+});
+assert.equal(metaProtectMovedPrivate.code, 200);
+const limitedMetaDeniedShare = await json({
+  body: { files: ["/moved/private/secret.txt"], id: "share-limited-meta-denied" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(limitedMetaDeniedShare.code, 500);
+assert.match(limitedMetaDeniedShare.message, /permission denied to share path/);
+const guestShareCreate = await json({
+  body: { files: ["/moved/a.txt"], id: "share-guest-denied" },
+  headers: { Authorization: "siyuan-cloud-port:2" },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(guestShareCreate.code, 403);
+assert.equal(guestShareCreate.message, "permission denied");
+
 const copyDone = await json({
   method: "GET",
   path: "/api/task/copy/done",
@@ -1789,7 +2442,7 @@ const metaList = await json({
   path: "/api/admin/meta/list",
 });
 assert.equal(metaList.code, 200);
-assert.equal(metaList.data.content.length, 1);
+assert.equal(metaList.data.content.some((item) => item.path === "/smoke"), true);
 
 await json({
   body: { content: "hello message", title: "smoke" },
@@ -2365,6 +3018,102 @@ const remoteGet = await json({
   path: "/api/fs/get",
 });
 assert.equal(remoteGet.data.provider, "OpenList");
+const remoteOther = await json({
+  body: {
+    path: "/remote/remote.txt",
+    method: "custom-action",
+    data: { value: "payload" },
+  },
+  method: "POST",
+  path: "/api/fs/other",
+});
+assert.equal(remoteOther.code, 200);
+assert.equal(remoteOther.data.echoed_path, "/remote.txt");
+assert.equal(remoteOther.data.echoed_method, "custom-action");
+assert.deepEqual(remoteOther.data.echoed_data, { value: "payload" });
+assert.deepEqual(openListOtherBody, {
+  path: "/remote.txt",
+  method: "custom-action",
+  data: { value: "payload" },
+  password: "",
+});
+const remoteArchiveList = await json({
+  body: { inner_path: "/", page: 1, path: "/remote/remote.zip", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/archive/list",
+});
+assert.equal(remoteArchiveList.code, 501);
+assert.equal(remoteArchiveList.data.operation, "list");
+assert.equal(remoteArchiveList.data.storage.driver, "OpenList");
+const remoteArchiveExtract = await text({
+  method: "GET",
+  path: "/ae/remote/remote.zip",
+  query: "inner=hello.txt",
+});
+assert.equal(remoteArchiveExtract.response.statusCode, 501);
+assert.match(remoteArchiveExtract.text, /mounted driver files/);
+const remoteBatchRename = await json({
+  body: {
+    rename_objects: [{
+      new_name: "remote-renamed.txt",
+      src_name: "remote.txt",
+    }],
+    src_dir: "/remote",
+  },
+  method: "POST",
+  path: "/api/fs/batch_rename",
+});
+assert.equal(remoteBatchRename.code, 200);
+const remoteRegexRename = await json({
+  body: {
+    new_name_regex: "regex-$1.txt",
+    src_dir: "/remote",
+    src_name_regex: "^(remote)\\.txt$",
+  },
+  method: "POST",
+  path: "/api/fs/regex_rename",
+});
+assert.equal(remoteRegexRename.code, 200);
+assert.deepEqual(openListRenameBodies, [
+  { path: "/remote.txt", name: "remote-renamed.txt" },
+  { path: "/remote.txt", name: "regex-remote.txt" },
+]);
+const remoteRecursiveMove = await json({
+  body: {
+    conflict_policy: "skip",
+    dst_dir: "/remote/target",
+    src_dir: "/remote",
+  },
+  method: "POST",
+  path: "/api/fs/recursive_move",
+});
+assert.equal(remoteRecursiveMove.code, 200);
+assert.equal(remoteRecursiveMove.message, "Successfully moved 2 files");
+assert.deepEqual(openListMoveBodies, [
+  { src_dir: "/", dst_dir: "/target", names: ["remote.txt"] },
+  { src_dir: "/folder", dst_dir: "/target", names: ["nested.txt"] },
+]);
+const remoteRemoveEmpty = await json({
+  body: {
+    src_dir: "/remote",
+  },
+  method: "POST",
+  path: "/api/fs/remove_empty_directory",
+});
+assert.equal(remoteRemoveEmpty.code, 200);
+assert.deepEqual(openListRemoveBodies, [
+  { dir: "/", names: ["empty-dir"] },
+]);
+const virtualOther = await json({
+  body: {
+    path: "/smoke/a.txt",
+    method: "custom-action",
+  },
+  method: "POST",
+  path: "/api/fs/other",
+});
+assert.equal(virtualOther.code, 500);
+assert.equal(virtualOther.message, "not implement");
 await json({
   body: {
     driver: "S3",
@@ -2535,6 +3284,19 @@ const remoteOneDriveLink = await json({
 });
 assert.equal(remoteOneDriveLink.data.raw_url, "https://download.example.test/remote-doc.txt");
 assert.equal(remoteOneDriveLink.data.url, "https://download.example.test/remote-doc.txt");
+const remoteOneDriveShareCreate = await json({
+  body: { files: ["/remote-onedrive/remote-doc.txt"], id: "share-onedrive", pwd: "odpw" },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(remoteOneDriveShareCreate.code, 200);
+const remoteOneDriveShareRedirect = await call({
+  method: "GET",
+  path: "/sd/share-onedrive",
+  query: "download=1&pwd=odpw",
+});
+assert.equal(remoteOneDriveShareRedirect.statusCode, 302);
+assert.equal(remoteOneDriveShareRedirect.headers.Location[0], "https://download.example.test/remote-doc.txt");
 const oneDriveBigBody = "o".repeat(6 * 1024 * 1024 + 1);
 const remoteOneDriveBigPut = await json({
   body: oneDriveBigBody,
@@ -2651,6 +3413,32 @@ await json({
   method: "POST",
   path: "/api/admin/storage/create",
 });
+const aliOpenOther = await json({
+  body: {
+    path: "/remote-ali-open/ali-video.mp4",
+    method: "video_preview",
+  },
+  method: "POST",
+  path: "/api/fs/other",
+});
+assert.equal(aliOpenOther.code, 200);
+assert.equal(aliOpenOther.data.video_preview_play_info.live_transcoding_task_list[0].url, "https://ali-preview.example.test/ali-video.m3u8");
+assert.deepEqual(aliOpenPreviewBody, {
+  drive_id: "ali-open-drive",
+  file_id: "ali-open-video-file",
+  category: "live_transcoding",
+  url_expire_sec: 14400,
+});
+const aliOpenOtherUnsupported = await json({
+  body: {
+    path: "/remote-ali-open/ali-video.mp4",
+    method: "doc_preview",
+  },
+  method: "POST",
+  path: "/api/fs/other",
+});
+assert.equal(aliOpenOtherUnsupported.code, 500);
+assert.equal(aliOpenOtherUnsupported.message, "not support");
 const remoteAliOpenPut = await json({
   body: "hello ali",
   headers: {
@@ -3300,6 +4088,44 @@ const remoteBaiduPdfRead = await call({
 assert.equal(remoteBaiduPdfRead.statusCode, 200);
 assert.equal(remoteBaiduPdfRead.body.proxy.url, "https://baidu-cdn.example.test/baidu-doc.pdf?final=1");
 assert.equal(remoteBaiduPdfRead.body.proxy.headers["User-Agent"][0], "pan.baidu.com");
+await json({
+  body: {
+    driver: "BaiduNetdisk",
+    mount_path: "/remote-baidu-zip",
+    addition: JSON.stringify({
+      access_token: "BAIDU_ACCESS",
+      download_api: "official",
+      root_folder_path: "/zip",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteBaiduArchiveList = await json({
+  body: { inner_path: "/", page: 1, path: "/remote-baidu-zip/baidu.zip", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/archive/list",
+});
+assert.equal(remoteBaiduArchiveList.code, 200);
+assert.equal(remoteBaiduArchiveList.data.content.some((item) => item.name === "hello.txt"), true);
+assert.equal(remoteBaiduArchiveList.data.content.some((item) => item.name === "Cap 中文版_0.4.0-cn_x64-setup.exe"), true);
+assert.equal(remoteBaiduArchiveList.data.content.some((item) => item.name === "Cap 中文版安装包"), true);
+const remoteBaiduArchiveExtract = await text({
+  method: "GET",
+  path: "/ae/remote-baidu-zip/baidu.zip",
+  query: "inner=hello.txt",
+});
+assert.equal(remoteBaiduArchiveExtract.response.statusCode, 200);
+assert.equal(remoteBaiduArchiveExtract.text, "zip from baidu");
+assert.ok(baiduArchiveRanges.some((range) => range === "bytes=0-"));
+assert.ok(baiduArchiveRanges.some((range) => /^bytes=\d+-$/.test(range)));
+const remoteBaiduTorrent = await json({
+  body: { path: "/remote-baidu-zip/baidu.zip" },
+  method: "POST",
+  path: "/api/fs/torrent/generate",
+});
+assert.equal(remoteBaiduTorrent.code, 200);
+assert.equal(remoteBaiduTorrent.data.file_name, "baidu.zip.torrent");
 
 const lock = await text({
   method: "LOCK",

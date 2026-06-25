@@ -22,9 +22,12 @@ export const forwardProxy = async (client, url, {
   responseEncoding = "text",
   timeout = 30000,
 } = {}) => {
-  const encoded = payloadEncoding
-    ? { payload: body === undefined || body === null ? "" : body, payloadEncoding }
-    : proxyPayload(body, contentType);
+  const hasBody = body !== undefined && body !== null;
+  const encoded = hasBody
+    ? (payloadEncoding
+        ? { payload: body, payloadEncoding }
+        : proxyPayload(body, contentType))
+    : null;
   const headerPairs = Object.entries(headers)
     .filter(([, value]) => value !== undefined && value !== null && value !== "")
     .map(([key, value]) => ({ [key]: String(value) }));
@@ -32,12 +35,14 @@ export const forwardProxy = async (client, url, {
     url,
     method,
     headers: headerPairs,
-    contentType,
-    payload: encoded.payload,
-    payloadEncoding: encoded.payloadEncoding,
     responseEncoding,
     timeout,
   };
+  if (encoded) {
+    proxyRequest.payload = encoded.payload;
+    proxyRequest.payloadEncoding = encoded.payloadEncoding;
+  }
+  if (hasBody && contentType !== "" && contentType !== null) proxyRequest.contentType = contentType;
   if (typeof redirect === "boolean") proxyRequest.redirect = redirect;
   const response = await client.fetch("/api/network/forwardProxy", {
     method: "POST",

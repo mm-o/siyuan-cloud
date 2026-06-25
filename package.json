@@ -19,10 +19,12 @@
     "test:kernel": "node ./scripts/kernel-route-smoke.mjs"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "qrcode": "^1.5.4",
     "vue": "^3.3.8"
   },
   "devDependencies": {
+    "@zip.js/zip.js": "^2.8.26",
     "@antfu/eslint-config": "^4.8.1",
     "@types/node": "^20.2.0",
     "@vitejs/plugin-vue": "^5.2.1",

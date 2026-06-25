@@ -45,9 +45,12 @@ OpenList-compatible JSON 响应统一使用：
 - `src/kernel/server/handles/fs.js` 保持 OpenList `server/handles/fs*.go` 的 route 和字段形状。
 - `PUT /api/fs/put` 和 `PUT /api/fs/form` 使用 `File-Path`、`Password`、`Overwrite` header，`File-Path` 会 URL decode。
 - `POST /api/fs/get_direct_upload_info` 在不支持直传时返回 `success(null)`，对齐 OpenList direct-upload 行为。
+- `/api/fs/other` 对齐 OpenList `server/handles/fsread.go` / `internal/fs/other.go` / `internal/op/fs.go` 的边界：handler 解析 `path/method/data/password`，按最长挂载把用户路径转成 storage actual path，再调用 driver `other`；`OpenList/AListV3` runtime 直接转发远端 `/api/fs/other`，`AliyundriveOpen` 对照上游 `Other(video_preview)` 调用 `openFile/getVideoPreviewPlayInfo`，没有 `other` 的驱动返回 OpenList 风格 `not implement`，不伪造行为。
+- `/api/fs/batch_rename` 和 `/api/fs/regex_rename` 对齐 OpenList `server/handles/fsbatch.go` 的 `fs.Rename` 边界：虚拟 FS、`/@workspace` 和 mounted driver 都使用同一组 `src_dir` / `src_name` / `new_name` / regex 字段，driver 路径先转为 storage actual path。
+- `/api/fs/recursive_move` 和 `/api/fs/remove_empty_directory` 在 mounted driver 上按 OpenList 批量边界调用 driver `list` / `move` / `remove`；同一 storage 内执行，跨挂载批量移动仍保持明确未实现。
 - `/api/fs/copy` 和 `/api/fs/move` 的 `skip_existing` 行为对齐 OpenList：冲突项可跳过，后续 names 继续处理；copy 的 `merge` 只在目标为目录时继续。
 - `/api/fs/search` 查询持久 `search_nodes`，字段和分页对齐 OpenList `server/handles/search.go` / `model.SearchNode`：`parent`、`name`、`is_dir`、`size`、`type`，关键词、scope 和 parent 过滤对齐 `internal/db/searchnode.go` 的非全文搜索形态。搜索不实时扫描目录；需要先通过 `/api/admin/index/build` 全量构建，或用 `/api/admin/index/update` 指定 `paths` 局部构建。`parent="/"` 是全局搜索，`parent="/mount"` 搜该路径整棵子树。索引构建已按 OpenList `internal/search/build.go` 跳过 `ignore_paths` 和 storage `disable_index`。它仍不是 OpenList `internal/search` 的完整多后端实现，后续还需补异步构建、停止取消、auto update 和 Bleve/Meilisearch/database 配置边界。
-- `/api/fs/torrent/parse`、`/api/fs/torrent/upload_parse`、`/api/fs/torrent/rapid_upload`、`/api/fs/torrent/generate` 已注册结构化兼容占位，等待迁移 JS bencode/torrent reader 和 189/189PC CAS 秒传行为。
+- `/api/fs/torrent/parse` 和 `/api/fs/torrent/upload_parse` 已按 OpenList `server/handles/torrent.go` / `pkg/torrent` 迁移 JS bencode reader，返回 `name/total_size/piece_length/piece_count/info_hash/files/has_cas/cas`；`/api/fs/torrent/generate` 可为本端可读单文件生成真实 torrent，并在 `with_cas=true` 时注入 OpenList 189 `x-cas` 扩展；`/api/fs/torrent/rapid_upload` 已保留 driver `rapidUploadFromTorrent` 边界，等待 189/189PC runtime 接入远端 CAS 秒传。
 - `/api/fs/get` 负责返回 OpenList object data；媒体播放优先使用 `raw_url`。需要代理的 storage 返回 `/plugin/private/siyuan-cloud/p/<path>`，非代理 storage 可以保留 driver `Link()` URL。
 - `/d/<path>` 和 `/p/<path>` 走 `fs.Link -> common.Proxy -> body.proxy`，不要恢复 per-driver 播放补丁。
 
@@ -57,11 +60,11 @@ OpenList-compatible JSON 响应统一使用：
 
 - 搜索：已有本地持久 search node index、admin index build/update/clear/progress、`ignore_paths` / `disable_index` 跳过规则和按索引查询初版；仍缺 OpenList 完整 searcher backend、异步 running/stop 取消、自动增量和多后端配置。
 - 任务：`/api/task/*` 已对齐 OpenList `server/handles/task.go` 的 TaskInfo 字段、done/undone 数组和 info/cancel/delete/retry/batch/clear/retry_failed 返回形态；批量接口只接受 OpenList JSON 字符串数组请求体。仍是轻量 task record，缺 OpenList `internal/task` + `tache` 的真实异步队列、取消传播、重试调度、creator 权限过滤和 task group coordinator。
-- 分享：`/api/share/*` 已按 OpenList `model.Sharing` 主字段和 `server/handles/sharing.go` 管理路由收口，支持 `id/files/pwd/accessed/max_accessed`、多文件分享根、密码/过期/禁用校验、按 share id + client IP 去重的访问计数、`/api/fs/{list,get}` 公开读取和 `/sd/{id}` 下载；share create/update 保存清洗后的路径而不要求本地 `state.entries` 存在，公开读取时可通过 `driverRuntime` 解析挂载云盘文件；管理路由支持 OpenList query `id`，config import 保留字符串/CJK share ID，archive meta/list 已识别 OpenList `/@s` 分享 split 并返回 sharing archive 专用占位。仍缺真实 share archive preview/extract、完整 driver proxy/redirect 和权限边界。
-- 离线/torrent/archive：route 已注册或返回结构化占位，archive extension discovery 已按 OpenList archive tool keys 对齐，`/api/fs/archive/meta|list` 已按 `/@s` 分流 share archive 占位，`/sad/*` 分享压缩包提取路径也返回明确 501；`/api/fs/add_offline_download` 已对齐 OpenList `urls` trim/空行跳过和 `{ tasks: [...] }` 外形，torrent JSON routes 已对齐必填字段校验边界。但 aria2/qbit/transmission/SimpleHttp、ed2k、torrent reader/generator、189/189PC CAS rapid、archive reader/extract/download/proxy 未迁移。
+- 分享：`/api/share/*` 已按 OpenList `model.Sharing` 主字段和 `server/handles/sharing.go` 管理路由收口，支持 `id/files/pwd/accessed/max_accessed`、多文件分享根、密码/过期/禁用校验、按 share id + client IP 去重的访问计数、`/api/fs/{list,get}` 公开读取和 `/sd/{id}` 下载；share create/update 保存清洗后的路径而不要求本地 `state.entries` 存在，公开读取时可通过 `driverRuntime` 解析挂载云盘文件；`/sd` 下载按 storage/driver 策略在 plugin proxy 与 driver redirect 间分流，不保留额外强制代理开关；管理路由支持 OpenList query `id`，config import 保留字符串/CJK share ID，archive meta/list 已识别 OpenList `/@s` 分享 split 并真实解析单文件或子路径分享压缩包，`/sad/{id}` 已可在密码校验后委托 archive entry 提取。显式 token 的分享管理请求已接入 creator owner 过滤、`CanShare`/自定义 ID、`base_path` 和 nearest meta 读访问检查；公开读取仍按 share 自身校验，尚未等价于 OpenList 完整请求上下文权限模型。
+- 离线/torrent/archive：route 已注册或返回结构化占位，archive extension discovery 已按 OpenList archive tool keys 对齐，`/api/fs/archive/meta|list` 能读取虚拟 FS 或 mounted driver `read()` body/link 中 ZIP、tar、tgz/tar.gz 的目录树和 inner_path 列表；`/@s` 分享 archive meta/list 已解包到真实分享文件；`/ae`、`/ad`、`/ap` 和 `/sad` 可提取 ZIP stored/deflate 与 tar/tgz entry；`/api/fs/archive/decompress` 已支持解压到虚拟 FS 或带 `put()` 的 mounted driver 目标并返回 `task` 数组。ZIP 加密条目只检测，不解密，`pass` / `archive_pass` 当前返回明确 `501 wrong archive password`；`/api/fs/add_offline_download` 已对齐 OpenList `urls` trim/空行跳过和 `{ tasks: [...] }` 外形，torrent parse/upload_parse/generate 已有 JS bencode reader/generator 和 CAS 扩展读取/写入。但 aria2/qbit/transmission/SimpleHttp、ed2k、189/189PC 远端 CAS rapid、rar/7z 和其它 archive reader 未迁移。
 - Auth/Admin：SSO/WebAuthn/2FA/SSH key/user/security settings 多数为兼容表面或轻量状态，不等价于 OpenList 安全模型。
 
-用户基线已经按 OpenList `model.User` 字段收口到 `src/kernel/internal/model/user.js`：默认 admin/disabled guest、`role`、`base_path`、`permission`、`sso_id`、`allow_ldap` 和脱敏响应都在这里规范化。kernel onload 会读取思源 `/api/system/getConf`，把默认 admin username 同步成当前思源账号昵称/用户名，并保留 `siyuan_account` 扩展信息；拿不到账号时继续使用 `admin`。`/api/admin/user/list/get/create/update/delete/cancel_2fa` 已保留 OpenList 的分页响应和角色限制，Dock 有紧凑用户管理页。当前用户权限位还没有完整贯穿 FS/task/share/WebDAV/S3 请求上下文；后续补权限时继续对照 OpenList `server/common/check.go`、`server/middlewares/auth.go` 和各 handler 的 `conf.UserKey` 使用点。
+用户基线已经按 OpenList `model.User` 字段收口到 `src/kernel/internal/model/user.js`：默认 admin/disabled guest、`role`、`base_path`、`permission`、`sso_id`、`allow_ldap` 和脱敏响应都在这里规范化。kernel onload 会读取思源 `/api/system/getConf`，把默认 admin username 同步成当前思源账号昵称/用户名，并保留 `siyuan_account` 扩展信息；拿不到账号时继续使用 `admin`。`/api/admin/user/list/get/create/update/delete/cancel_2fa` 已保留 OpenList 的分页响应和角色限制，Dock 有紧凑用户管理页。当前用户权限位已开始用于 share 管理侧 creator/base_path/meta 检查，但还没有完整贯穿 FS/task/WebDAV/S3 和公开读取请求上下文；后续补权限时继续对照 OpenList `server/common/check.go`、`server/middlewares/auth.go` 和各 handler 的 `conf.UserKey` 使用点。
 
 ## 流式代理边界
 
@@ -133,6 +136,7 @@ Dock 表单的新挂载默认值允许少量体验型偏置：BaiduNetdisk 默�
 - `src/utils/api.ts` 对齐 OpenList Frontend `utils/api.ts`，只放 FS helper。
 - `src/utils/request.ts` 对齐 OpenList Frontend `utils/request.ts` 的 `r.post/r.put` 边界，并适配 SiYuan 私有路由前缀。
 - `src/utils/handle_resp.ts` 对齐 OpenList Frontend `utils/handle_resp.ts`，把 notify 映射到 `showMessage`。
+- `src/utils/archive.ts` 对齐 OpenList Frontend archive preview 的 `fsArchiveMeta -> fsArchiveList -> raw_url + inner` 流程；普通远端/虚拟 FS 压缩包读取能力落在后端 archive handler，本地 Local ZIP/tar/tgz 是 SiYuan 桌面端例外，由前端 Electron 按需读取本地字节并复用同一套 archive reader。内部文件打开复用既有预览边界：图片走 Viewer，音视频优先交给思播兼容入口后回退内嵌播放器，PDF/书籍优先调用 SiReader 公开 `openEpubTab(file,title)` 后回退 iframe；列表渲染不预解压、不提前创建 blob URL。
 - `src/utils/dock.ts` 只承载 Dock 管理流：登录、挂载、driver form、config import/export、`external_previews`、验证。
 - `src/utils/status.ts` 固定使用私有 HTTP status route，避免当前 SiYuan kernel plugin 的 `/ws/plugin/rpc` 通知通道偶发握手失败影响 Dock；内核仍保留 `siyuan-cloud.status` RPC 供 smoke 和后续能力验证。
 - `src/utils/icon.ts` 保留文件图标映射。
@@ -155,5 +159,22 @@ Companion 插件集成复用普通链接点击边界，不进入内核 API。文
 
 - `pnpm build`：构建前端和内核 bundle。
 - `node --check dist/kernel.js`：检查生成内核 JS 语法。
-- `pnpm test:kernel`：运行 `scripts/kernel-route-smoke.mjs`，覆盖 status HTTP/RPC、FS、task、meta、share、WebDAV、S3、archive/share-archive/offline/torrent placeholder 等 route，以及 Quark 目录名尾随空格和连续 `/p` Range 请求缓存路径。
+- `pnpm test:kernel`：运行 `scripts/kernel-route-smoke.mjs`，覆盖 status HTTP/RPC、FS、task、meta、share、WebDAV、S3、ZIP/tar/tgz archive meta/list/extract/decompress、ZIP encrypted detect/501 boundary、share archive meta/list/`/sad` extract、`/ad`/`/ap` extract、offline placeholder、torrent parse/upload_parse/generate 和 rapid-upload driver-boundary，以及 Quark 目录名尾随空格和连续 `/p` Range 请求缓存路径。
 - i18n key diff：确认 `src/i18n/en_US.json` 与 `src/i18n/zh_CN.json` key 完全一致。
+
+## 2026-06-25 Archive / Torrent 接续状态
+
+- 百度网盘挂载 ZIP 预览已从“整包拉取”改为 range reader：`driver.read()` 返回 link 时，`src/kernel/server/handles/archive.js` 使用 `parseZipArchiveAsync` 只读 EOCD、central directory 和目标 entry 数据；`/ae` 提取 ZIP stored/deflate entry 时复用同一个 reader。
+- ZIP 非 UTF-8 文件名不再依赖运行环境的 `TextDecoder('gbk')`。`src/kernel/internal/fs/gbk.js` 是由 WHATWG `TextDecoder("gbk")` 生成的静态 GBK 表，`src/kernel/internal/fs/archive.js` 的默认 `zipFilenameDecoder` 对非 EFS ZIP 名称走 `decodeGbk`，EFS 名称走 UTF-8。这个修复已在真实百度 ZIP 上验证，`/api/fs/archive/meta` 网络响应里的 `name` 应直接返回中文，例如 `Cap 中文版安装包`。
+- 本地 Local archive 和远端/mounted archive 现在都复用同一个 `parseArchive` 默认解码；前端 `src/utils/archive.ts` 不再保留单独的 `localZipFilenameDecoder`。
+- `forwardProxy` 已收口：无 body 的 GET/HEAD 请求不再带 `contentType`、`payload`、`payloadEncoding`，避免 AliyundriveOpen / Quark signed URL 因额外 body/header 形状触发 `SignatureDoesNotMatch`。OpenList 对齐参考：AliyundriveOpen `Link` 只返回 URL；QuarkOpen `Link` 返回 URL + Cookie。
+- 百度挂载 ZIP 生成 torrent 已接入 range chunk 读取，不再一次拉全量；`src/kernel/internal/fs/torrent.js` 负责单文件 bencode torrent 生成。已避免在 `src/kernel` / `dist/kernel.js` 引入 `async function*` / `for await`，因为旧 SiYuan kernel runtime 可能因此启动失败。
+- 当前 archive 视频预览不是普通网盘视频播放链路：普通百度视频点击播放走 driver `Link()` / `/p` / `body.proxy` 和百度视频直链，速度快；压缩包内视频走 `/ae/...zip?inner=...mp4`，需要从远端 ZIP 定位并解压 entry，且 `/ae` 目前不是完整支持播放器 Range seek 的流式 entry proxy。视频一直加载通常是这个能力边界，不是百度直链播放退化。下一步若要优化，应实现 archive entry Range 响应或对压缩包内媒体改为下载/外部打开，不应假装与普通 `raw_url` 播放相同。
+
+已验证命令：
+
+```bash
+node ./scripts/kernel-route-smoke.mjs
+pnpm build
+node --check dist/kernel.js
+```

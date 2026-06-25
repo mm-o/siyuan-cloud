@@ -185,7 +185,7 @@ async function localDevices(mountPath: string) {
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(item => ({
       name: item.name.startsWith('@') ? path.basename(item.root) : item.name,
-      path: joinOpenListPath(mountPath, encodeURIComponent(item.name)),
+      path: joinOpenListPath(mountPath, item.name),
       is_dir: true,
       size: 0,
       modified: new Date().toISOString(),
@@ -279,6 +279,14 @@ export async function getLocal(path: string) {
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error))
   }
+}
+
+export async function readLocalFileBytes(path: string) {
+  const resolved = await resolveLocalPath(path)
+  if (!resolved || (resolved as any).virtualRoot)
+    return null
+  const buffer = await fsMod().readFile((resolved as any).target)
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
 }
 
 export async function mkdirLocal(path: string) {

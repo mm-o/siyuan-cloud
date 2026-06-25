@@ -34,6 +34,7 @@ const STAGES = [
   ["fs", "done"],
   ["search-index", "active"],
   ["torrent", "active"],
+  ["archive", "active"],
   ["streaming-proxy", "done"],
   ["admin", "done"],
   ["meta", "done"],

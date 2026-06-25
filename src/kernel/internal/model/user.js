@@ -7,6 +7,18 @@ export const USER_ROLE = {
 };
 
 export const ADMIN_PERMISSION = 0x73ff;
+export const USER_PERMISSION = {
+  SEE_HIDES: 1 << 0,
+  ACCESS_WITHOUT_PASSWORD: 1 << 1,
+  SHARE: 1 << 14,
+  CUSTOMIZE_SHARE_ID: 1 << 15,
+};
+
+export const isAdminUser = (user) => Number(user?.role) === USER_ROLE.ADMIN;
+export const canShare = (user) => isAdminUser(user) || (Number(user?.permission || 0) & USER_PERMISSION.SHARE) !== 0;
+export const canCustomizeShareID = (user) => isAdminUser(user) || (Number(user?.permission || 0) & USER_PERMISSION.CUSTOMIZE_SHARE_ID) !== 0;
+export const canSeeHides = (user) => isAdminUser(user) || (Number(user?.permission || 0) & USER_PERMISSION.SEE_HIDES) !== 0;
+export const canAccessWithoutPassword = (user) => isAdminUser(user) || (Number(user?.permission || 0) & USER_PERMISSION.ACCESS_WITHOUT_PASSWORD) !== 0;
 
 export const sanitizeUser = (user) => {
   const result = { ...(user || {}) };

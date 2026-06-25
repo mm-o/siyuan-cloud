@@ -477,6 +477,20 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
     clearStorageCache(storage);
   },
 
+  async other(storage, relPath, req = {}) {
+    const driveId = await initDrive(client, storage);
+    const file = await resolveFile(client, storage, relPath);
+    if (req.method !== "video_preview") throw new Error("not support");
+    return requestAli(client, storage, "/adrive/v1.0/openFile/getVideoPreviewPlayInfo", {
+      body: {
+        drive_id: driveId,
+        file_id: file.file_id,
+        category: "live_transcoding",
+        url_expire_sec: 14400,
+      },
+    });
+  },
+
   async put(storage, relPath, content, mime, options = {}) {
     const driveId = await initDrive(client, storage);
     const parent = await resolveFile(client, storage, dirnameOf(relPath));

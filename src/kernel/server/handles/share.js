@@ -8,6 +8,14 @@ import {
   basename,
   normalizePath,
 } from "../../internal/model/path.js";
+import { canAccessByMeta, nearestMeta } from "../../internal/model/meta.js";
+import {
+  canCustomizeShareID,
+  canShare,
+  isAdminUser,
+  normalizeUser,
+  USER_ROLE,
+} from "../../internal/model/user.js";
 
 const randomShareId = () => Math.random().toString(36).slice(2, 10);
 const validSharingID = /^[\w\u4e00-\u9fff-]+$/u;
@@ -17,6 +25,11 @@ const sharePwdOf = (share) => String(share?.pwd ?? "");
 const shareFilesOf = (share) => Array.isArray(share?.files) ? share.files.map(normalizePath).filter(Boolean) : [];
 const accessCache = new Map();
 const accessCountDelay = 30 * 60 * 1000;
+const pathWithinBase = (path, basePath) => {
+  const target = normalizePath(path);
+  const base = normalizePath(basePath || "/");
+  return base === "/" || target === base || target.startsWith(`${base}/`);
+};
 
 export const normalizeShare = (share = {}, now) => {
   const files = shareFilesOf(share);
@@ -36,6 +49,7 @@ export const normalizeShare = (share = {}, now) => {
     order_direction: share.order_direction || "",
     extract_folder: share.extract_folder || "",
     creator: share.creator || share.creator_name || "admin",
+    creator_id: Number(share.creator_id || share.creatorId || 1),
     creator_role: Number(share.creator_role ?? 2),
     created: share.created || now?.() || "",
     modified: share.modified || now?.() || "",
@@ -95,6 +109,34 @@ const validateSharingID = (id) => {
   if ([...String(id)].length > 64) throw new Error("share id must be at most 64 characters");
   if (!validSharingID.test(String(id))) throw new Error("share id can only contain letters, numbers, underscores, hyphens, and CJK characters");
   return String(id);
+};
+
+const resolveShareCreator = (state, reqUser, creatorName = "") => {
+  if (isAdminUser(reqUser) && creatorName) {
+    return (state.users || []).map(normalizeUser).find((user) => user.username === creatorName) || null;
+  }
+  if (isAdminUser(reqUser) && !creatorName) return reqUser;
+  return reqUser;
+};
+
+const validateShareWriteRequest = ({ customId, files, reqUser, state, targetUser }) => {
+  if (!isAdminUser(reqUser)) {
+    if (!canShare(targetUser) || (customId && !canCustomizeShareID(targetUser))) {
+      return failure("permission denied", 403);
+    }
+    for (const file of files) {
+      if (!pathWithinBase(file, targetUser.base_path)) {
+        return failure(`permission denied to share path [${file}]`, 500);
+      }
+      const meta = nearestMeta(state, file);
+      if (!canAccessByMeta(targetUser, meta, file, "")) {
+        return failure(`permission denied to share path [${file}]`, 500);
+      }
+    }
+    return null;
+  }
+  if (customId && !canCustomizeShareID(reqUser)) return failure("permission denied", 403);
+  return null;
 };
 
 export const shareClientIP = (request) => {
@@ -323,6 +365,7 @@ export const createShareReader = ({
 };
 
 export const createShareHandlers = ({
+  currentUser = () => normalizeUser({ id: 2, username: "guest", role: USER_ROLE.GUEST, disabled: true }, 1),
   driverRuntime,
   getState,
   isWorkspacePath,
@@ -336,20 +379,28 @@ export const createShareHandlers = ({
   "ANY /api/share/list": async (request) => {
     const req = await parseJson(request);
     const state = getState();
+    const user = currentUser(request);
     state.sharings = state.sharings.map((share) => normalizeShare(share, now));
-    const content = page(state.sharings.map(shareResp), req);
-    return jsonResponse(success(pageResp(content, state.sharings.length)));
+    const visible = isAdminUser(user)
+      ? state.sharings
+      : state.sharings.filter((share) => Number(normalizeShare(share).creator_id) === Number(user.id));
+    const content = page(visible.map(shareResp), req);
+    return jsonResponse(success(pageResp(content, visible.length)));
   },
   "GET /api/share/get": async (request) => {
     const state = getState();
+    const user = currentUser(request);
     const id = queryValue(request, "id");
     const share = state.sharings.find((item) => shareIdOf(item) === id);
-    if (!share) return jsonResponse(failure("sharing not found", 404));
+    if (!share || (!isAdminUser(user) && Number(normalizeShare(share).creator_id) !== Number(user.id))) {
+      return jsonResponse(failure("sharing not found", 404));
+    }
     return jsonResponse(success(shareResp(share)));
   },
   "POST /api/share/create": async (request) => {
     const req = await parseJson(request);
     const state = getState();
+    const reqUser = currentUser(request);
     let customId = "";
     try {
       customId = validateSharingID(req.id || "");
@@ -358,6 +409,10 @@ export const createShareHandlers = ({
     }
     const files = (Array.isArray(req.files) ? req.files : []).map(normalizePath).filter(Boolean);
     if (!files.length) return jsonResponse(failure("must add at least 1 object", 400));
+    const creator = resolveShareCreator(state, reqUser, req.creator || req.creator_name);
+    if (!creator) return jsonResponse(failure("no such a user", 400));
+    const permissionError = validateShareWriteRequest({ customId, files, reqUser, state, targetUser: creator });
+    if (permissionError) return jsonResponse(permissionError);
     const id = customId || randomShareId();
     if (state.sharings.some((item) => shareIdOf(item) === id)) return jsonResponse(failure("UNIQUE constraint failed: sharings.id", 500));
     const share = normalizeShare({
@@ -374,6 +429,9 @@ export const createShareHandlers = ({
       order_by: req.order_by || "",
       order_direction: req.order_direction || "",
       extract_folder: req.extract_folder || "",
+      creator: creator.username,
+      creator_id: creator.id,
+      creator_role: creator.role,
       created: now(),
       modified: now(),
     }, now);
@@ -384,10 +442,25 @@ export const createShareHandlers = ({
   "POST /api/share/update": async (request) => {
     const req = await parseJson(request);
     const state = getState();
+    const reqUser = currentUser(request);
     const share = state.sharings.find((item) => shareIdOf(item) === String(req.id || ""));
-    if (!share) return jsonResponse(failure("sharing not found", 404));
+    if (!share || (!isAdminUser(reqUser) && Number(normalizeShare(share).creator_id) !== Number(reqUser.id))) {
+      return jsonResponse(failure("sharing not found", 404));
+    }
     const files = Array.isArray(req.files) && req.files.length ? req.files.map(normalizePath) : shareFilesOf(share);
     if (!files.length) return jsonResponse(failure("must add at least 1 object", 400));
+    const nextCreator = isAdminUser(reqUser) && (req.creator || req.creator_name)
+      ? resolveShareCreator(state, reqUser, req.creator || req.creator_name)
+      : resolveShareCreator(state, reqUser, normalizeShare(share).creator);
+    if (!nextCreator) return jsonResponse(failure("no such a user", 400));
+    const permissionError = validateShareWriteRequest({
+      customId: req.new_id && req.new_id !== shareIdOf(share) ? req.new_id : "",
+      files,
+      reqUser,
+      state,
+      targetUser: nextCreator,
+    });
+    if (permissionError) return jsonResponse(permissionError);
     Object.assign(share, {
       files,
       pwd: req.pwd ?? sharePwdOf(share),
@@ -401,6 +474,9 @@ export const createShareHandlers = ({
       order_by: req.order_by ?? share.order_by,
       order_direction: req.order_direction ?? share.order_direction,
       extract_folder: req.extract_folder ?? share.extract_folder,
+      creator: nextCreator.username,
+      creator_id: nextCreator.id,
+      creator_role: nextCreator.role,
       modified: now(),
     });
     if (req.new_id && req.new_id !== shareIdOf(share)) {
@@ -421,9 +497,11 @@ export const createShareHandlers = ({
   "POST /api/share/delete": async (request) => {
     const req = await parseJson(request);
     const state = getState();
+    const user = currentUser(request);
     const queryId = queryValue(request, "id");
     const ids = Array.isArray(req.ids) ? req.ids.map(String) : [String(queryId || req.id || "")];
-    if (!ids.some((id) => state.sharings.some((item) => shareIdOf(item) === id))) {
+    const matches = state.sharings.filter((item) => ids.includes(shareIdOf(item)));
+    if (!matches.length || (!isAdminUser(user) && matches.some((share) => Number(normalizeShare(share).creator_id) !== Number(user.id)))) {
       return jsonResponse(failure("sharing not found", 404));
     }
     state.sharings = state.sharings.filter((item) => !ids.includes(shareIdOf(item)));
@@ -433,8 +511,11 @@ export const createShareHandlers = ({
   "POST /api/share/enable": async (request) => {
     const req = await parseJson(request);
     const state = getState();
+    const user = currentUser(request);
     const share = state.sharings.find((item) => shareIdOf(item) === String(queryValue(request, "id") || req.id || ""));
-    if (!share) return jsonResponse(failure("sharing not found", 404));
+    if (!share || (!isAdminUser(user) && Number(normalizeShare(share).creator_id) !== Number(user.id))) {
+      return jsonResponse(failure("sharing not found", 404));
+    }
     share.disabled = false;
     share.modified = now();
     await saveState();
@@ -443,8 +524,11 @@ export const createShareHandlers = ({
   "POST /api/share/disable": async (request) => {
     const req = await parseJson(request);
     const state = getState();
+    const user = currentUser(request);
     const share = state.sharings.find((item) => shareIdOf(item) === String(queryValue(request, "id") || req.id || ""));
-    if (!share) return jsonResponse(failure("sharing not found", 404));
+    if (!share || (!isAdminUser(user) && Number(normalizeShare(share).creator_id) !== Number(user.id))) {
+      return jsonResponse(failure("sharing not found", 404));
+    }
     share.disabled = true;
     share.modified = now();
     await saveState();

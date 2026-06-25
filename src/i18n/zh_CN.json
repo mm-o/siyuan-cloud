@@ -331,6 +331,7 @@
   "copyLink": "复制链接",
   "linkCopied": "Markdown 已复制",
   "filePreview": "预览",
+  "browseArchive": "浏览压缩包",
   "upload": "上传",
   "download": "下载",
   "rename": "重命名",
@@ -397,5 +398,15 @@
   "driverField.video_thumb_pos": "视频缩略图位置",
   "driverField.show_hidden": "显示隐藏文件",
   "driverField.mkdir_perm": "目录权限",
-  "driverField.recycle_bin_path": "回收站路径"
+  "driverField.recycle_bin_path": "回收站路径",
+  "torrentTools": "Torrent 测试",
+  "torrentPath": "文件路径",
+  "torrentPathPlaceholder": "输入要生成 torrent 的文件路径，例如 /smoke/a.txt",
+  "torrentData": "Torrent Base64",
+  "torrentDataPlaceholder": "粘贴 torrent_data，或先生成 torrent",
+  "torrentGenerate": "生成 Torrent",
+  "torrentParse": "解析 Torrent",
+  "torrentGenerated": "Torrent 已生成",
+  "torrentParsed": "Torrent 已解析",
+  "shareLocalUnsupported": "本地 Local 分享无法通过浏览器分享链接下载"
 }

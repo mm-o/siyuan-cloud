@@ -99,6 +99,40 @@ export const fsSearch = (
   })
 }
 
+export const fsArchiveList = (
+  path: string,
+  inner_path = '/',
+  page = 1,
+  per_page = 200,
+  refresh = false,
+  archive_pass = '',
+  password = '',
+): Promise<OpenListResp> => {
+  return r.post('/fs/archive/list', {
+    archive_pass,
+    inner_path,
+    page,
+    password,
+    path,
+    per_page,
+    refresh,
+  })
+}
+
+export const fsArchiveMeta = (
+  path: string,
+  refresh = false,
+  archive_pass = '',
+  password = '',
+): Promise<OpenListResp> => {
+  return r.post('/fs/archive/meta', {
+    archive_pass,
+    password,
+    path,
+    refresh,
+  })
+}
+
 export const fsMkdir = (path: string): Promise<OpenListResp> => {
   return mkdirLocal(path).then(local => local || r.post('/fs/mkdir', { path }))
 }
@@ -192,6 +226,19 @@ export const shareCreate = (body: {
   disabled?: boolean
 }): Promise<OpenListResp> => {
   return r.post('/share/create', body)
+}
+
+export const fsTorrentGenerate = (body: {
+  path: string
+  with_cas?: boolean
+}): Promise<OpenListResp> => {
+  return r.post('/fs/torrent/generate', body)
+}
+
+export const fsTorrentParse = (body: {
+  torrent_data: string
+}): Promise<OpenListResp> => {
+  return r.post('/fs/torrent/parse', body)
 }
 
 export function openListAbsoluteUrl(url: string) {

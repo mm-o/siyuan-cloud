@@ -5,6 +5,7 @@ import {
   jsonResponse,
   pageResp,
   rawResponse,
+  redirectResponse,
   success,
   successWithMessage,
   textResponse,
@@ -22,6 +23,8 @@ import {
 } from "./internal/model/setting.js";
 import {
   accountFromSiyuanConf,
+  defaultGuestUser,
+  normalizeUser,
   syncDefaultUserWithSiyuan,
 } from "./internal/model/user.js";
 import {
@@ -56,7 +59,10 @@ import { createMetaHandlers } from "./server/handles/meta.js";
 import { createMessageHandlers } from "./server/handles/message.js";
 import { createScanHandlers } from "./server/handles/scan.js";
 import { createSecurityHandlers } from "./server/handles/security.js";
-import { createArchiveHandlers } from "./server/handles/archive.js";
+import {
+  createArchiveDownloadResponse,
+  createArchiveHandlers,
+} from "./server/handles/archive.js";
 import { createPublicHandlers } from "./server/handles/public.js";
 import {
   createStatusHandlers,
@@ -70,13 +76,13 @@ import {
 import {
   proxy,
   proxyReadOptions,
+  shouldProxy,
 } from "./server/common/proxy.js";
 import { createRouter } from "./server/router.js";
 import { createS3Server } from "./server/s3.js";
 import { createWebDavServer } from "./server/webdav.js";
 
 (function () {
-
   const now = () => new Date().toISOString();
 
   let state = defaultState(now);
@@ -93,7 +99,6 @@ import { createWebDavServer } from "./server/webdav.js";
     now,
   });
 
-  const log = (...args) => siyuan.logger.info("[siyuan-cloud]", ...args);
   const warn = (...args) => siyuan.logger.warn("[siyuan-cloud]", ...args);
 
   const pick = (value, lowerName, upperName) => {
@@ -242,6 +247,29 @@ import { createWebDavServer } from "./server/webdav.js";
     const fromUrl = pick(url, "path", "Path");
     const raw = fromContext || fromUrl || "/";
     return decodePath(raw.replace(/^\/plugin\/private\/[^/]+/, "") || "/");
+  };
+
+  const requestHeaders = (request) => {
+    const meta = pick(request, "request", "Request");
+    return pick(meta, "headers", "Headers") || {};
+  };
+
+  const requestHeader = (request, name) => {
+    const target = String(name || "").toLowerCase();
+    for (const [key, value] of Object.entries(requestHeaders(request))) {
+      if (String(key).toLowerCase() !== target) continue;
+      return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+    }
+    return "";
+  };
+
+  const currentUser = (request) => {
+    const token = requestHeader(request, "Authorization").replace(/^Bearer\s+/i, "");
+    const id = token.startsWith("siyuan-cloud-port:") ? Number(token.slice("siyuan-cloud-port:".length)) : 0;
+    const user = id
+      ? state.users.find((item) => Number(item.id) === id)
+      : state.users.find((item) => Number(item.role) === 2) || state.users[0];
+    return normalizeUser(user || defaultGuestUser(), Math.max(0, Number(user?.id || 2) - 1));
   };
 
   const rawForwardHeaders = (headers = {}) => {
@@ -467,7 +495,12 @@ import { createWebDavServer } from "./server/webdav.js";
     saveState: saveRuntimeState,
   });
 
-  const readFileResponse = async (filePath, request) => {
+  const shareDownloadShouldProxy = (mount, filePath) => {
+    const config = driverInfoMap()[mount?.storage?.driver]?.config || {};
+    return shouldProxy(mount?.storage, config, basename(filePath));
+  };
+
+  const readFileResponse = async (filePath, request, readOptions = {}) => {
     if (isWorkspacePath(filePath)) {
       const file = await workspaceReadText(filePath);
       if (!file.ok) return textResponse(file.text || "not found", file.status || 404);
@@ -480,6 +513,7 @@ import { createWebDavServer } from "./server/webdav.js";
         const data = await mount.driver.read(mount.storage, mount.relPath, options);
         if (data.link) {
           const link = linkFromDriverData(data);
+          if (readOptions.shareDownload && !shareDownloadShouldProxy(mount, filePath)) return redirectResponse(link.url);
           return proxy(null, link, { request_header: options.requestHeaders }, !!mount.storage.proxy_range);
         }
         if (String(data.bodyEncoding || "").startsWith("base64")) {
@@ -532,6 +566,11 @@ import { createWebDavServer } from "./server/webdav.js";
     removeEntry,
     requestPath,
     saveState: saveRuntimeState,
+  });
+  const archiveDownloadResponse = createArchiveDownloadResponse({
+    client: siyuan.client,
+    driverRuntime,
+    getState: () => state,
   });
 
   let handlers = {};
@@ -608,6 +647,7 @@ import { createWebDavServer } from "./server/webdav.js";
       workspaceGet,
     }),
     ...createFsHandlers({
+      client: siyuan.client,
       cloneEntryTree,
       createFile,
       driverRuntime,
@@ -633,13 +673,22 @@ import { createWebDavServer } from "./server/webdav.js";
       toObjResp,
       workspaceGet,
       workspaceList,
+      workspaceReadText,
       workspaceRelPath,
     }),
     ...createArchiveHandlers({
+      client: siyuan.client,
+      createFile,
+      driverRuntime,
+      ensureDir,
+      getState: () => state,
+      page,
       parseJson,
+      saveState: saveRuntimeState,
       taskStore,
     }),
     ...createShareHandlers({
+      currentUser,
       driverRuntime,
       getState: () => state,
       isWorkspacePath,
@@ -653,6 +702,7 @@ import { createWebDavServer } from "./server/webdav.js";
   };
 
   const route = createRouter({
+    archiveDownloadResponse,
     getState: () => state,
     handleS3,
     handleWebDav,
@@ -674,7 +724,6 @@ import { createWebDavServer } from "./server/webdav.js";
       getState: () => state,
       handlersRef: () => handlers,
     }), "Return Siyuan Cloud compatibility runtime status.");
-    await log("kernel plugin loaded", OPENLIST_VERSION);
   };
 
   siyuan.plugin.lifecycle.onunload = async () => {

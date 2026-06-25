@@ -1,4 +1,35 @@
 export const privateBase = '/plugin/private/siyuan-cloud'
+let openListAuthToken = ''
+
+export function setOpenListAuthToken(token = '') {
+  openListAuthToken = String(token || '')
+}
+
+function withOpenListHeaders(headers?: HeadersInit) {
+  const merged: Record<string, string> = {}
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      merged[key] = value
+    })
+  }
+  else if (Array.isArray(headers)) {
+    for (const [key, value] of headers)
+      merged[key] = String(value)
+  }
+  else {
+    Object.assign(merged, headers || {})
+  }
+  if (openListAuthToken && !Object.keys(merged).some(key => key.toLowerCase() === 'authorization'))
+    merged.Authorization = openListAuthToken
+  return merged
+}
+
+function jsonHeaders(headers?: HeadersInit) {
+  return withOpenListHeaders({
+    'Content-Type': 'application/json',
+    ...withOpenListHeaders(headers),
+  })
+}
 
 export function openListCurrentUrl(path: string) {
   if (!path)
@@ -20,18 +51,23 @@ export interface OpenListResp<T = any> {
 }
 
 export async function fetchOpenListJson(path: string, init?: RequestInit) {
-  const response = await fetch(`${privateBase}${path}`, init)
+  const url = `${privateBase}${path}`
+  const response = await fetch(url, {
+    ...init,
+    headers: withOpenListHeaders(init?.headers),
+  })
+  const text = await response.text()
   if (!response.ok)
-    throw new Error(`HTTP ${response.status}`)
-  return response.json()
+    throw new Error(text ? `HTTP ${response.status}: ${text.slice(0, 160)}` : `HTTP ${response.status}`)
+  return text ? JSON.parse(text) : null
 }
 
 export async function openListJson(path: string, body?: unknown, init?: RequestInit) {
   const payload = await fetchOpenListJson(path, {
-    method: init?.method || 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
     ...init,
+    method: init?.method || 'POST',
+    headers: jsonHeaders(init?.headers),
+    body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (payload.code && payload.code !== 200)
     throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
@@ -39,7 +75,10 @@ export async function openListJson(path: string, body?: unknown, init?: RequestI
 }
 
 export async function fetchOpenListText(path: string, init?: RequestInit) {
-  const response = await fetch(`${privateBase}${path}`, init)
+  const response = await fetch(`${privateBase}${path}`, {
+    ...init,
+    headers: withOpenListHeaders(init?.headers),
+  })
   const text = await response.text()
   if (!response.ok)
     throw new Error(`HTTP ${response.status}: ${text}`)
@@ -48,7 +87,10 @@ export async function fetchOpenListText(path: string, init?: RequestInit) {
 
 async function requestOpenList<T = any>(path: string, init?: RequestInit): Promise<OpenListResp<T>> {
   try {
-    const response = await fetch(`${privateBase}/api${path}`, init)
+    const response = await fetch(`${privateBase}/api${path}`, {
+      ...init,
+      headers: withOpenListHeaders(init?.headers),
+    })
     const text = await response.text()
     if (!response.ok) {
       return {
@@ -70,17 +112,17 @@ async function requestOpenList<T = any>(path: string, init?: RequestInit): Promi
 export const r = {
   post<T = any>(path: string, body?: unknown, init?: RequestInit): Promise<OpenListResp<T>> {
     return requestOpenList<T>(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
       ...init,
+      method: 'POST',
+      headers: jsonHeaders(init?.headers),
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
   },
   put<T = any>(path: string, body?: unknown, init?: RequestInit): Promise<OpenListResp<T>> {
     return requestOpenList<T>(path, {
+      ...init,
       method: 'PUT',
       body: body === undefined ? undefined : JSON.stringify(body),
-      ...init,
     })
   },
 }

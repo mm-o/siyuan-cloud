@@ -6,7 +6,14 @@ import {
   openListShareUrl,
   openListJson,
   privateBase,
+  setOpenListAuthToken,
 } from '@/utils/request'
+import {
+  fsTorrentGenerate,
+  fsTorrentParse,
+} from '@/utils/api'
+import { readLocalFileBytes } from '@/utils/local_fs'
+import { generateTorrentBytes } from '../kernel/internal/fs/torrent.js'
 import { fetchKernelStatus } from '@/utils/status'
 
 type Status = 'checking' | 'online' | 'offline'
@@ -75,6 +82,9 @@ export function useDock(plugin: Plugin) {
   const verifyDriver = ref('SiYuanKernel')
   const verifyAddition = ref('{}')
   const verifySession = ref('')
+  const torrentPath = ref('')
+  const torrentData = ref('')
+  const torrentResult = ref('')
   const verifyStorages = ref<any[]>([])
   const selectedStorageId = ref<number | null>(null)
   const selectedStorage = ref<any | null>(null)
@@ -366,7 +376,9 @@ export function useDock(plugin: Plugin) {
         username: verifyUsername.value,
         password: verifyPassword.value,
       })
-      verifySession.value = payload.data?.token || payload.data?.username || verifyUsername.value
+      const token = payload.data?.token || ''
+      verifySession.value = token || payload.data?.username || verifyUsername.value
+      setOpenListAuthToken(token)
       accountInfo.value = JSON.stringify(payload.data || {})
       return JSON.stringify(payload.data || {})
     })
@@ -386,6 +398,7 @@ export function useDock(plugin: Plugin) {
   async function logout() {
     try {
       await openListJson('/api/auth/logout')
+      setOpenListAuthToken('')
       verifySession.value = ''
       accountInfo.value = ''
       showMessage(t('logoutDone'))
@@ -396,6 +409,13 @@ export function useDock(plugin: Plugin) {
 
   function fieldOptions(field: DriverField) {
     return String(field.options || '').split(',').map(item => item.trim()).filter(Boolean)
+  }
+
+  function bytesToBase64(bytes: Uint8Array) {
+    let binary = ''
+    for (const byte of bytes)
+      binary += String.fromCharCode(byte)
+    return btoa(binary)
   }
 
   function fieldOptionLabel(field: DriverField, option: string) {
@@ -871,6 +891,26 @@ export function useDock(plugin: Plugin) {
     await loadStorageList()
   }
 
+  async function quietLoad(runner: () => Promise<unknown>) {
+    try {
+      await runner()
+    } catch (error) {
+      status.value = 'offline'
+      statusDetail.value = error instanceof Error ? error.message : t('kernelUnavailable')
+    }
+  }
+
+  async function notifyLoad(runner: () => Promise<unknown>) {
+    try {
+      await runner()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('kernelUnavailable')
+      status.value = 'offline'
+      statusDetail.value = message
+      showMessage(message, 3000, 'error')
+    }
+  }
+
   async function loadShareList() {
     const payload = await fetchOpenListJson('/api/share/list', {
       method: 'POST',
@@ -1111,6 +1151,59 @@ export function useDock(plugin: Plugin) {
     await refreshAll()
   }
 
+  async function generateTorrent() {
+    if (!torrentPath.value.trim()) {
+      showMessage(t('torrentPathPlaceholder'), 3000, 'error')
+      return
+    }
+    try {
+      const localBytes = await readLocalFileBytes(torrentPath.value.trim())
+      if (localBytes) {
+        const name = torrentPath.value.trim().split('/').filter(Boolean).pop() || 'local-file'
+        const generated = generateTorrentBytes(localBytes, { name })
+        torrentData.value = bytesToBase64(generated.torrent)
+        torrentResult.value = JSON.stringify({
+          file_name: `${name}.torrent`,
+          info_hash: generated.info_hash,
+          size: generated.torrent.byteLength,
+          source: 'Local',
+        }, null, 2)
+        showMessage(t('torrentGenerated'))
+        return
+      }
+      const payload = await fsTorrentGenerate({ path: torrentPath.value.trim() })
+      if (payload.code !== 200)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      torrentData.value = payload.data?.torrent_data || ''
+      torrentResult.value = JSON.stringify({
+        file_name: payload.data?.file_name,
+        info_hash: payload.data?.info_hash,
+        size: payload.data?.size,
+      }, null, 2)
+      showMessage(t('torrentGenerated'))
+    } catch (error) {
+      torrentResult.value = error instanceof Error ? error.message : String(error)
+      showMessage(torrentResult.value, 3000, 'error')
+    }
+  }
+
+  async function parseTorrent() {
+    if (!torrentData.value.trim()) {
+      showMessage(t('torrentDataPlaceholder'), 3000, 'error')
+      return
+    }
+    try {
+      const payload = await fsTorrentParse({ torrent_data: torrentData.value.trim() })
+      if (payload.code !== 200)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      torrentResult.value = JSON.stringify(payload.data || {}, null, 2)
+      showMessage(t('torrentParsed'))
+    } catch (error) {
+      torrentResult.value = error instanceof Error ? error.message : String(error)
+      showMessage(torrentResult.value, 3000, 'error')
+    }
+  }
+
   async function refreshStatus() {
     status.value = 'checking'
     statusDetail.value = `${t('callingStatus')} ${privateBase}/siyuan-cloud/status`
@@ -1128,13 +1221,21 @@ export function useDock(plugin: Plugin) {
   }
 
   async function refreshAll() {
-    await loadDriverOptions()
-    await loadStorageList()
-    await loadShareList()
-    await loadUserList()
-    await loadExternalPreviews()
-    await loadMe()
     await refreshStatus()
+    if (status.value !== 'online')
+      return
+    try {
+      await loadDriverOptions()
+      await loadStorageList()
+      await loadShareList()
+      await loadUserList()
+      await loadExternalPreviews()
+      await loadMe()
+    } catch (error) {
+      status.value = 'offline'
+      statusDetail.value = error instanceof Error ? error.message : t('kernelUnavailable')
+      showMessage(statusDetail.value, 3000, 'error')
+    }
   }
 
   function openPrivateEntry() {
@@ -1172,14 +1273,14 @@ export function useDock(plugin: Plugin) {
       { key: 'run', icon: '#iconPlay', label: t('verifyRunAll'), run: runVerifySuite },
     ],
     shares: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: loadShareList },
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadShareList) },
     ],
     mounts: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: loadStorageList },
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadStorageList) },
       { key: 'add', icon: '#iconAdd', label: t('mountAdd'), run: openAddMount },
     ],
     users: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: loadUserList },
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadUserList) },
       { key: 'add', icon: '#iconAdd', label: t('userAdd'), run: openAddUser },
     ],
     about: [
@@ -1191,11 +1292,11 @@ export function useDock(plugin: Plugin) {
   watch(currentTab, async (tab) => {
     await saveDockSettings()
     if (tab === 'shares')
-      await loadShareList()
+      await quietLoad(loadShareList)
     else if (tab === 'users')
-      await loadUserList()
+      await quietLoad(loadUserList)
     else if (tab === 'mounts')
-      await loadStorageList()
+      await quietLoad(loadStorageList)
   })
   watch(verifyDriver, async (driver) => {
     if (loadingMountEdit)
@@ -1287,6 +1388,11 @@ export function useDock(plugin: Plugin) {
     verifyLog,
     verifyMountPath,
     verifyPassword,
+    torrentData,
+    torrentPath,
+    torrentResult,
+    generateTorrent,
+    parseTorrent,
     verifySession,
     verifyStorages,
     verifyUsername,

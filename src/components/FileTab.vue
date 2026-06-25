@@ -100,6 +100,7 @@
             class="b3-list-item ol-file-row"
             :class="{
               'ol-file-row--selecting': selectionMode,
+              'b3-list-item--focus': focusPath === itemKey(item),
             }"
             @click="openFile(item)"
             @contextmenu.stop.prevent="openItemMenu($event, item)"
@@ -174,9 +175,12 @@ import {
   fsWriteFile,
   openListAbsoluteUrl,
   resolveOpenListFile,
-  shareCreate,
 } from '@/utils/api'
 import { handleResp, handleRespWithNotifySuccess } from '@/utils/handle_resp'
+import {
+  isArchiveFileName,
+  openArchiveBrowser,
+} from '@/utils/archive'
 import {
   baseOpenListName,
   deleteOpenListSelection,
@@ -191,7 +195,8 @@ import {
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
-import { openListShareUrl, privateBase } from '@/utils/request'
+import { privateBase } from '@/utils/request'
+import { createShareForPaths } from '@/utils/share'
 
 interface FsItem {
   name: string
@@ -215,6 +220,7 @@ const searchInputRef = ref<HTMLInputElement>()
 const uploadInputRef = ref<HTMLInputElement>()
 const selectedPaths = ref<string[]>([])
 const selectionMode = ref(false)
+const focusPath = ref('')
 let refreshSeq = 0
 const sortedItems = computed(() =>
   [...items.value].sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name)),
@@ -362,19 +368,19 @@ function fileKind(item: FsItem) {
 }
 
 const isImageFile = (item: FsItem) => fileKind(item) === 'image'
+const isArchiveFile = (item: FsItem) => !item.is_dir && isArchiveFileName(item.name)
 
 const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
 const escapeMdDest = (url: string) => url.replace(/([\\()])/g, '\\$1')
 const docProxyUrl = (path: string) => decodeURI(encodeURI(`${privateBase}/p${path}`)).replace(/#/g, '%23').replace(/\?/g, '%3F')
-const itemUrl = (item: FsItem) => String(item.raw_url || item.url || '')
-const itemOpenUrl = (item: FsItem) => itemUrl(item) || docProxyUrl(itemPath(item))
+const itemOpenUrl = (item: FsItem) => String(item.raw_url || item.url || '') || docProxyUrl(itemPath(item))
 const companionHref = (item: FsItem) => !item.is_dir && companionExts.has(extensionOf(item.name)) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
 function documentLink(item: FsItem, path: string) {
   const kind = fileKind(item)
   const url = itemOpenUrl(item) || docProxyUrl(path)
   if (kind === 'video')
     return `<video controls src="${escapeHtml(url)}"></video>`
-  return `${kind === 'image' ? '!' : ''}[${escapeMdText(item.name)}](${escapeMdDest(url)})`
+  return `${kind === 'image' ? '!' : ''}[${escapeMdText(item.name)}](${escapeMdDest(kind === 'image' ? url : docProxyUrl(path))})`
 }
 
 function triggerDownload(url: string, filename?: string) {
@@ -563,7 +569,8 @@ async function locatePath(path = '') {
     await goPath(target)
     return
   }
-  selectedPaths.value = item ? [target] : []
+  if (item)
+    focusPath.value = target
 }
 
 defineExpose({ openPath: locatePath })
@@ -582,6 +589,7 @@ async function goPath(path: string) {
   items.value = payload.data?.content || []
   searchInput.value = ''
   searchActive.value = false
+  focusPath.value = ''
   clearSelection()
   return true
 }
@@ -630,6 +638,10 @@ async function openFile(item: FsItem) {
     await goPath(itemPath(item))
     return
   }
+  if (isArchiveFile(item)) {
+    await browseArchive(item)
+    return
+  }
   const kind = fileKind(item)
   if (kind === 'image') {
     await openImageViewer(item)
@@ -649,6 +661,14 @@ async function openFile(item: FsItem) {
     content = payload.data?.content || (error instanceof Error ? error.message : String(error))
   }
   showTextPreview(item.name, content)
+}
+
+async function browseArchive(item: FsItem) {
+  await openArchiveBrowser({
+    archivePath: itemPath(item),
+    tf,
+    title: `${tf('browseArchive', 'Browse archive')} - ${item.name}`,
+  })
 }
 
 function showTextPreview(name: string, content: string) {
@@ -734,25 +754,9 @@ async function moveSelection() {
 async function shareSelection() {
   if (!selectedItems.value.length)
     return
-  const files = selectedItems.value.map(item => itemPath(item))
-  const id = await promptText(tf('shareCreate', 'Create Share'), '', tf('shareIdPlaceholder', 'Share ID, optional'))
-  if (id === null)
-    return
-  const pwd = await promptText(tf('sharePassword', 'Share Password'), '', tf('sharePasswordPlaceholder', 'Password, optional'))
-  if (pwd === null)
-    return
-  const resp = await shareCreate({
-    id: String(id || '').trim() || undefined,
-    files,
-    pwd: String(pwd || ''),
-    remark: files.length === 1 ? files[0] : `${files.length} files`,
-  })
-  handleRespWithNotifySuccess(resp, async (data: any) => {
-    const shareId = encodeURIComponent(String(data?.id || ''))
-    const url = await openListShareUrl(`${privateBase}/sd/${shareId}`)
-    await navigator.clipboard?.writeText(url)
-    window.dispatchEvent(new CustomEvent('siyuan-cloud:shares-changed'))
-    showMessage(tf('shareCreated', 'Share created and copied'), 2000)
+  await createShareForPaths({
+    paths: selectedItems.value.map(item => itemPath(item)),
+    tf,
   })
 }
 
@@ -834,6 +838,7 @@ function openBackgroundMenu(event: MouseEvent) {
 
 function openItemMenu(event: MouseEvent, item: FsItem) {
   openOpenListFileItemMenu({
+    browseArchive: isArchiveFile(item) ? browseArchive : undefined,
     copyLink,
     copySelection,
     deleteSelection,

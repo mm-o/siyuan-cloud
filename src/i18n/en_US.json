@@ -331,6 +331,7 @@
   "copyLink": "Copy Link",
   "linkCopied": "Markdown copied",
   "filePreview": "Preview",
+  "browseArchive": "Browse archive",
   "upload": "Upload",
   "download": "Download",
   "rename": "Rename",
@@ -397,5 +398,15 @@
   "driverField.video_thumb_pos": "Video thumbnail position",
   "driverField.show_hidden": "Show hidden files",
   "driverField.mkdir_perm": "Directory permission",
-  "driverField.recycle_bin_path": "Recycle bin path"
+  "driverField.recycle_bin_path": "Recycle bin path",
+  "torrentTools": "Torrent Tools",
+  "torrentPath": "File path",
+  "torrentPathPlaceholder": "Path to generate a torrent from, e.g. /smoke/a.txt",
+  "torrentData": "Torrent Base64",
+  "torrentDataPlaceholder": "Paste torrent_data, or generate a torrent first",
+  "torrentGenerate": "Generate Torrent",
+  "torrentParse": "Parse Torrent",
+  "torrentGenerated": "Torrent generated",
+  "torrentParsed": "Torrent parsed",
+  "shareLocalUnsupported": "Local shares cannot be downloaded from browser share links"
 }

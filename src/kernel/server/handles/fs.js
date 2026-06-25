@@ -18,9 +18,19 @@ import {
   nearestMeta,
 } from "../../internal/model/meta.js";
 import { linkFromDriverData } from "../../internal/model/args.js";
+import { forwardProxy } from "../../internal/driver/http.js";
 import { driverInfoMap } from "../../internal/driver/info.js";
+import {
+  bytesToBase64 as torrentBytesToBase64,
+  DEFAULT_TORRENT_PIECE_SIZE,
+  generateTorrentFromChunks,
+  generateTorrentBytes,
+  parseTorrentBytes,
+  torrentBytesFromRequest,
+} from "../../internal/fs/torrent.js";
 
 export const createFsHandlers = ({
+  client,
   cloneEntryTree,
   createFile,
   driverRuntime,
@@ -46,6 +56,7 @@ export const createFsHandlers = ({
   toObjResp,
   workspaceGet,
   workspaceList,
+  workspaceReadText,
   workspaceRelPath,
 }) => {
   const state = new Proxy({}, {
@@ -222,9 +233,9 @@ export const createFsHandlers = ({
     );
   const torrentNotImplemented = (operation) => ({
     operation,
-    reason: "torrent parsing and CAS rapid upload are not implemented in the SiYuan kernel JavaScript port yet.",
+    reason: "torrent CAS rapid upload and generation are not implemented in the SiYuan kernel JavaScript port yet.",
     upstream_source: "server/handles/torrent.go + pkg/torrent/* + drivers/189pc/torrent.go",
-    next: "Port a JavaScript bencode/torrent reader and 189/189PC CAS rapid-upload flow before enabling this route.",
+    next: "Port 189/189PC CAS rapid-upload and RangeReader-backed torrent generation before enabling this route.",
   });
   const fsTorrentPlaceholder = (operation, req = {}) => jsonResponse(failure(
     "torrent operations are not implemented in the SiYuan kernel port yet",
@@ -236,11 +247,194 @@ export const createFsHandlers = ({
   ), 501);
   const fsTorrentRequiredError = (field) => jsonResponse(failure(`${field} is required`, 400), 400);
   const fsTorrentValidate = (operation, req = {}) => {
-    if ((operation === "parse" || operation === "upload_parse" || operation === "rapid_upload") && !req.torrent_data)
+    if ((operation === "parse" || operation === "rapid_upload") && !req.torrent_data)
       return fsTorrentRequiredError("torrent_data");
     if ((operation === "rapid_upload" || operation === "generate") && !req.path)
       return fsTorrentRequiredError("path");
     return null;
+  };
+  const fsTorrentParse = (req, options = {}) => {
+    try {
+      return jsonResponse(success(parseTorrentBytes(torrentBytesFromRequest(req, options))));
+    } catch (error) {
+      return jsonResponse(failure(error.message || "parse torrent failed", 400), 400);
+    }
+  };
+  const fsTorrentUploadParse = (req) => {
+    try {
+      const bytes = torrentBytesFromRequest(req);
+      return jsonResponse(success({
+        info: parseTorrentBytes(bytes),
+        torrent_data: bytesToBase64(bytes),
+      }));
+    } catch (error) {
+      return jsonResponse(failure(error.message || "parse torrent failed", 400), 400);
+    }
+  };
+  const base64ToBytes = (value) => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const clean = String(value || "").replace(/[\r\n\s]/g, "").replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = [];
+    for (let i = 0; i < clean.length; i += 4) {
+      const a = chars.indexOf(clean[i]);
+      const b = chars.indexOf(clean[i + 1]);
+      const c = clean[i + 2] === "=" ? -1 : chars.indexOf(clean[i + 2]);
+      const d = clean[i + 3] === "=" ? -1 : chars.indexOf(clean[i + 3]);
+      if (a < 0 || b < 0) continue;
+      bytes.push((a << 2) | (b >> 4));
+      if (c >= 0) bytes.push(((b & 15) << 4) | (c >> 2));
+      if (d >= 0) bytes.push(((c & 3) << 6) | d);
+    }
+    return Uint8Array.from(bytes);
+  };
+  const textToBytes = (value) => {
+    const text = unescape(encodeURIComponent(String(value || "")));
+    return Uint8Array.from(Array.from(text, (char) => char.charCodeAt(0)));
+  };
+  const bytesFromDriverRead = (data) => {
+    if (!data || data.link) return null;
+    if (String(data.bodyEncoding || data.body_encoding || "").startsWith("base64"))
+      return base64ToBytes(data.body || "");
+    if (data.body !== undefined) return textToBytes(data.body || "");
+    return null;
+  };
+  const decodeBase64Error = (value) => {
+    const input = String(value || "");
+    if (!input) return "";
+    try {
+      return new TextDecoder().decode(base64ToBytes(input)) || input;
+    } catch (_) {
+      return input;
+    }
+  };
+  const bytesFromDriverLink = async (data) => {
+    if (!client || !data?.link) return null;
+    const link = linkFromDriverData(data);
+    const resp = await forwardProxy(client, link.url, {
+      allowErrorStatus: true,
+      contentType: "",
+      headers: {
+        ...(link.header || data.link?.headers || {}),
+        Range: "bytes=0-",
+      },
+      method: link.method || "GET",
+      responseEncoding: "base64",
+      timeout: 120000,
+    });
+    if (Number(resp.status || 0) >= 400) throw new Error(`HTTP ${resp.status}: ${String(resp.body || "").slice(0, 200)}`);
+    const bytes = base64ToBytes(resp.body || "");
+    if (!bytes.byteLength && Number(link.content_length || data.link?.content_length || 0) > 0) throw new Error("driver link returned empty file body");
+    return bytes;
+  };
+  const driverLinkChunks = async (data, size, chunkSize = DEFAULT_TORRENT_PIECE_SIZE) => {
+    const chunks = [];
+    if (!client || !data?.link) return chunks;
+    const link = linkFromDriverData(data);
+    const total = Number(size || link.content_length || data.link?.content_length || 0);
+    if (!total) {
+      const bytes = await bytesFromDriverLink(data);
+      if (bytes) chunks.push(bytes);
+      return chunks;
+    }
+    for (let offset = 0; offset < total; offset += chunkSize) {
+      const end = Math.min(offset + chunkSize, total) - 1;
+      const resp = await forwardProxy(client, link.url, {
+        allowErrorStatus: true,
+        contentType: "",
+        headers: {
+          ...(link.header || data.link?.headers || {}),
+          Range: `bytes=${offset}-${end}`,
+        },
+        method: link.method || "GET",
+        responseEncoding: "base64",
+        timeout: 120000,
+      });
+      if (Number(resp.status || 0) >= 400) throw new Error(`HTTP ${resp.status}: ${decodeBase64Error(resp.body || "").slice(0, 300)}`);
+      const bytes = base64ToBytes(resp.body || "");
+      if (!bytes.byteLength && end >= offset) throw new Error("driver link returned empty file body");
+      chunks.push(bytes.slice(0, end - offset + 1));
+    }
+    return chunks;
+  };
+  const torrentSourceFromPath = async (path) => {
+    if (isWorkspacePath(path)) {
+      const file = await workspaceReadText(path);
+      if (!file.ok) throw new Error(file.text || "not found");
+      return { bytes: textToBytes(file.text || ""), name: basename(path), size: String(file.text || "").length };
+    }
+    const mount = driverRuntime.resolve(state.storages, path);
+    if (mount?.driver?.get) {
+      const obj = await mount.driver.get(mount.storage, mount.relPath, { skipLink: true });
+      if (obj?.is_dir) throw new Error("directories are not supported for torrent generation");
+      if (!mount.driver.read) throw new Error("this storage does not expose a readable file body");
+      const readData = await mount.driver.read(mount.storage, mount.relPath, {});
+      const inlineBytes = bytesFromDriverRead(readData);
+      if (inlineBytes) return { bytes: inlineBytes, mount, name: obj?.name || basename(path), size: Number(obj?.size || inlineBytes.byteLength) };
+      if (readData?.link) return {
+        chunks: await driverLinkChunks(readData, Number(obj?.size || readData.link?.content_length || 0)),
+        mount,
+        name: obj?.name || basename(path),
+        size: Number(obj?.size || readData.link?.content_length || 0),
+      };
+      const bytes = await bytesFromDriverLink(readData);
+      if (!bytes || !bytes.byteLength) throw new Error("this storage does not expose a readable file body");
+      return { bytes, mount, name: obj?.name || basename(path), size: Number(obj?.size || bytes.byteLength) };
+    }
+    const entry = state.entries[path];
+    if (!entry || entry.is_dir) throw new Error(entry?.is_dir ? "directories are not supported for torrent generation" : "object not found");
+    const bytes = String(entry.body_encoding || "").startsWith("base64")
+      ? base64ToBytes(entry.content || "")
+      : textToBytes(entry.content || "");
+    return { bytes, name: entry.name || basename(path), size: Number(entry.size || bytes.byteLength) };
+  };
+  const fsTorrentGenerate = async (req) => {
+    try {
+      const path = normalizePath(req.path || "/");
+      const source = await torrentSourceFromPath(path);
+      if (source.size > 1024 * 1024 * 1024) return jsonResponse(failure("file too large to generate torrent (max 1GB)", 400), 400);
+      if (boolValue(req.with_cas, false) && !["189Cloud", "189CloudPC"].includes(source.mount?.storage?.driver || ""))
+        return jsonResponse(failure("CAS torrent generation only supports 189Cloud/189CloudPC storage", 400), 400);
+      const generated = source.chunks
+        ? generateTorrentFromChunks(source.chunks, {
+          name: source.name,
+          size: source.size,
+          withCas: boolValue(req.with_cas, false),
+        })
+        : generateTorrentBytes(source.bytes, {
+        name: source.name,
+        withCas: boolValue(req.with_cas, false),
+      });
+      return jsonResponse(success({
+        file_name: `${source.name}.torrent`,
+        info_hash: generated.info_hash,
+        size: generated.torrent.byteLength,
+        torrent_data: torrentBytesToBase64(generated.torrent),
+        with_cas: boolValue(req.with_cas, false),
+      }));
+    } catch (error) {
+      return jsonResponse(failure(error.message || "generate torrent failed", 400), 400);
+    }
+  };
+  const fsTorrentRapidUpload = async (req) => {
+    try {
+      const bytes = torrentBytesFromRequest(req, { requireBase64: true });
+      const info = parseTorrentBytes(bytes);
+      if (!info.has_cas) return jsonResponse(failure("torrent does not contain CAS extension information", 400), 400);
+      const mount = driverRuntime.resolve(state.storages, normalizePath(req.path || "/"));
+      if (!mount) return jsonResponse(failure("target storage does not support CAS rapid upload", 400), 400);
+      if (!mount.driver.rapidUploadFromTorrent)
+        return jsonResponse(failure("target storage does not expose CAS rapid upload", 501, torrentNotImplemented("rapid_upload")), 501);
+      const obj = await mount.driver.rapidUploadFromTorrent(mount.storage, mount.relPath, bytes, {
+        overwrite: req.overwrite !== false,
+      });
+      return jsonResponse(success({
+        file_name: obj?.name || info.name,
+        file_size: Number(obj?.size || info.total_size || 0),
+        message: "rapid upload succeeded",
+      }));
+    } catch (error) {
+      return jsonResponse(failure(error.message || "torrent rapid upload failed", 400), 400);
+    }
   };
   const shouldSkipExisting = (req) => boolValue(req.skip_existing, false);
   const shouldMerge = (req) => boolValue(req.merge, false);
@@ -252,6 +446,16 @@ export const createFsHandlers = ({
       return !!(await mount.driver.get(mount.storage, mount.relPath, { skipLink: true }))?.is_dir;
     } catch (_) {
       return false;
+    }
+  };
+  const driverList = async (mount, relPath, refresh = false) =>
+    (await mount.driver.list(mount.storage, relPath, { page: 1, per_page: 100000, refresh }))?.content || [];
+  const driverRemoveIfExists = async (mount, relPath) => {
+    if (!mount.driver.remove) return;
+    try {
+      await mount.driver.remove(mount.storage, relPath);
+    } catch (_) {
+      // OpenList overwrite paths ignore missing destination checks until the driver op itself runs.
     }
   };
   const extensionType = (name, isDir) => {
@@ -689,8 +893,8 @@ export const createFsHandlers = ({
       const renameObjects = Array.isArray(req.rename_objects) ? req.rename_objects : [];
       if (isWorkspacePath(srcDir)) {
         for (const item of renameObjects) {
-          const srcName = String(item.src_name || "").trim();
-          const newName = String(item.new_name || "").trim();
+          const srcName = String(item.src_name || "");
+          const newName = String(item.new_name || "");
           if (!srcName || !newName) continue;
           if (!isSafeRelativeName(newName)) return jsonResponse(failure("relative path is not allowed", 403));
           const srcPath = normalizePath(srcDir + "/" + srcName);
@@ -703,9 +907,28 @@ export const createFsHandlers = ({
         }
         return jsonResponse(success());
       }
+      const mount = driverRuntime.resolve(state.storages, srcDir);
+      if (mount) {
+        if (!mount.driver.rename) return jsonResponse(failure("not implement", 500));
+        for (const item of renameObjects) {
+          const srcName = String(item.src_name || "");
+          const newName = String(item.new_name || "");
+          if (!srcName || !newName) continue;
+          if (!isSafeRelativeName(newName)) return jsonResponse(failure("relative path is not allowed", 403));
+          try {
+            await mount.driver.rename(mount.storage, normalizePath(mount.relPath + "/" + srcName), newName);
+          } catch (error) {
+            return jsonResponse(failure(error.message || "driver batch rename failed", 502, {
+              driver: mount.storage.driver,
+              mount_path: mount.storage.mount_path,
+            }));
+          }
+        }
+        return jsonResponse(success());
+      }
       for (const item of renameObjects) {
-        const srcName = String(item.src_name || "").trim();
-        const newName = String(item.new_name || "").trim();
+        const srcName = String(item.src_name || "");
+        const newName = String(item.new_name || "");
         if (!srcName || !newName) continue;
         try {
           renameEntryInDir(srcDir, srcName, newName, { overwrite: !!req.overwrite });
@@ -742,6 +965,35 @@ export const createFsHandlers = ({
         }
         return jsonResponse(success());
       }
+      const mount = driverRuntime.resolve(state.storages, srcDir);
+      if (mount) {
+        if (!mount.driver.list || !mount.driver.rename) return jsonResponse(failure("not implement", 500));
+        let data;
+        try {
+          data = await mount.driver.list(mount.storage, mount.relPath, { page: 1, per_page: 100000 });
+        } catch (error) {
+          return jsonResponse(failure(error.message || "driver list failed", 502, {
+            driver: mount.storage.driver,
+            mount_path: mount.storage.mount_path,
+          }));
+        }
+        for (const file of data.content || []) {
+          pattern.lastIndex = 0;
+          if (!pattern.test(file.name)) continue;
+          pattern.lastIndex = 0;
+          const newName = file.name.replace(pattern, replacement);
+          if (!isSafeRelativeName(newName)) return jsonResponse(failure("relative path is not allowed", 403));
+          try {
+            await mount.driver.rename(mount.storage, normalizePath(mount.relPath + "/" + file.name), newName);
+          } catch (error) {
+            return jsonResponse(failure(error.message || "driver regex rename failed", 502, {
+              driver: mount.storage.driver,
+              mount_path: mount.storage.mount_path,
+            }));
+          }
+        }
+        return jsonResponse(success());
+      }
       const dir = state.entries[srcDir];
       if (!dir || !dir.is_dir) return jsonResponse(failure("directory not found", 404));
       for (const childPath of [...(dir.children || [])]) {
@@ -766,6 +1018,51 @@ export const createFsHandlers = ({
       if (isWorkspacePath(srcDir) || isWorkspacePath(dstDir)) {
         return jsonResponse(failure("recursive move for /@workspace is not available until workspace upload/move is completed", 501));
       }
+      const srcMount = driverRuntime.resolve(state.storages, srcDir);
+      const dstMount = driverRuntime.resolve(state.storages, dstDir);
+      if (srcMount || dstMount) {
+        if (!sameStorageMount(srcMount, dstMount)) {
+          return jsonResponse(failure("driver recursive move across mount boundaries is not implemented in the SiYuan kernel port yet", 501));
+        }
+        if (!srcMount.driver.list || !srcMount.driver.move) return jsonResponse(failure("not implement", 500));
+        try {
+          const existingNames = [];
+          if (conflictPolicy !== "overwrite") {
+            existingNames.push(...(await driverList(dstMount, dstMount.relPath)).map((item) => item.name));
+          }
+          const queue = [{ abs: srcDir, rel: srcMount.relPath }];
+          const movingFiles = [];
+          while (queue.length) {
+            const current = queue.shift();
+            for (const item of await driverList(srcMount, current.rel, current.abs !== srcDir)) {
+              const absPath = normalizePath(current.abs + "/" + item.name);
+              const relPath = normalizePath(current.rel + "/" + item.name);
+              if (item.is_dir) {
+                queue.push({ abs: absPath, rel: relPath });
+                continue;
+              }
+              if (current.abs === dstDir) continue;
+              if (existingNames.includes(item.name)) {
+                if (conflictPolicy === "cancel") return jsonResponse(failure(`file [${item.name}] exists`, 403));
+                if (conflictPolicy === "skip") continue;
+              } else if (conflictPolicy !== "overwrite") {
+                existingNames.push(item.name);
+              }
+              movingFiles.push({ name: item.name, rel: relPath });
+            }
+          }
+          for (const file of movingFiles) {
+            if (conflictPolicy === "overwrite") await driverRemoveIfExists(dstMount, normalizePath(dstMount.relPath + "/" + file.name));
+            await srcMount.driver.move(srcMount.storage, file.rel, dstMount.relPath);
+          }
+          return jsonResponse(successWithMessage(`Successfully moved ${movingFiles.length} ${movingFiles.length === 1 ? "file" : "files"}`));
+        } catch (error) {
+          return jsonResponse(failure(error.message || "driver recursive move failed", 502, {
+            driver: srcMount.storage.driver,
+            mount_path: srcMount.storage.mount_path,
+          }));
+        }
+      }
       const src = state.entries[srcDir];
       if (!src || !src.is_dir) return jsonResponse(failure("source directory not found", 404));
       ensureDir(dstDir);
@@ -789,7 +1086,36 @@ export const createFsHandlers = ({
     },
     "POST /api/fs/remove_empty_directory": async (request) => {
       const req = await parseJson(request);
-      removeEmptyDirs(normalizePath(req.src_dir || "/"));
+      const srcDir = normalizePath(req.src_dir || "/");
+      const mount = driverRuntime.resolve(state.storages, srcDir);
+      if (mount) {
+        if (!mount.driver.list || !mount.driver.remove) return jsonResponse(failure("not implement", 500));
+        try {
+          const removeEmpty = async (relPath) => {
+            const content = await driverList(mount, relPath, true);
+            let hasNonDir = content.some((item) => !item.is_dir);
+            for (const item of content.filter((entry) => entry.is_dir)) {
+              const childRel = normalizePath(relPath + "/" + item.name);
+              const removed = await removeEmpty(childRel);
+              if (!removed) hasNonDir = true;
+            }
+            if (hasNonDir) return false;
+            if (relPath === mount.relPath) return false;
+            await mount.driver.remove(mount.storage, relPath);
+            return true;
+          };
+          for (const item of (await driverList(mount, mount.relPath)).filter((entry) => entry.is_dir)) {
+            await removeEmpty(normalizePath(mount.relPath + "/" + item.name));
+          }
+          return jsonResponse(success());
+        } catch (error) {
+          return jsonResponse(failure(error.message || "driver remove empty directory failed", 502, {
+            driver: mount.storage.driver,
+            mount_path: mount.storage.mount_path,
+          }));
+        }
+      }
+      removeEmptyDirs(srcDir);
       await saveState();
       return jsonResponse(success());
     },
@@ -860,14 +1186,39 @@ export const createFsHandlers = ({
       }
       return jsonResponse(success(null));
     },
-    "ANY /api/fs/other": async () => jsonResponse(success(null)),
-  };
-  for (const operation of ["parse", "upload_parse", "rapid_upload", "generate"]) {
-    handlers[`POST /api/fs/torrent/${operation}`] = async (request) => {
+    "ANY /api/fs/other": async (request) => {
       const req = await parseJson(request);
-      return fsTorrentValidate(operation, req) || fsTorrentPlaceholder(operation, req);
-    };
-  }
+      const path = normalizePath(req.path || "/");
+      const mount = driverRuntime.resolve(state.storages, path);
+      if (!mount) return jsonResponse(failure("not implement", 500));
+      if (!mount.driver.other) return jsonResponse(failure("not implement", 500));
+      try {
+        const data = await mount.driver.other(mount.storage, mount.relPath, {
+          data: req.data,
+          method: req.method || "",
+        });
+        return jsonResponse(success(data));
+      } catch (error) {
+        return jsonResponse(failure(error.message || "not implement", 500));
+      }
+    },
+  };
+  handlers["POST /api/fs/torrent/parse"] = async (request) => {
+    const req = await parseJson(request);
+    return fsTorrentValidate("parse", req) || fsTorrentParse(req, { requireBase64: true });
+  };
+  handlers["POST /api/fs/torrent/upload_parse"] = async (request) => {
+    const req = await parseJson(request);
+    return fsTorrentUploadParse(req);
+  };
+  handlers["POST /api/fs/torrent/rapid_upload"] = async (request) => {
+    const req = await parseJson(request);
+    return fsTorrentValidate("rapid_upload", req) || fsTorrentRapidUpload(req);
+  };
+  handlers["POST /api/fs/torrent/generate"] = async (request) => {
+    const req = await parseJson(request);
+    return fsTorrentValidate("generate", req) || fsTorrentGenerate(req);
+  };
   return handlers;
 };
 

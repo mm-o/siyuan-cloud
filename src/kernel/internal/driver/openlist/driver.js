@@ -132,6 +132,14 @@ export const createOpenListDriver = ({ client }) => {
     async rename(storage, relPath, newName) {
       await request(storage, "/fs/rename", "POST", { path: relPath, name: newName });
     },
+    async other(storage, relPath, req = {}) {
+      return request(storage, "/fs/other", "POST", {
+        path: relPath,
+        method: req.method || "",
+        data: req.data === undefined ? null : req.data,
+        password: storage.addition_json.meta_password || "",
+      });
+    },
     async put(storage, relPath, content, mime, options = {}) {
       const addition = storage.addition_json;
       const response = await forwardProxy(

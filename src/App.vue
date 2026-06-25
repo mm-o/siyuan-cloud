@@ -15,6 +15,7 @@ let dockApp: ReturnType<typeof createApp> | null = null
 let dockMount: HTMLDivElement | null = null
 let fileTabApp: ReturnType<typeof createApp> | null = null
 let fileTabVm: { openPath?: (path: string) => void } | null = null
+let pendingFilePath: string | undefined
 
 interface FileTabContext {
   element: Element
@@ -30,7 +31,17 @@ function openDock() {
   dockButton?.click()
 }
 
+function openPendingFilePath() {
+  if (!pendingFilePath || !fileTabVm?.openPath)
+    return
+  const path = pendingFilePath
+  pendingFilePath = undefined
+  fileTabVm.openPath(path)
+}
+
 function openFileManager(path?: string) {
+  pendingFilePath = path
+  openPendingFilePath()
   openTab({
     app: plugin.app,
     custom: {
@@ -41,10 +52,7 @@ function openFileManager(path?: string) {
         singleton: true,
       },
     },
-    afterOpen: () => {
-      if (path)
-        fileTabVm?.openPath?.(path)
-    },
+    afterOpen: openPendingFilePath,
   })
 }
 
@@ -60,6 +68,7 @@ onMounted(() => {
       this.element.appendChild(mount)
       fileTabApp = createApp(FileTab)
       fileTabVm = fileTabApp.mount(mount) as { openPath?: (path: string) => void }
+      openPendingFilePath()
     },
     destroy() {
       fileTabApp?.unmount()
