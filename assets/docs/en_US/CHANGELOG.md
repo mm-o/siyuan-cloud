@@ -34,20 +34,12 @@
 > [!INFO]
 > This release turns Siyuan Cloud from a file-manager shell into a broader SiYuan-native OpenList-compatible runtime.
 
-{{{row
-
-{{{col
-
 ## Reading Path
 
 - Start with the area summary below.
 - Use Added / Improved / Fixed for details.
 - Return to [[Drivers]] for guide structure changes.
 - Use [[API]] as the live route source.
-
-}}}
-
-{{{col
 
 ## Keywords
 
@@ -57,10 +49,6 @@
 - Archive
 - Upload paths
 - Native SiYuan docs
-
-}}}
-
-}}}
 
 | Area | Main change |
 | --- | --- |
@@ -113,22 +101,10 @@
 > [!WARNING]
 > Siyuan Cloud remains a compatibility runtime inside SiYuan, not a public standalone OpenList server.
 
-{{{row
-
-{{{col
-
 - This release is still an OpenList-compatible SiYuan kernel runtime subset, not a full OpenList server.
 - Task records follow OpenList route shapes, but real async queues, cancellation propagation, retry scheduling, and progress reporting are still pending.
 - Search uses a local persisted index and is not yet the full OpenList search backend matrix.
 
-}}}
-
-{{{col
-
 - RAR/7z/ISO archive readers remain placeholders until reader, license, packaging, and fixture coverage are settled.
 - Archive-entry media playback through `/ae` is extraction-oriented and is not equivalent to normal seekable `/p` playback yet.
 - Offline download tools and real 189/189PC CAS rapid-upload still need deeper driver/tool migration.
-
-}}}
-
-}}}

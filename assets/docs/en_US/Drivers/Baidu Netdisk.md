@@ -5,10 +5,6 @@ This guide follows the OpenList `BaiduNetdisk` driver fields used by **Siyuan Cl
 > [!TIP]
 > Keep `download_api` as `crack_video` first. It is the default path tuned for media playback in Siyuan Cloud.
 
-{{{row
-
-{{{col
-
 ## Good For
 
 - Browsing Baidu Netdisk folders in Siyuan Cloud.
@@ -16,20 +12,12 @@ This guide follows the OpenList `BaiduNetdisk` driver fields used by **Siyuan Cl
 - Proxy playback through `/p/<path>`.
 - Previewing remote ZIP archives.
 
-}}}
-
-{{{col
-
 ## Before You Start
 
 - A usable Baidu Netdisk account.
 - A valid `refresh_token`.
 - The Siyuan Cloud Dock can be opened.
 - A stable network egress path; frequent proxy changes may break Baidu links.
-
-}}}
-
-}}}
 
 ## Mount
 
@@ -58,10 +46,6 @@ This guide follows the OpenList `BaiduNetdisk` driver fields used by **Siyuan Cl
 - `root_folder_path`: optional remote root path. Default: `/`.
 - `order_by` / `order_direction`: list order.
 
-{{{row
-
-{{{col
-
 ## Verify
 
 - [ ] `/Baidu` is visible in the Dock.
@@ -69,10 +53,6 @@ This guide follows the OpenList `BaiduNetdisk` driver fields used by **Siyuan Cl
 - [ ] Ordinary files can produce download links.
 - [ ] Video `raw_url` points to `/p/<path>`.
 - [ ] ZIP files can open archive preview.
-
-}}}
-
-{{{col
 
 ## Notes
 
@@ -84,10 +64,6 @@ This guide follows the OpenList `BaiduNetdisk` driver fields used by **Siyuan Cl
 
 - Media playback uses `fs.Link -> /p -> body.proxy`; companion plugins should consume the returned `raw_url`.
 - ZIP archive preview uses range reads. Ordinary video playback and video inside ZIP archives are different paths.
-
-}}}
-
-}}}
 
 ## Troubleshooting
 
