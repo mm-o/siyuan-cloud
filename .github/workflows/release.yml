@@ -9,6 +9,8 @@ on:
       - "plugin.json"
       - "package.zip"
       - "CHANGELOG.md"
+      - "assets/docs/en_US/CHANGELOG.md"
+      - "assets/docs/zh_CN/更新日志.md"
       - "README.md"
       - "README_zh_CN.md"
       - ".github/workflows/release.yml"
@@ -65,7 +67,13 @@ jobs:
 
           body = None
           source = "N/A"
-          for path in [Path("CHANGELOG.md"), Path("README_zh_CN.md"), Path("README.md")]:
+          for path in [
+            Path("assets/docs/zh_CN/更新日志.md"),
+            Path("assets/docs/en_US/CHANGELOG.md"),
+            Path("CHANGELOG.md"),
+            Path("README_zh_CN.md"),
+            Path("README.md"),
+          ]:
             if not path.exists():
               continue
             text = path.read_text(encoding="utf-8")

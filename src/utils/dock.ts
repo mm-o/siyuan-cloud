@@ -6,14 +6,11 @@ import {
   openListShareUrl,
   openListJson,
   privateBase,
-  setOpenListAuthToken,
 } from '@/utils/request'
 import {
   fsTorrentGenerate,
   fsTorrentParse,
 } from '@/utils/api'
-import { readLocalFileBytes } from '@/utils/local_fs'
-import { generateTorrentBytes } from '../kernel/internal/fs/torrent.js'
 import { fetchKernelStatus } from '@/utils/status'
 
 type Status = 'checking' | 'online' | 'offline'
@@ -60,32 +57,34 @@ const USER_PERMISSION_KEYS = [
   'share',
   'customize_share_id',
 ] as const
+const TASK_TYPES = ['copy', 'move', 'upload', 'offline_download', 'offline_download_transfer', 'decompress', 'decompress_upload']
+const ZH_OPTION_LABELS: Record<string, string> = { password: '密码', qrcode: '二维码', personal: '个人云', family: '家庭云', stream: '普通上传', rapid: '秒传', old: '旧版上传', default: '默认', resource: '资源库', backup: '备份盘', trash: '移入回收站', delete: '直接删除', official: '官方', crack: '破解', crack_video: '视频破解', download: '下载链接', streaming: '流式链接', asc: '升序', desc: '降序', ASC: '升序', DESC: '降序', none: '不排序', name: '名称', file_name: '文件名', filename: '文件名', size: '大小', file_size: '文件大小', filesize: '文件大小', file_type: '文件类型', time: '时间', updated_at: '更新时间', created_at: '创建时间', lastOpTime: '最后操作时间', user_utime: '用户更新时间', sharepoint: 'SharePoint', other: '其它', alipanTV: '阿里云盘 TV' }
+const humanizeOption = (option: string) => option.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 
 export function useDock(plugin: Plugin) {
   const tabs = [
     { key: 'files', labelKey: 'fileManagerTitle', icon: '#iconFolder' },
     { key: 'mounts', labelKey: 'tabMounts', icon: '#iconDatabase' },
     { key: 'users', labelKey: 'tabUsers', icon: '#iconAccount' },
-    { key: 'tasks', labelKey: 'tabTask', icon: '#iconList' },
     { key: 'shares', labelKey: 'tabShares', icon: '#iconLink' },
-    { key: 'settings', labelKey: 'openSettings', icon: '#iconSettings' },
-    { key: 'about', labelKey: 'tabAbout', icon: '#iconInfo' },
+    { key: 'tasks', labelKey: 'tabTask', icon: '#iconList' },
+    { key: 'tools', labelKey: 'tabTools', icon: '#iconSettings' },
+    { key: 'status', labelKey: 'tabStatus', icon: '#iconInfo' },
   ]
   const currentTab = ref('files')
   const status = ref<Status>('checking')
   const statusDetail = ref(t('waitingKernel'))
   const storageInfo = ref<StorageInfo>({})
-  const accountInfo = ref('')
-  const verifyUsername = ref('admin')
-  const verifyPassword = ref('')
   const verifyMountPath = ref('/')
   const verifyDriver = ref('SiYuanKernel')
   const verifyAddition = ref('{}')
-  const verifySession = ref('')
+  const verifyStorages = ref<any[]>([])
+  const taskType = ref('copy')
+  const taskDone = ref<'undone' | 'done'>('undone')
+  const taskItems = ref<any[]>([])
   const torrentPath = ref('')
   const torrentData = ref('')
   const torrentResult = ref('')
-  const verifyStorages = ref<any[]>([])
   const selectedStorageId = ref<number | null>(null)
   const selectedStorage = ref<any | null>(null)
   const driverOptions = ref(['SiYuanKernel', 'SiYuanWorkspace'])
@@ -111,7 +110,6 @@ export function useDock(plugin: Plugin) {
   const userFormOpen = ref(false)
   const selectedUserId = ref<number | null>(null)
   const userForm = ref<Record<string, any>>({})
-  const verifyLog = ref<Array<{ id: string, ok: boolean, title: string, detail: string }>>([])
   let driverVerifyTimer: ReturnType<typeof window.setInterval> | undefined
   let loadingMountEdit = false
 
@@ -205,10 +203,7 @@ export function useDock(plugin: Plugin) {
     return t('checking')
   })
 
-  const statusClass = computed(() => ({
-    online: status.value === 'online',
-    offline: status.value === 'offline',
-  }))
+  const docItems = computed(() => window._siyuan_cloud_docs || [])
 
   const statusIcon = computed(() => (status.value === 'offline' ? '#iconClose' : '#iconCheck'))
 
@@ -271,6 +266,7 @@ export function useDock(plugin: Plugin) {
 
   function defaultUserForm(user?: any) {
     return {
+      id: user?.id || null,
       username: user?.username || '',
       password: '',
       base_path: user?.base_path || '/',
@@ -355,71 +351,13 @@ export function useDock(plugin: Plugin) {
     await plugin.saveData(DOCK_SETTINGS, { currentTab: currentTab.value })
   }
 
-  function pushVerify(ok: boolean, title: string, detail: string) {
-    verifyLog.value.unshift({ id: `${Date.now()}-${Math.random()}`, ok, title, detail })
-  }
-
-  async function verifyStep(title: string, runner: () => Promise<string>) {
-    try {
-      const detail = await runner()
-      pushVerify(true, title, detail)
-      return true
-    } catch (error) {
-      pushVerify(false, title, error instanceof Error ? error.message : String(error))
-      return false
-    }
-  }
-
-  async function verifyLogin() {
-    return verifyStep(t('verifyLogin'), async () => {
-      const payload = await openListJson('/api/auth/login', {
-        username: verifyUsername.value,
-        password: verifyPassword.value,
-      })
-      const token = payload.data?.token || ''
-      verifySession.value = token || payload.data?.username || verifyUsername.value
-      setOpenListAuthToken(token)
-      accountInfo.value = JSON.stringify(payload.data || {})
-      return JSON.stringify(payload.data || {})
-    })
-  }
-
-  async function loadMe() {
-    try {
-      const payload = await fetchOpenListJson('/api/me')
-      accountInfo.value = JSON.stringify(payload.data || {})
-      verifySession.value = payload.data?.username || verifySession.value
-      verifyUsername.value = payload.data?.username || verifyUsername.value
-    } catch (error) {
-      showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
-    }
-  }
-
-  async function logout() {
-    try {
-      await openListJson('/api/auth/logout')
-      setOpenListAuthToken('')
-      verifySession.value = ''
-      accountInfo.value = ''
-      showMessage(t('logoutDone'))
-    } catch (error) {
-      showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
-    }
-  }
-
   function fieldOptions(field: DriverField) {
     return String(field.options || '').split(',').map(item => item.trim()).filter(Boolean)
   }
 
-  function bytesToBase64(bytes: Uint8Array) {
-    let binary = ''
-    for (const byte of bytes)
-      binary += String.fromCharCode(byte)
-    return btoa(binary)
-  }
-
   function fieldOptionLabel(field: DriverField, option: string) {
-    return tFallback(`driverFieldOption.${field.name}.${option}`, option)
+    const fallback = t('addTopBarIcon') === '思盘' ? ZH_OPTION_LABELS[option] || humanizeOption(option) : humanizeOption(option)
+    return tFallback(`driverFieldOption.${field.name}.${option}`, fallback)
   }
 
   function normalizeFieldValue(field: DriverField, value: any) {
@@ -697,13 +635,13 @@ export function useDock(plugin: Plugin) {
         testMessage,
         `${t(isUpdate ? 'mountUpdatePassed' : 'mountCreatePassed')}: id=${isUpdate ? selectedStorageId.value : payload.data?.id ?? ''}, path=${verifyMountPath.value}`,
       ].filter(Boolean).join(' / ')
-      pushVerify(true, title, mountCreateResult.value)
+      showMessage(`${title}: ${mountCreateResult.value}`)
       notifyChanged()
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mountCreateResult.value = message
-      pushVerify(false, selectedStorageId.value ? t('mountUpdate') : t('mountAdd'), message)
+      showMessage(`${selectedStorageId.value ? t('mountUpdate') : t('mountAdd')}: ${message}`, 3000, 'error')
       return false
     } finally {
       mountCreating.value = false
@@ -874,6 +812,41 @@ export function useDock(plugin: Plugin) {
       showMessage(t('externalPreviewsSaved'))
     } catch (error) {
       showMessage(error instanceof Error ? error.message : String(error), 3000, 'error')
+    }
+  }
+
+  async function generateTorrent() {
+    if (!torrentPath.value.trim()) {
+      showMessage(t('torrentPathPlaceholder'), 3000, 'error')
+      return
+    }
+    try {
+      const payload = await fsTorrentGenerate({ path: torrentPath.value.trim() })
+      if (payload.code !== 200)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      torrentData.value = payload.data?.torrent_data || ''
+      torrentResult.value = JSON.stringify(payload.data || {}, null, 2)
+      showMessage(t('torrentGenerated'))
+    } catch (error) {
+      torrentResult.value = error instanceof Error ? error.message : String(error)
+      showMessage(torrentResult.value, 3000, 'error')
+    }
+  }
+
+  async function parseTorrent() {
+    if (!torrentData.value.trim()) {
+      showMessage(t('torrentDataPlaceholder'), 3000, 'error')
+      return
+    }
+    try {
+      const payload = await fsTorrentParse({ torrent_data: torrentData.value.trim() })
+      if (payload.code !== 200)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      torrentResult.value = JSON.stringify(payload.data || {}, null, 2)
+      showMessage(t('torrentParsed'))
+    } catch (error) {
+      torrentResult.value = error instanceof Error ? error.message : String(error)
+      showMessage(torrentResult.value, 3000, 'error')
     }
   }
 
@@ -1129,79 +1102,53 @@ export function useDock(plugin: Plugin) {
     menu.open({ x, y })
   }
 
-  async function verifyStorageList() {
-    return verifyStep(t('verifyStorageList'), async () => {
-      await loadStorageList()
-      return `${verifyStorages.value.length} ${t('verifyStorages')}`
-    })
+  async function loadTaskList() {
+    const payload = await fetchOpenListJson(`/api/task/${taskType.value}/${taskDone.value}`)
+    taskItems.value = Array.isArray(payload.data) ? payload.data : []
+    return taskItems.value
   }
 
-  async function verifyTaskList() {
-    return verifyStep(t('verifyTaskList'), async () => {
-      const payload = await fetchOpenListJson('/api/task/copy/done')
-      return `${payload.data?.total ?? 0} done`
-    })
+  async function taskPost(action: string, id = '') {
+    await openListJson(`/api/task/${taskType.value}/${action}${id ? `?tid=${encodeURIComponent(id)}` : ''}`)
+    await loadTaskList()
   }
 
-  async function runVerifySuite() {
-    verifyLog.value = []
-    await verifyLogin()
-    await verifyStorageList()
-    await verifyTaskList()
-    await refreshAll()
+  function taskTypeLabel(type: string) {
+    return tFallback(`taskType.${type}`, type.replace(/_/g, ' '))
   }
 
-  async function generateTorrent() {
-    if (!torrentPath.value.trim()) {
-      showMessage(t('torrentPathPlaceholder'), 3000, 'error')
-      return
-    }
-    try {
-      const localBytes = await readLocalFileBytes(torrentPath.value.trim())
-      if (localBytes) {
-        const name = torrentPath.value.trim().split('/').filter(Boolean).pop() || 'local-file'
-        const generated = generateTorrentBytes(localBytes, { name })
-        torrentData.value = bytesToBase64(generated.torrent)
-        torrentResult.value = JSON.stringify({
-          file_name: `${name}.torrent`,
-          info_hash: generated.info_hash,
-          size: generated.torrent.byteLength,
-          source: 'Local',
-        }, null, 2)
-        showMessage(t('torrentGenerated'))
-        return
-      }
-      const payload = await fsTorrentGenerate({ path: torrentPath.value.trim() })
-      if (payload.code !== 200)
-        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
-      torrentData.value = payload.data?.torrent_data || ''
-      torrentResult.value = JSON.stringify({
-        file_name: payload.data?.file_name,
-        info_hash: payload.data?.info_hash,
-        size: payload.data?.size,
-      }, null, 2)
-      showMessage(t('torrentGenerated'))
-    } catch (error) {
-      torrentResult.value = error instanceof Error ? error.message : String(error)
-      showMessage(torrentResult.value, 3000, 'error')
-    }
+  function taskStateLabel(state: string) {
+    return tFallback(`taskState.${state}`, state || t('unknown'))
   }
 
-  async function parseTorrent() {
-    if (!torrentData.value.trim()) {
-      showMessage(t('torrentDataPlaceholder'), 3000, 'error')
-      return
-    }
-    try {
-      const payload = await fsTorrentParse({ torrent_data: torrentData.value.trim() })
-      if (payload.code !== 200)
-        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
-      torrentResult.value = JSON.stringify(payload.data || {}, null, 2)
-      showMessage(t('torrentParsed'))
-    } catch (error) {
-      torrentResult.value = error instanceof Error ? error.message : String(error)
-      showMessage(torrentResult.value, 3000, 'error')
-    }
+  function taskDetail(task: any) {
+    return [task?.status, task?.error].filter(Boolean).join(' / ') || task?.id || ''
+  }
+
+  function taskTags(task: any) {
+    const state = String(task?.state || '')
+    const stateClass = state === 'succeeded'
+      ? 'b3-chip--success'
+      : state === 'failed'
+        ? 'b3-chip--error'
+        : state === 'canceled'
+          ? 'b3-chip--warning'
+          : 'b3-chip--info'
+    return [
+      { key: 'state', text: taskStateLabel(state), className: stateClass },
+      { key: 'progress', text: `${Math.round(Number(task?.progress || 0))}%`, className: 'b3-chip--info' },
+      task?.creator ? { key: 'creator', text: task.creator, className: 'b3-chip--info' } : null,
+    ].filter(Boolean) as Array<{ key: string, text: string, className: string }>
+  }
+
+  function taskActions(task: any) {
+    if (taskDone.value === 'undone')
+      return [{ key: 'cancel', icon: '#iconClose', label: t('taskCancel'), run: () => taskPost('cancel', task.id) }]
+    const actions = []
+    if (['failed', 'canceled'].includes(String(task?.state || '')))
+      actions.push({ key: 'retry', icon: '#iconRefresh', label: t('taskRetry'), run: () => taskPost('retry', task.id) })
+    actions.push({ key: 'delete', icon: '#iconTrashcan', label: t('deleteFile'), run: () => taskPost('delete', task.id) })
+    return actions
   }
 
   async function refreshStatus() {
@@ -1230,7 +1177,6 @@ export function useDock(plugin: Plugin) {
       await loadShareList()
       await loadUserList()
       await loadExternalPreviews()
-      await loadMe()
     } catch (error) {
       status.value = 'offline'
       statusDetail.value = error instanceof Error ? error.message : t('kernelUnavailable')
@@ -1238,12 +1184,20 @@ export function useDock(plugin: Plugin) {
     }
   }
 
-  function openPrivateEntry() {
-    window.open(`${privateBase}/`, '_blank', 'noopener')
-  }
-
   function openFileManager(path?: string) {
     window._siyuan_cloud?.openFileManager?.(path)
+  }
+
+  function openApiDoc() {
+    return window._siyuan_cloud?.openApiDoc?.()
+  }
+
+  function openReadmeDoc() {
+    return window._siyuan_cloud?.openReadmeDoc?.()
+  }
+
+  function openPackagedDoc(key: string) {
+    return window._siyuan_cloud?.openPackagedDoc?.(key)
   }
 
   async function copyRoute() {
@@ -1257,10 +1211,6 @@ export function useDock(plugin: Plugin) {
   }
 
   const sectionActions = computed(() => ({
-    account: [
-      { key: 'me', icon: '#iconAccount', label: t('loadMe'), run: loadMe },
-      { key: 'logout', icon: '#iconClose', label: t('logout'), run: logout },
-    ],
     config: [
       { key: 'export', icon: '#iconUpload', label: t('exportConfig'), run: exportConfig },
       { key: 'import', icon: '#iconDownload', label: t('importConfig'), run: importConfig },
@@ -1268,9 +1218,18 @@ export function useDock(plugin: Plugin) {
     external: [
       { key: 'save', icon: '#iconCheck', label: t('saveExternalPreviews'), run: saveExternalPreviews },
     ],
+    torrent: [
+      { key: 'generate', icon: '#iconUpload', label: t('torrentGenerate'), run: generateTorrent },
+      { key: 'parse', icon: '#iconList', label: t('torrentParse'), run: parseTorrent },
+    ],
     tasks: [
-      { key: 'list', icon: '#iconRefresh', label: t('verifyTaskList'), run: verifyTaskList },
-      { key: 'run', icon: '#iconPlay', label: t('verifyRunAll'), run: runVerifySuite },
+      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadTaskList) },
+      ...(taskDone.value === 'done'
+        ? [
+            { key: 'retry', icon: '#iconPlay', label: t('taskRetryFailed'), run: () => notifyLoad(() => taskPost('retry_failed')) },
+            { key: 'clear', icon: '#iconTrashcan', label: t('taskClearDone'), run: () => notifyLoad(() => taskPost('clear_done')) },
+          ]
+        : []),
     ],
     shares: [
       { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadShareList) },
@@ -1284,7 +1243,6 @@ export function useDock(plugin: Plugin) {
       { key: 'add', icon: '#iconAdd', label: t('userAdd'), run: openAddUser },
     ],
     about: [
-      { key: 'api', icon: '#iconOpenWindow', label: t('openApi'), run: openPrivateEntry },
       { key: 'copy', icon: '#iconCopy', label: t('copyRoute'), run: copyRoute },
     ],
   }))
@@ -1297,6 +1255,14 @@ export function useDock(plugin: Plugin) {
       await quietLoad(loadUserList)
     else if (tab === 'mounts')
       await quietLoad(loadStorageList)
+    else if (tab === 'tasks')
+      await quietLoad(loadTaskList)
+    else if (tab === 'tools')
+      await quietLoad(loadExternalPreviews)
+  })
+  watch([taskType, taskDone], () => {
+    if (currentTab.value === 'tasks')
+      quietLoad(loadTaskList)
   })
   watch(verifyDriver, async (driver) => {
     if (loadingMountEdit)
@@ -1316,7 +1282,6 @@ export function useDock(plugin: Plugin) {
   })
 
   return {
-    accountInfo,
     configText,
     currentTab,
     deleteMount,
@@ -1343,6 +1308,10 @@ export function useDock(plugin: Plugin) {
     mountCreateResult,
     mountCreating,
     mountFormOpen,
+    docItems,
+    openApiDoc,
+    openReadmeDoc,
+    openPackagedDoc,
     openFileManager,
     openAddMount,
     openEditMount,
@@ -1357,7 +1326,6 @@ export function useDock(plugin: Plugin) {
     shareItems,
     shareTags,
     sectionActions,
-    statusClass,
     statusDetail,
     statusIcon,
     statusTitle,
@@ -1367,6 +1335,17 @@ export function useDock(plugin: Plugin) {
     storageTags,
     t,
     tabs,
+    taskActions,
+    taskDetail,
+    taskDone,
+    taskItems,
+    taskTags,
+    taskType,
+    taskTypeLabel,
+    taskTypes: TASK_TYPES,
+    torrentData,
+    torrentPath,
+    torrentResult,
     closeMountForm,
     submitMount,
     toggleMount,
@@ -1375,7 +1354,6 @@ export function useDock(plugin: Plugin) {
     userForm,
     userFormOpen,
     userItems,
-    userRoleLabel,
     userTags,
     userPermissionChecked,
     userPermissionFormSummary,
@@ -1384,18 +1362,8 @@ export function useDock(plugin: Plugin) {
     toggleUserPermission,
     verifyAddition,
     verifyDriver,
-    verifyLogin,
-    verifyLog,
     verifyMountPath,
-    verifyPassword,
-    torrentData,
-    torrentPath,
-    torrentResult,
-    generateTorrent,
-    parseTorrent,
-    verifySession,
     verifyStorages,
-    verifyUsername,
     cancelUser2fa,
     closeUserForm,
     deleteUser,

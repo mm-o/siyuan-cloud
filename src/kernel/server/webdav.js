@@ -1,5 +1,9 @@
 import { normalizePath } from "../internal/model/path.js";
 import { textResponse } from "./common/response.js";
+import {
+  canWebdavManage,
+  canWebdavRead,
+} from "../internal/model/user.js";
 
 const escapeXml = (value) => String(value ?? "")
   .replace(/&/g, "&amp;")
@@ -26,6 +30,7 @@ const propResponse = ({ href, item }) => {
 };
 
 export const createWebDavServer = ({
+  currentUser,
   getState,
   cloneEntryTree,
   createFile,
@@ -152,6 +157,7 @@ export const createWebDavServer = ({
     const requestMeta = request.request || request.Request || {};
     const method = String(requestMeta.method || requestMeta.Method || "GET").toUpperCase();
     const path = requestPath(request);
+    const user = currentUser?.(request);
     if (method === "OPTIONS") {
       return {
         ...textResponse("", 204),
@@ -160,6 +166,10 @@ export const createWebDavServer = ({
           DAV: ["1, 2"],
         },
       };
+    }
+    if (!canWebdavRead(user)) return textResponse("Forbidden", 403);
+    if (["PUT", "MKCOL", "MOVE", "COPY", "DELETE", "PROPPATCH"].includes(method) && !canWebdavManage(user)) {
+      return textResponse("Forbidden", 403);
     }
     if (method === "PROPFIND") return propfind(requestMeta, path);
     if (method === "GET" || method === "HEAD") return readFileResponse(webdavPath(path), request);

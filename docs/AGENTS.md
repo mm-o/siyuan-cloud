@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is a standalone SiYuan plugin named `siyuan-cloud`, with the user-facing product name Siyuan Cloud / 思盘. It is based on `siyuan-note/plugin-sample-vite-vue`.
+This is a standalone SiYuan plugin named `siyuan-cloud`, with the user-facing product name 思盘. It is based on `siyuan-note/plugin-sample-vite-vue`.
 
 It is separate from `siyuan-sireader`.
 
@@ -19,6 +19,7 @@ The porting preference is:
 3. Only rewrite behavior when Go-only dependencies, external processes, databases, or unsupported kernel APIs make a direct port impossible.
 4. When a direct port is blocked, create a structured compatibility placeholder instead of silently changing behavior.
 5. Update `docs/siyuan-cloud-migration-plan.md`, `docs/kernel-architecture.md`, `docs/kernel-plugin-notes.md`, and the Dock progress after each completed capability batch.
+6. Use `docs/platform-roadmap.md` as the long-term product/platform boundary: keep OpenList-compatible APIs as the base layer, and add SiYuan-native integrations through stable links, capability discovery, and companion-plugin contracts.
 
 This is important for conversation continuity: future agents should be able to compare a module under `src/kernel/**` with the matching OpenList source file and continue migration by copying/adapting nearby code instead of inventing a new design.
 
@@ -45,6 +46,7 @@ Do not keep or hand-edit a generated root `kernel.js`; edit `src/kernel/**`, the
 - OpenList internal FS/op/archive/task references: `docs/OpenList-main/internal/fs`, `docs/OpenList-main/internal/op`, `docs/OpenList-main/internal/archive`
 - SiYuan kernel plugin references: `docs/siyuan-master/kernel/plugin`
 - SiYuan file API references: `docs/siyuan-master/kernel/api/file.go`
+- Platform roadmap: `docs/platform-roadmap.md`
 
 ## Current Architecture Mapping
 
@@ -80,8 +82,9 @@ Frontend split:
 
 - Top bar opens the Siyuan Cloud file manager as a SiYuan custom tab.
 - Dock is for account login, user management, mount management, settings/progress/verification.
-- The Siyuan Cloud kernel plugin exposes OpenList-compatible HTTP APIs under `/plugin/private/siyuan-cloud`. Companion tools and plugins should call the HTTP surface directly, for example `/plugin/private/siyuan-cloud/api/fs/get`, `/api/fs/list`, `/d`, `/p`, `/dav`, and `/s3`, just as they would call a normal OpenList server with a different base URL. `/api/public/api` returns a machine-readable API index. The frontend file manager must not hardcode `window.siyuanMediaPlayer` or other player-specific integrations. Image files use SiYuan's native Viewer.js image preview path.
+- The 思盘 kernel plugin exposes OpenList-compatible HTTP APIs under `/plugin/private/siyuan-cloud`. Companion tools and plugins should call the HTTP surface directly, for example `/plugin/private/siyuan-cloud/api/fs/get`, `/api/fs/list`, `/d`, `/p`, `/dav`, and `/s3`, just as they would call a normal OpenList server with a different base URL. `/api/public/api` returns a machine-readable API index. The frontend file manager must not hardcode `window.siyuanMediaPlayer` or other player-specific integrations. Image files use SiYuan's native Viewer.js image preview path.
 - Use SiYuan native `b3-*` classes and `var(--b3-*)` theme variables for plugin UI before adding custom visual styling.
+- Plugin docs are opened as native SiYuan documents, not as custom HTML cards. Root `README.md` and `README_zh_CN.md` must stay at plugin root for SiYuan marketplace format. Maintained extra docs live under language folders in `assets/docs`. `pnpm dev` and `pnpm build` run `scripts/docs-manifest.mjs`, which writes `assets/docs/index.json`. At runtime `src/utils/docs.ts` reads that static manifest through `/plugins/<plugin>/assets/docs/index.json`, fetches Markdown as a static plugin asset, creates/reuses the Siyuan Cloud/思盘 docs notebook for the current UI language, creates/reuses the doc by hpath, updates existing docs on every open, and opens them with `openTab({ doc: { id } })`. Do not reintroduce `import.meta.glob` for docs; it generated runtime `CHANGELOG-*.cjs` module errors in SiYuan/Electron.
 - Dock mount input labels are localized with `driverField.*` and `driverFieldHelp.*`; keep the actual addition JSON keys unchanged so imported OpenList configs remain compatible. The mount form keeps OpenList-style storage management actions for every driver: add, update by existing storage id, enable/disable, delete, export addition JSON, and import addition JSON, with `/api/admin/driver/test` used before add/update when a runtime adapter exposes validation.
 - Dock user management uses the same compact `ol-mount-row` / `ol-mount-form` shape as mounts and calls OpenList-compatible `/api/admin/user/*` routes. The default admin user is synchronized from the current SiYuan account nickname/name via `/api/system/getConf`; disabled guest is retained for OpenList compatibility. User CRUD fields are normalized in `src/kernel/internal/model/user.js`. Do not assume permissions are fully enforced yet; wire future FS/task/share/protocol permission batches against OpenList `model.User` and `server/common/check.go`.
 
@@ -117,3 +120,4 @@ These routes export/import settings, users, storages, metas, and shares for quic
 5. Use structured placeholders for archive, offline download, S3, WebDAV lock, and other blocked behavior.
 6. Add smoke tests after each route family stabilizes.
 7. Update plan/docs/Dock progress before finishing a turn.
+8. For integrations with media players, readers, image-hosting tools, AI, automation, or other plugins, preserve the documented companion contract: OpenList-compatible HTTP APIs, `/p` and `/d` links, `data-href`, and `siyuan://plugins/siyuan-cloud/open?...`; do not hardcode another plugin's private frontend API.

@@ -18,6 +18,16 @@ import {
   normalizePath,
 } from "../../internal/model/path.js";
 import {
+  canAccessByMeta,
+  canWriteByMeta,
+  nearestMeta,
+} from "../../internal/model/meta.js";
+import {
+  canDecompress,
+  canReadArchives,
+  isAdminUser,
+} from "../../internal/model/user.js";
+import {
   countShareAccess,
   shareClientIP,
   sharePathInfo,
@@ -45,6 +55,16 @@ const rawShareArchiveUrl = (path, pwd = "") =>
   `/plugin/private/siyuan-cloud/sad${normalizePath(path)}${pwd ? `?pwd=${encodeURIComponent(pwd)}` : ""}`;
 
 const joinPath = (dir, name) => normalizePath(`${normalizePath(dir || "/").replace(/\/+$/, "")}/${String(name || "").replace(/^\/+/, "")}`);
+const pathWithinBase = (path, basePath) => {
+  const target = normalizePath(path);
+  const base = normalizePath(basePath || "/");
+  return base === "/" || target === base || target.startsWith(`${base}/`);
+};
+const canUsePath = (user, path) => !user || isAdminUser(user) || pathWithinBase(path, user.base_path);
+const canAccessArchivePath = (state, user, path, password = "") =>
+  canUsePath(user, path) && canAccessByMeta(user, nearestMeta(state, path), path, password);
+const canWriteArchivePath = (state, user, path) =>
+  canUsePath(user, path) && canWriteByMeta(user, nearestMeta(state, path), path);
 
 const relativeArchivePath = (archivePath, innerPath) => {
   const inner = String(innerPath || "").replace(/^\/+|\/+$/g, "");
@@ -284,6 +304,7 @@ const loadShareArchive = async ({ client, driverRuntime, getState, operation, re
 export const createArchiveHandlers = ({
   client,
   createFile,
+  currentUser,
   driverRuntime,
   ensureDir,
   getState,
@@ -305,6 +326,11 @@ export const createArchiveHandlers = ({
         sign: "",
       }));
     }
+    const user = currentUser?.(request);
+    const path = normalizePath(req.path || "/");
+    if (!canReadArchives(user) || !canAccessArchivePath(getState(), user, path, req.password || req.pwd)) {
+      return jsonResponse(failure("permission denied", 403));
+    }
     const loaded = await loadArchive({ client, driverRuntime, getState, operation: "meta", req });
     if (loaded.error) return jsonResponse(loaded.error, loaded.status);
     return jsonResponse(success({
@@ -323,6 +349,11 @@ export const createArchiveHandlers = ({
       const items = loaded.archive.list(req.inner_path || "/");
       return jsonResponse(success(pageResp(page(items, req), items.length)));
     }
+    const user = currentUser?.(request);
+    const path = normalizePath(req.path || "/");
+    if (!canReadArchives(user) || !canAccessArchivePath(getState(), user, path, req.password || req.pwd)) {
+      return jsonResponse(failure("permission denied", 403));
+    }
     const loaded = await loadArchive({ client, driverRuntime, getState, operation: "list", req });
     if (loaded.error) return jsonResponse(loaded.error, loaded.status);
     const items = loaded.archive.list(req.inner_path || "/");
@@ -330,11 +361,15 @@ export const createArchiveHandlers = ({
   },
   "POST /api/fs/archive/decompress": async (request) => {
     const req = await parseJson(request);
+    const creator = currentUser?.(request);
     const names = Array.isArray(req.name) ? req.name : Array.isArray(req.names) ? req.names : [];
     const srcPaths = names.length
       ? names.map((name) => joinPath(req.src_dir || dirname(req.src_path || req.path || "/"), name))
       : [normalizePath(req.src_path || req.path || joinPath(req.src_dir || "/", req.name || ""))];
     const dstDir = normalizePath(req.dst_dir || req.dst_path || "/");
+    if (!canDecompress(creator) || srcPaths.some((srcPath) => !canUsePath(creator, srcPath)) || !canWriteArchivePath(getState(), creator, dstDir)) {
+      return jsonResponse(failure("permission denied", 403));
+    }
     const dstMount = driverRuntime?.resolve(getState().storages, dstDir);
     if (dstMount && !dstMount.driver?.put)
       return jsonResponse(failure("driver put is not implemented", 501, archiveNotImplemented("decompress_upload")), 501);
@@ -372,6 +407,7 @@ export const createArchiveHandlers = ({
           }
         }
         tasks.push(await taskStore.addTask(dstMount ? "decompress_upload" : "decompress", {
+          creator,
           name: `decompress ${srcPath} to ${targetRoot}`,
           status: "completed",
           totalBytes: entries.reduce((sum, item) => sum + Number(item.bytes.byteLength || 0), 0),
@@ -383,6 +419,7 @@ export const createArchiveHandlers = ({
       const message = error?.message || "archive decompress failed";
       const status = /encrypted archive entry|wrong archive password|not implemented/i.test(message) ? 501 : 500;
       const task = await taskStore.addTask("decompress", {
+        creator,
         error: message,
         name: srcPaths.join(", "),
         status: "failed",

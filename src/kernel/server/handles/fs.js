@@ -12,11 +12,24 @@ import {
   normalizePath,
 } from "../../internal/model/path.js";
 import {
+  canAccessByMeta,
+  canReadByMeta,
+  canWriteByMeta,
   isHiddenByMeta,
+  metaCoversPath,
   metaHeader,
   metaReadme,
   nearestMeta,
 } from "../../internal/model/meta.js";
+import {
+  canAddOfflineDownloadTasks,
+  canCopy,
+  canMove,
+  canRemove,
+  canRename,
+  canWriteContent,
+  isAdminUser,
+} from "../../internal/model/user.js";
 import { linkFromDriverData } from "../../internal/model/args.js";
 import { forwardProxy } from "../../internal/driver/http.js";
 import { driverInfoMap } from "../../internal/driver/info.js";
@@ -33,6 +46,7 @@ export const createFsHandlers = ({
   client,
   cloneEntryTree,
   createFile,
+  currentUser,
   driverRuntime,
   ensureDir,
   getState,
@@ -439,6 +453,30 @@ export const createFsHandlers = ({
   const shouldSkipExisting = (req) => boolValue(req.skip_existing, false);
   const shouldMerge = (req) => boolValue(req.merge, false);
   const shouldOverwrite = (req) => boolValue(req.overwrite, false);
+  const permissionDenied = () => failure("permission denied", 403);
+  const pathWithinBase = (path, basePath) => {
+    const target = normalizePath(path);
+    const base = normalizePath(basePath || "/");
+    return base === "/" || target === base || target.startsWith(`${base}/`);
+  };
+  const requestUser = (request) => currentUser?.(request);
+  const joinUserPath = (user, path) => {
+    const target = normalizePath(path || "/");
+    if (!user || isAdminUser(user)) return target;
+    if (!pathWithinBase(target, user.base_path)) return null;
+    return target;
+  };
+  const readMeta = (path) => nearestMeta(getState(), path);
+  const canAccessFs = (user, path, password = "") => {
+    const meta = readMeta(path);
+    return canAccessByMeta(user, meta, path, password);
+  };
+  const canReadFs = (user, path) => canReadByMeta(user, readMeta(path), path);
+  const canWriteFs = (user, path) => canWriteByMeta(user, readMeta(path), path);
+  const writeContentBypass = (path) => {
+    const meta = readMeta(path);
+    return !!(meta?.write && metaCoversPath(meta.path, path, meta.w_sub));
+  };
   const driverTargetIsDir = async (path) => {
     const mount = driverRuntime.resolve(state.storages, path);
     if (!mount) return false;
@@ -509,6 +547,8 @@ export const createFsHandlers = ({
       const sharing = await shareList({ ...req, client_ip: shareClientIP?.(request), path });
       if (sharing?.error) return jsonResponse(sharing.error);
       if (sharing?.data) return jsonResponse(success(sharing.data));
+      const user = requestUser(request);
+      if (!joinUserPath(user, path) || !canAccessFs(user, path, req.password || req.pwd)) return jsonResponse(permissionDenied());
       if (isWorkspacePath(path)) {
         const result = await workspaceList(path, req);
         if (result.error) return jsonResponse(result.error);
@@ -529,6 +569,7 @@ export const createFsHandlers = ({
       const entry = state.entries[path];
       if (!entry || !entry.is_dir) return jsonResponse(failure("directory not found", 404));
       const meta = nearestMeta(getState(), path);
+      const canWriteAtPath = canWriteFs(user, path);
       const children = entry.children
         .map((childPath) => state.entries[childPath])
         .filter(Boolean)
@@ -552,8 +593,8 @@ export const createFsHandlers = ({
         total: children.length,
         readme: metaReadme(meta, path),
         header: metaHeader(meta, path),
-        write: true,
-        write_content_bypass: true,
+        write: canWriteAtPath,
+        write_content_bypass: writeContentBypass(path),
         provider: "siyuan-storage",
         direct_upload_tools: [],
       }));
@@ -564,6 +605,8 @@ export const createFsHandlers = ({
       const sharing = await shareGet({ ...req, client_ip: shareClientIP?.(request), path });
       if (sharing?.error) return jsonResponse(sharing.error);
       if (sharing?.data) return jsonResponse(success(sharing.data));
+      const user = requestUser(request);
+      if (!joinUserPath(user, path) || !canAccessFs(user, path, req.password || req.pwd)) return jsonResponse(permissionDenied());
       if (isWorkspacePath(path)) {
         const result = await workspaceGet(path);
         if (result.error) return jsonResponse(result.error);
@@ -598,6 +641,8 @@ export const createFsHandlers = ({
     "ANY /api/fs/dirs": async (request) => {
       const req = await parseJson(request);
       const path = normalizePath(req.path);
+      const user = requestUser(request);
+      if (!joinUserPath(user, path) || !canAccessFs(user, path, req.password || req.pwd)) return jsonResponse(permissionDenied());
       if (isWorkspacePath(path)) {
         const result = await workspaceList(path, req);
         if (result.error) return jsonResponse(result.error);
@@ -634,6 +679,8 @@ export const createFsHandlers = ({
     "ANY /api/fs/search": async (request) => {
       const req = await parseJson(request);
       const parent = normalizePath(req.parent || req.path || "/");
+      const user = requestUser(request);
+      if (!joinUserPath(user, parent)) return jsonResponse(permissionDenied());
       const pageIndex = Number(req.page || 0);
       const perPage = Number(req.per_page || req.perPage || 0);
       if (!Number.isFinite(pageIndex) || pageIndex < 1) return jsonResponse(failure("page can't < 1", 400));
@@ -645,7 +692,11 @@ export const createFsHandlers = ({
         per_page: perPage,
         scope: req.scope || 0,
       });
-      return jsonResponse(success(pageResp(result.content.map((node) => ({
+      const content = result.content.filter((node) => {
+        const itemPath = normalizePath(`${node.parent}/${node.name}`);
+        return pathWithinBase(itemPath, user?.base_path || "/") && canAccessFs(user, itemPath, req.password || req.pwd);
+      });
+      return jsonResponse(success(pageResp(content.map((node) => ({
         parent: node.parent,
         name: node.name,
         is_dir: node.is_dir,
@@ -656,6 +707,11 @@ export const createFsHandlers = ({
     "POST /api/fs/mkdir": async (request) => {
       const req = await parseJson(request);
       const path = normalizePath(req.path || [req.parent, req.name].filter(Boolean).join("/"));
+      const user = requestUser(request);
+      const parent = dirname(path);
+      if (!joinUserPath(user, path) || (!canWriteContent(user) && !writeContentBypass(parent)) || !canWriteFs(user, parent)) {
+        return jsonResponse(permissionDenied());
+      }
       const mount = driverRuntime.resolve(state.storages, path);
       if (mount) {
         try {
@@ -674,6 +730,11 @@ export const createFsHandlers = ({
       const req = await parseJson(request);
       const upload = await uploadFromRawRequest(request, req, "/untitled.txt");
       const path = upload.path;
+      const user = requestUser(request);
+      const parent = dirname(path);
+      if (!joinUserPath(user, path) || (!canWriteContent(user) && !writeContentBypass(parent)) || !canWriteFs(user, parent)) {
+        return jsonResponse(permissionDenied());
+      }
       if (!overwriteEnabled(request, req) && await uploadTargetExists(path)) return jsonResponse(failure("file exists", 403));
       const mount = driverRuntime.resolve(state.storages, path);
       if (mount) {
@@ -698,6 +759,11 @@ export const createFsHandlers = ({
       const req = await parseJson(request);
       const upload = await uploadFromFormRequest(request, req);
       const path = upload.path;
+      const user = requestUser(request);
+      const parent = dirname(path);
+      if (!joinUserPath(user, path) || (!canWriteContent(user) && !writeContentBypass(parent)) || !canWriteFs(user, parent)) {
+        return jsonResponse(permissionDenied());
+      }
       if (!overwriteEnabled(request, req) && await uploadTargetExists(path)) return jsonResponse(failure("file exists", 403));
       const mount = driverRuntime.resolve(state.storages, path);
       if (mount) {
@@ -723,6 +789,8 @@ export const createFsHandlers = ({
       const names = Array.isArray(req.names) ? req.names : [];
       const dir = normalizePath(req.dir || req.path || "/");
       if (!names.length) return jsonResponse(failure("Empty file names", 400));
+      const user = requestUser(request);
+      if (!canRemove(user) || !joinUserPath(user, dir) || !canWriteFs(user, dir)) return jsonResponse(permissionDenied());
       let storageRemoved = false;
       if (isWorkspacePath(dir)) {
         for (const name of names) {
@@ -759,6 +827,9 @@ export const createFsHandlers = ({
       const req = await parseJson(request);
       const oldPath = normalizePath(req.path);
       const newName = String(req.name || "").trim();
+      const user = requestUser(request);
+      const parent = dirname(oldPath);
+      if (!canRename(user) || !joinUserPath(user, oldPath) || !canWriteFs(user, parent)) return jsonResponse(permissionDenied());
       if (!isSafeRelativeName(newName)) return jsonResponse(failure("relative path is not allowed", 403));
       if (oldPath === "/") return jsonResponse(failure("rename root folder is not allowed", 500));
       if (!boolValue(req.overwrite, false)) {
@@ -799,10 +870,14 @@ export const createFsHandlers = ({
     },
     "POST /api/fs/move": async (request) => {
       const req = await parseJson(request);
+      const creator = currentUser?.(request);
       const names = Array.isArray(req.names) ? req.names : [];
       if (!names.length) return jsonResponse(failure("Empty file names", 400));
       const srcDir = normalizePath(req.src_dir);
       const dstDir = normalizePath(req.dst_dir);
+      if (!canMove(creator) || !joinUserPath(creator, srcDir) || !joinUserPath(creator, dstDir) || !canWriteFs(creator, srcDir) || !canWriteFs(creator, dstDir)) {
+        return jsonResponse(permissionDenied());
+      }
       const srcMount = driverRuntime.resolve(state.storages, srcDir);
       const dstMount = driverRuntime.resolve(state.storages, dstDir);
       if (srcMount || dstMount) {
@@ -819,6 +894,7 @@ export const createFsHandlers = ({
           await srcMount.driver.move(srcMount.storage, normalizePath(srcMount.relPath + "/" + name), dstMount.relPath);
         }
         const task = await taskStore.addTask("move", {
+          creator,
           name: `move ${names.length} item(s)`,
           status: "Move operations completed immediately",
         });
@@ -837,6 +913,7 @@ export const createFsHandlers = ({
         moveEntryTree(srcPath, dstPath);
       }
       const task = await taskStore.addTask("move", {
+        creator,
         name: `move ${names.length} item(s)`,
         status: "Move operations completed immediately",
       });
@@ -844,10 +921,14 @@ export const createFsHandlers = ({
     },
     "POST /api/fs/copy": async (request) => {
       const req = await parseJson(request);
+      const creator = currentUser?.(request);
       const names = Array.isArray(req.names) ? req.names : [];
       if (!names.length) return jsonResponse(failure("Empty file names", 400));
       const srcDir = normalizePath(req.src_dir);
       const dstDir = normalizePath(req.dst_dir);
+      if (!canCopy(creator) || !joinUserPath(creator, srcDir) || !joinUserPath(creator, dstDir) || !canReadFs(creator, srcDir) || !canWriteFs(creator, dstDir)) {
+        return jsonResponse(permissionDenied());
+      }
       const srcMount = driverRuntime.resolve(state.storages, srcDir);
       const dstMount = driverRuntime.resolve(state.storages, dstDir);
       if (srcMount || dstMount) {
@@ -864,6 +945,7 @@ export const createFsHandlers = ({
           await srcMount.driver.copy(srcMount.storage, normalizePath(srcMount.relPath + "/" + name), dstMount.relPath);
         }
         const task = await taskStore.addTask("copy", {
+          creator,
           name: `copy ${names.length} item(s)`,
           status: "Copy operations completed immediately",
         });
@@ -882,6 +964,7 @@ export const createFsHandlers = ({
         cloneEntryTree(srcPath, dstPath);
       }
       const task = await taskStore.addTask("copy", {
+        creator,
         name: `copy ${names.length} item(s)`,
         status: "Copy operations completed immediately",
       });
@@ -891,6 +974,8 @@ export const createFsHandlers = ({
       const req = await parseJson(request);
       const srcDir = normalizePath(req.src_dir || "/");
       const renameObjects = Array.isArray(req.rename_objects) ? req.rename_objects : [];
+      const user = requestUser(request);
+      if (!canRename(user) || !joinUserPath(user, srcDir) || !canWriteFs(user, srcDir)) return jsonResponse(permissionDenied());
       if (isWorkspacePath(srcDir)) {
         for (const item of renameObjects) {
           const srcName = String(item.src_name || "");
@@ -942,6 +1027,8 @@ export const createFsHandlers = ({
     "POST /api/fs/regex_rename": async (request) => {
       const req = await parseJson(request);
       const srcDir = normalizePath(req.src_dir || "/");
+      const user = requestUser(request);
+      if (!canRename(user) || !joinUserPath(user, srcDir) || !canWriteFs(user, srcDir)) return jsonResponse(permissionDenied());
       let pattern;
       try {
         pattern = new RegExp(String(req.src_name_regex || ""));
@@ -1014,6 +1101,10 @@ export const createFsHandlers = ({
       const req = await parseJson(request);
       const srcDir = normalizePath(req.src_dir || "/");
       const dstDir = normalizePath(req.dst_dir || "/");
+      const user = requestUser(request);
+      if (!canMove(user) || !joinUserPath(user, srcDir) || !joinUserPath(user, dstDir) || !canWriteFs(user, srcDir) || !canWriteFs(user, dstDir)) {
+        return jsonResponse(permissionDenied());
+      }
       const conflictPolicy = String(req.conflict_policy || "skip").toLowerCase();
       if (isWorkspacePath(srcDir) || isWorkspacePath(dstDir)) {
         return jsonResponse(failure("recursive move for /@workspace is not available until workspace upload/move is completed", 501));
@@ -1087,6 +1178,8 @@ export const createFsHandlers = ({
     "POST /api/fs/remove_empty_directory": async (request) => {
       const req = await parseJson(request);
       const srcDir = normalizePath(req.src_dir || "/");
+      const user = requestUser(request);
+      if (!canRemove(user) || !joinUserPath(user, srcDir) || !canWriteFs(user, srcDir)) return jsonResponse(permissionDenied());
       const mount = driverRuntime.resolve(state.storages, srcDir);
       if (mount) {
         if (!mount.driver.list || !mount.driver.remove) return jsonResponse(failure("not implement", 500));
@@ -1152,10 +1245,13 @@ export const createFsHandlers = ({
     },
     "POST /api/fs/add_offline_download": async (request) => {
       const req = await parseJson(request);
+      const creator = currentUser?.(request);
+      if (!canAddOfflineDownloadTasks(creator)) return jsonResponse(permissionDenied());
       const urls = (Array.isArray(req.urls) ? req.urls : [req.url]).map((url) => String(url || "").trim()).filter(Boolean);
       const tasks = [];
       for (const url of urls) {
         tasks.push(await taskStore.addTask("offline_download", {
+          creator,
           delete_policy: req.delete_policy || "",
           dst_dir_path: normalizePath(req.path || "/"),
           error: "offline download is not implemented in the SiYuan kernel port yet",
@@ -1213,10 +1309,16 @@ export const createFsHandlers = ({
   };
   handlers["POST /api/fs/torrent/rapid_upload"] = async (request) => {
     const req = await parseJson(request);
+    const user = requestUser(request);
+    const path = normalizePath(req.path || "/");
+    if (req.path && (!joinUserPath(user, path) || !canWriteFs(user, path))) return jsonResponse(permissionDenied());
     return fsTorrentValidate("rapid_upload", req) || fsTorrentRapidUpload(req);
   };
   handlers["POST /api/fs/torrent/generate"] = async (request) => {
     const req = await parseJson(request);
+    const user = requestUser(request);
+    const path = normalizePath(req.path || "/");
+    if (req.path && (!joinUserPath(user, path) || !canReadFs(user, path))) return jsonResponse(permissionDenied());
     return fsTorrentValidate("generate", req) || fsTorrentGenerate(req);
   };
   return handlers;

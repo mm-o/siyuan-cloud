@@ -1,9 +1,13 @@
 interface Window {
   _siyuan_cloud?: {
     openPanel?: () => void
+    openApiDoc?: () => void
+    openReadmeDoc?: () => void
+    openPackagedDoc?: (key: string) => void
     openDock?: () => void
     openFileManager?: (path?: string) => void
   }
+  _siyuan_cloud_docs?: Array<{ key: string, icon: string, title: string, desc: string }>
   Viewer?: any
   siyuan: {
     viewer?: any

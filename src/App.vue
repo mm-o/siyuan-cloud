@@ -8,27 +8,23 @@ import { createApp, onMounted } from 'vue'
 import Dock from '@/components/Dock.vue'
 import FileTab from '@/components/FileTab.vue'
 import { usePlugin } from '@/main'
+import { createDocs } from '@/utils/docs'
 import { OPENLIST_APP_ICON_SVG, OPENLIST_ICON_ID_APP, registerOpenListIcons } from '@/utils/icon'
 
 const plugin = usePlugin()
 let dockApp: ReturnType<typeof createApp> | null = null
-let dockMount: HTMLDivElement | null = null
 let fileTabApp: ReturnType<typeof createApp> | null = null
 let fileTabVm: { openPath?: (path: string) => void } | null = null
 let pendingFilePath: string | undefined
-
-interface FileTabContext {
-  element: Element
-}
 
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
 }
 
+const docs = createDocs(plugin, t)
+
 function openDock() {
-  const dockType = `${plugin.name}cloud`
-  const dockButton = document.querySelector(`.dock__item[data-type="${dockType}"]`) as HTMLElement | null
-  dockButton?.click()
+  (document.querySelector(`.dock__item[data-type="${plugin.name}cloud"]`) as HTMLElement | null)?.click()
 }
 
 function openPendingFilePath() {
@@ -56,12 +52,13 @@ function openFileManager(path?: string) {
   })
 }
 
-onMounted(() => {
+onMounted(async () => {
   registerOpenListIcons(plugin)
+  await docs.loadDocList()
 
   plugin.addTab({
     type: 'file-manager',
-    init(this: FileTabContext) {
+    init(this: { element: Element }) {
       this.element.innerHTML = ''
       const mount = document.createElement('div')
       mount.className = 'siyuan-cloud-file-tab'
@@ -88,19 +85,17 @@ onMounted(() => {
       hotkey: '',
     },
     init(custom) {
-      dockMount?.remove()
       dockApp?.unmount()
-      dockMount = document.createElement('div')
-      dockMount.className = 'siyuan-cloud-dock'
-      custom.element.appendChild(dockMount)
+      custom.element.innerHTML = ''
+      const mount = document.createElement('div')
+      mount.className = 'siyuan-cloud-dock'
+      custom.element.appendChild(mount)
       dockApp = createApp(Dock)
-      dockApp.mount(dockMount)
+      dockApp.mount(mount)
     },
     destroy() {
       dockApp?.unmount()
       dockApp = null
-      dockMount?.remove()
-      dockMount = null
     },
   })
 
@@ -113,6 +108,9 @@ onMounted(() => {
 
   window._siyuan_cloud = {
     openPanel: openDock,
+    openApiDoc: docs.openApiDoc,
+    openReadmeDoc: docs.openReadmeDoc,
+    openPackagedDoc: docs.openPackagedDoc,
     openDock,
     openFileManager,
   }

@@ -5,6 +5,10 @@ import {
 } from "../common/response.js";
 import { normalizePath } from "../../internal/model/path.js";
 import {
+  passwordTimestamp,
+  setUserPassword,
+} from "../../internal/auth/token.js";
+import {
   normalizeUser,
   sanitizeUser,
   USER_ROLE,
@@ -26,6 +30,7 @@ export const createAdminHandlers = ({
   parseJson,
   queryValue,
   reloadConfigState,
+  requireAdmin,
   saveState,
   saveToolSettings,
   settingItem,
@@ -131,8 +136,13 @@ export const createAdminHandlers = ({
   const nextUserId = () => Math.max(0, ...state.users.map((item) => Number(item.id || 0))) + 1;
   const userById = (id) => state.users.find((item) => Number(item.id) === Number(id));
   const userList = () => state.users.map(sanitizeUser);
+  const withAdmin = (handler) => async (request) => {
+    const ctx = requireAdmin?.(request);
+    if (ctx?.error) return jsonResponse(ctx.error, ctx.error.code);
+    return handler(request, ctx?.user);
+  };
 
-  return {
+  const handlers = {
     "GET /api/admin/user/list": async (request) => {
       await refreshConfig();
       return jsonResponse(success(pageSlice(userList(), request)));
@@ -157,9 +167,10 @@ export const createAdminHandlers = ({
         ...req,
         id: current.id,
         role: current.role,
-        password: req.password ? req.password : current.password,
+        pwd_ts: req.password ? passwordTimestamp() : current.pwd_ts,
         otp_secret: req.otp_secret || current.otp_secret || "",
       }, index);
+      if (req.password) setUserPassword(next, req.password, next.pwd_ts);
       state.users[index] = next;
       await saveState();
       return jsonResponse(success());
@@ -174,10 +185,11 @@ export const createAdminHandlers = ({
         ...req,
         id: nextUserId(),
         role: USER_ROLE.GENERAL,
-        password: req.password || "",
+        pwd_ts: passwordTimestamp(),
         base_path: req.base_path || "/",
         permission: Number(req.permission ?? 0),
       }, state.users.length);
+      if (req.password) setUserPassword(user, req.password, user.pwd_ts);
       state.users.push(user);
       await saveState();
       return jsonResponse(success(sanitizeUser(user)));
@@ -435,4 +447,5 @@ export const createAdminHandlers = ({
       return saveToolSettings(req, { thunder_browser_temp_dir: "temp_dir" });
     },
   };
+  return Object.fromEntries(Object.entries(handlers).map(([key, handler]) => [key, withAdmin(handler)]));
 };

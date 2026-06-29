@@ -89,6 +89,10 @@ export default defineConfig(({
             dest: "./",
           },
           {
+            src: "./assets/docs/**",
+            dest: "./assets/docs",
+          },
+          {
             src: "./icon.png",
             dest: "./",
           },
@@ -152,6 +156,7 @@ export default defineConfig(({
                       "src/i18n/*.json",
                       "src/kernel/**/*",
                       "./README*.md",
+                      "./assets/docs/**/*.md",
                       "./plugin.json",
                     ])
                     for (const file of files) {

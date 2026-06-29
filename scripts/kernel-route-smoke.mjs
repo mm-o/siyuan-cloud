@@ -12,6 +12,8 @@ import {
 } from "@zip.js/zip.js";
 import { create115Driver } from "../src/kernel/internal/driver/115/driver.js";
 import { createOneDriveDriver } from "../src/kernel/internal/driver/onedrive/driver.js";
+import { staticPasswordHash } from "../src/kernel/internal/auth/token.js";
+import { signAwsV4 } from "../src/kernel/internal/driver/aws4.js";
 
 configureZipJs({ useWebWorkers: false });
 
@@ -291,7 +293,7 @@ globalThis.siyuan = {
             access_token: "OD_ACCESS_REFRESHED",
             refresh_token: "OD_REFRESH_REFRESHED",
           };
-        } else if (url.hostname === "www.123pan.com" && url.pathname.endsWith("/b/api/file/list/new")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/list/new")) {
           body = {
             code: 0,
             message: "success",
@@ -309,7 +311,7 @@ globalThis.siyuan = {
               }],
             },
           };
-        } else if (url.hostname === "www.123pan.com" && url.pathname.endsWith("/b/api/file/download_info")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/download_info")) {
           body = {
             code: 0,
             message: "success",
@@ -317,7 +319,7 @@ globalThis.siyuan = {
               DownloadUrl: "https://download123.example.test/pan123.txt",
             },
           };
-        } else if (url.hostname === "www.123pan.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
           pan123UploadRequestBody = req.payload;
           body = {
             code: 0,
@@ -331,7 +333,7 @@ globalThis.siyuan = {
               UploadId: "pan123-upload-id",
             },
           };
-        } else if (url.hostname === "www.123pan.com" && url.pathname.endsWith("/b/api/file/s3_upload_object/auth")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/s3_upload_object/auth")) {
           pan123S3AuthBody = req.payload;
           body = {
             code: 0,
@@ -346,14 +348,14 @@ globalThis.siyuan = {
           assert.equal(req.payloadEncoding, "base64");
           pan123UploadedBody = Buffer.from(req.payload || "", "base64").toString("utf8");
           body = "";
-        } else if (url.hostname === "www.123pan.com" && url.pathname.endsWith("/b/api/file/upload_complete/v2")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_complete/v2")) {
           pan123UploadCompleteBody = req.payload;
           body = {
             code: 0,
             message: "success",
             data: null,
           };
-        } else if (url.hostname === "www.123pan.com" && url.pathname.endsWith("/b/api/user/info")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/user/info")) {
           body = {
             code: 0,
             message: "success",
@@ -1319,11 +1321,13 @@ assert.ok(rpcStatus.routes.includes("POST /api/fs/torrent/parse"));
 assert.ok(rpcStatus.stages.some((item) => item.key === "torrent" && item.status === "active"));
 assert.ok(rpcStatus.stages.some((item) => item.key === "archive" && item.status === "active"));
 
-const request = ({ method = "GET", path = "/", query = "", body, headers = {} }) => ({
+const request = ({ method = "GET", path = "/", query = "", body, headers = {}, auth = true }) => ({
   context: { path },
   request: {
     body: body === undefined ? undefined : { data: body },
-    headers,
+    headers: auth && !Object.keys(headers).some((key) => key.toLowerCase() === "authorization")
+      ? { Authorization: "siyuan-cloud-token", ...headers }
+      : headers,
     method,
   },
   url: { path, query },
@@ -1337,6 +1341,16 @@ const json = async (input) => {
   return response.body.data.data;
 };
 
+const waitFor = async (callback, attempts = 20) => {
+  let last;
+  for (let i = 0; i < attempts; i += 1) {
+    last = await callback();
+    if (last) return last;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return last;
+};
+
 const text = async (input) => {
   const response = await call(input);
   const body = response.body.raw
@@ -1348,6 +1362,16 @@ const text = async (input) => {
   };
 };
 
+const signedS3Headers = ({ body = "", method = "GET", path, query = "" }) => signAwsV4({
+  accessKeyId: "S3AK",
+  body,
+  headers: { Host: "localhost" },
+  method,
+  region: "us-east-1",
+  secretAccessKey: "S3SK",
+  url: `http://localhost${path}${query ? `?${query}` : ""}`,
+});
+
 const status = await json({ path: "/siyuan-cloud/status" });
 assert.equal(status.code, 200);
 assert.equal(status.data.ok, true);
@@ -1357,6 +1381,8 @@ assert.ok(status.data.routes.includes("POST /api/fs/torrent/parse"));
 assert.ok(status.data.stages.some((item) => item.key === "torrent" && item.status === "active"));
 assert.ok(status.data.stages.some((item) => item.key === "archive" && item.status === "active"));
 assert.ok(status.data.adapters.includes("115_cloud"));
+assert.ok(status.data.capability_summary.partial > 0);
+assert.equal(status.data.driver_capabilities["189CloudPC"].methods.put, "placeholder");
 assert.ok(status.data.routes.includes("GET /api/authn/webauthn_begin_login"));
 
 const me = await json({ path: "/api/me" });
@@ -1372,6 +1398,44 @@ const login = await json({
 });
 assert.equal(login.code, 200);
 assert.equal(login.data.username, "Siyuan User");
+assert.match(login.data.token, /^[^.]+\.[^.]+\.[^.]+$/);
+const jwtMe = await json({
+  auth: false,
+  headers: { Authorization: login.data.token },
+  path: "/api/me",
+});
+assert.equal(jwtMe.data.username, "Siyuan User");
+const logout = await json({
+  auth: false,
+  headers: { Authorization: login.data.token },
+  method: "POST",
+  path: "/api/auth/logout",
+});
+assert.equal(logout.code, 200);
+const loggedOutMe = await json({
+  auth: false,
+  headers: { Authorization: login.data.token },
+  path: "/api/me",
+});
+assert.equal(loggedOutMe.code, 401);
+assert.match(loggedOutMe.message, /logged out/);
+const relogin = await json({
+  body: { username: "Siyuan User", password: "" },
+  method: "POST",
+  path: "/api/auth/login",
+});
+assert.equal(relogin.code, 200);
+const reloginMe = await json({
+  auth: false,
+  headers: { Authorization: relogin.data.token },
+  path: "/api/me",
+});
+assert.equal(reloginMe.data.username, "Siyuan User");
+const guestMe = await json({ auth: false, path: "/api/me" });
+assert.equal(guestMe.data.username, "guest");
+const guestAdminDenied = await json({ auth: false, path: "/api/admin/user/list" });
+assert.equal(guestAdminDenied.code, 401);
+assert.match(guestAdminDenied.message, /Guest user is disabled/);
 const ldapLogin = await json({
   body: { username: "Siyuan User", password: "" },
   method: "POST",
@@ -1391,6 +1455,8 @@ const userCreate = await json({
 assert.equal(userCreate.code, 200);
 assert.equal(userCreate.data.username, "reader");
 assert.equal(userCreate.data.password, "");
+assert.equal(userCreate.data.pwd_hash, undefined);
+assert.equal(userCreate.data.pwd_salt, undefined);
 const userList = await json({ path: "/api/admin/user/list" });
 assert.equal(userList.code, 200);
 assert.equal(userList.data.total, 3);
@@ -1410,6 +1476,51 @@ assert.equal(userUpdate.code, 200);
 const userGet = await json({ path: "/api/admin/user/get", query: `id=${userCreate.data.id}` });
 assert.equal(userGet.data.base_path, "/docs-updated");
 assert.equal(userGet.data.permission, 384);
+const readerLogin = await json({
+  body: { username: "reader", password: "reader-pass" },
+  method: "POST",
+  path: "/api/auth/login",
+});
+assert.equal(readerLogin.code, 200);
+const readerHashLogin = await json({
+  body: { username: "reader", password: staticPasswordHash("reader-pass") },
+  method: "POST",
+  path: "/api/auth/login/hash",
+});
+assert.equal(readerHashLogin.code, 200);
+const readerAdminDenied = await json({
+  auth: false,
+  headers: { Authorization: readerLogin.data.token },
+  path: "/api/admin/user/list",
+});
+assert.equal(readerAdminDenied.code, 403);
+assert.equal(readerAdminDenied.message, "You are not an admin");
+await json({
+  body: {
+    id: userCreate.data.id,
+    username: "reader",
+    base_path: "/docs-updated",
+    password: "reader-pass-new",
+    permission: 384,
+    role: 0,
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const readerOldTokenAdmin = await json({
+  auth: false,
+  headers: { Authorization: readerLogin.data.token },
+  path: "/api/admin/user/list",
+});
+assert.equal(readerOldTokenAdmin.code, 401);
+assert.match(readerOldTokenAdmin.message, /Password has been changed/);
+const readerOldTokenMe = await json({
+  auth: false,
+  headers: { Authorization: readerLogin.data.token },
+  path: "/api/me",
+});
+assert.equal(readerOldTokenMe.code, 401);
+assert.match(readerOldTokenMe.message, /Password has been changed/);
 const userAdminDisabled = await json({
   body: { id: 1, username: "Siyuan User", role: 2, disabled: true },
   method: "POST",
@@ -1452,6 +1563,16 @@ assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.tgz-extract")
 assert.ok(apiIndex.data.capabilities.includes("openlist.share.archive.zip-extract"));
 assert.ok(apiIndex.data.capabilities.includes("openlist.share.archive.meta-list"));
 assert.ok(apiIndex.data.capabilities.includes("openlist.fs.archive.driver-paths"));
+assert.ok(apiIndex.data.capability_summary.done > 0);
+assert.ok(apiIndex.data.capability_summary.partial > 0);
+assert.ok(apiIndex.data.capability_summary.placeholder > 0);
+assert.ok(apiIndex.data.capability_summary.unsupported > 0);
+assert.equal(apiIndex.data.capability_matrix.find((item) => item.key === "openlist.task")?.status, "partial");
+assert.equal(apiIndex.data.capability_matrix.find((item) => item.key === "openlist.fs.offline-download")?.status, "placeholder");
+assert.equal(apiIndex.data.capability_matrix.find((item) => item.key === "openlist.fs.archive.zip-decrypt")?.status, "unsupported");
+assert.equal(apiIndex.data.driver_capabilities["115 Cloud"].methods.put, "placeholder");
+assert.equal(apiIndex.data.driver_capabilities["189CloudPC"].methods.rapid_upload, "placeholder");
+assert.equal(apiIndex.data.driver_capabilities.QuarkTV.methods.put, "unsupported");
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/fs/get"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/public/api"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "POST" && item.path === "/api/fs/torrent/generate"));
@@ -1575,6 +1696,48 @@ const webdavMove = await text({
 });
 assert.equal(webdavMove.response.statusCode, 201);
 
+const webdavReadOnlyUser = await json({
+  body: {
+    base_path: "/",
+    permission: 1 << 8,
+    username: "webdav-readonly",
+  },
+  method: "POST",
+  path: "/api/admin/user/create",
+});
+assert.equal(webdavReadOnlyUser.code, 200);
+const webdavReadOnlyToken = "siyuan-cloud-port:" + webdavReadOnlyUser.data.id;
+const webdavReadOnlyPropfind = await text({
+  headers: { Authorization: webdavReadOnlyToken, Depth: "0" },
+  method: "PROPFIND",
+  path: "/dav/smoke",
+});
+assert.equal(webdavReadOnlyPropfind.response.statusCode, 207);
+const webdavReadOnlyPut = await text({
+  body: "blocked",
+  headers: { Authorization: webdavReadOnlyToken },
+  method: "PUT",
+  path: "/dav/smoke/readonly-denied.txt",
+});
+assert.equal(webdavReadOnlyPut.response.statusCode, 403);
+await json({
+  body: {
+    id: webdavReadOnlyUser.data.id,
+    username: "webdav-readonly",
+    base_path: "/",
+    permission: (1 << 8) | (1 << 9),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const webdavManagePut = await text({
+  body: "allowed",
+  headers: { Authorization: webdavReadOnlyToken },
+  method: "PUT",
+  path: "/dav/smoke/manage-allowed.txt",
+});
+assert.equal(webdavManagePut.response.statusCode, 201);
+
 const archive = await json({
   body: { path: "/smoke/a.txt" },
   method: "POST",
@@ -1616,6 +1779,74 @@ const archiveZipList = await json({
 assert.equal(archiveZipList.code, 200);
 assert.equal(archiveZipList.data.total, 1);
 assert.equal(archiveZipList.data.content[0].name, "hello.txt");
+const archiveLimitedUser = await json({
+  body: {
+    base_path: "/smoke",
+    permission: 0,
+    username: "archive-limited",
+  },
+  method: "POST",
+  path: "/api/admin/user/create",
+});
+assert.equal(archiveLimitedUser.code, 200);
+const archiveLimitedToken = "siyuan-cloud-port:" + archiveLimitedUser.data.id;
+const archiveNoReadPermission = await json({
+  body: { path: "/smoke/test.zip" },
+  headers: { Authorization: archiveLimitedToken },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(archiveNoReadPermission.code, 403);
+await json({
+  body: {
+    id: archiveLimitedUser.data.id,
+    username: "archive-limited",
+    base_path: "/smoke",
+    permission: 1 << 12,
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const archiveReadPermission = await json({
+  body: { path: "/smoke/test.zip" },
+  headers: { Authorization: archiveLimitedToken },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(archiveReadPermission.code, 200);
+const archiveDecompressNoPermission = await json({
+  body: {
+    dst_dir: "/smoke/archive-limited-out",
+    name: ["test.zip"],
+    src_dir: "/smoke",
+  },
+  headers: { Authorization: archiveLimitedToken },
+  method: "POST",
+  path: "/api/fs/archive/decompress",
+});
+assert.equal(archiveDecompressNoPermission.code, 403);
+await json({
+  body: {
+    id: archiveLimitedUser.data.id,
+    username: "archive-limited",
+    base_path: "/smoke",
+    permission: (1 << 12) | (1 << 13),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const archiveDecompressPermission = await json({
+  body: {
+    dst_dir: "/smoke/archive-limited-out",
+    name: ["test.zip"],
+    overwrite: true,
+    src_dir: "/smoke",
+  },
+  headers: { Authorization: archiveLimitedToken },
+  method: "POST",
+  path: "/api/fs/archive/decompress",
+});
+assert.equal(archiveDecompressPermission.code, 200);
 const gbkZipBytes = makeZip([
   { name: "Cap 中文版_0.4.0-cn_x64-setup.exe", nameBytes: Buffer.from("43617020d6d0cec4b0e65f302e342e302d636e5f7836342d73657475702e657865", "hex"), content: "setup" },
   { name: "视频.mp4", nameBytes: Buffer.from("cad3c6b52e6d7034", "hex"), content: "video" },
@@ -1970,6 +2201,38 @@ const torrentGeneratedCasWrongStorage = await json({
 });
 assert.equal(torrentGeneratedCasWrongStorage.code, 400);
 assert.match(torrentGeneratedCasWrongStorage.message, /CAS torrent generation/);
+const readOnlyTorrentUser = await json({
+  body: {
+    base_path: "/smoke",
+    permission: 0,
+    username: "torrent-readonly",
+  },
+  method: "POST",
+  path: "/api/admin/user/create",
+});
+assert.equal(readOnlyTorrentUser.code, 200);
+const readOnlyTorrentToken = "siyuan-cloud-port:" + readOnlyTorrentUser.data.id;
+const torrentGenerateByUser = await json({
+  body: { path: "/smoke/a.txt" },
+  headers: { Authorization: readOnlyTorrentToken },
+  method: "POST",
+  path: "/api/fs/torrent/generate",
+});
+assert.equal(torrentGenerateByUser.code, 200);
+const torrentGenerateOutsideBase = await json({
+  body: { path: "/copies/smoke/a.txt" },
+  headers: { Authorization: readOnlyTorrentToken },
+  method: "POST",
+  path: "/api/fs/torrent/generate",
+});
+assert.equal(torrentGenerateOutsideBase.code, 403);
+const torrentRapidByUserDenied = await json({
+  body: { path: "/copies", torrent_data: torrentBase64 },
+  headers: { Authorization: readOnlyTorrentToken },
+  method: "POST",
+  path: "/api/fs/torrent/rapid_upload",
+});
+assert.equal(torrentRapidByUserDenied.code, 403);
 
 const mkdirCopies = await json({
   body: { path: "/copies" },
@@ -2261,8 +2524,8 @@ assert.equal(shareRenameBStillExists.code, 200);
 
 const shareLimitedUserCreate = await json({
   body: {
-    base_path: "/moved",
-    permission: (1 << 14) | (1 << 15),
+    base_path: "/",
+    permission: (1 << 6) | (1 << 14) | (1 << 15),
     username: "share-limited",
   },
   method: "POST",
@@ -2293,6 +2556,29 @@ const limitedCannotGetAdminShare = await json({
   query: "id=share-rename-a",
 });
 assert.equal(limitedCannotGetAdminShare.code, 404);
+const limitedArchiveShareCreate = await json({
+  body: { files: ["/smoke/test.zip"], id: "share-limited-archive-ok", pwd: "zip" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/share/create",
+});
+assert.equal(limitedArchiveShareCreate.code, 200);
+const limitedArchiveShareMeta = await json({
+  body: { password: "zip", path: "/@s/share-limited-archive-ok/" },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(limitedArchiveShareMeta.code, 200);
+await json({
+  body: {
+    id: shareLimitedUserCreate.data.id,
+    username: "share-limited",
+    base_path: "/moved",
+    permission: (1 << 6) | (1 << 14) | (1 << 15),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
 const limitedOutsideBaseShare = await json({
   body: { files: ["/copies/smoke"], id: "share-limited-bad-path" },
   headers: { Authorization: limitedToken },
@@ -2334,6 +2620,63 @@ const limitedMetaDeniedShare = await json({
 });
 assert.equal(limitedMetaDeniedShare.code, 500);
 assert.match(limitedMetaDeniedShare.message, /permission denied to share path/);
+await json({
+  body: {
+    id: shareLimitedUserCreate.data.id,
+    username: "share-limited",
+    base_path: "/copies",
+    permission: (1 << 6) | (1 << 14) | (1 << 15),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const limitedShareAfterBaseChange = await json({
+  body: { page: 1, path: "/share-limited-ok", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(limitedShareAfterBaseChange.code, 404);
+const limitedShareDownloadAfterBaseChange = await text({
+  method: "GET",
+  path: "/sd/share-limited-ok",
+  query: "download=1",
+});
+assert.match(limitedShareDownloadAfterBaseChange.text, /Share not found/);
+const limitedArchiveAfterBaseChange = await json({
+  body: { password: "zip", path: "/@s/share-limited-archive-ok/" },
+  method: "POST",
+  path: "/api/fs/archive/meta",
+});
+assert.equal(limitedArchiveAfterBaseChange.code, 500);
+assert.match(limitedArchiveAfterBaseChange.message, /share does not exist/);
+await json({
+  body: {
+    id: shareLimitedUserCreate.data.id,
+    username: "share-limited",
+    base_path: "/moved",
+    disabled: true,
+    permission: (1 << 6) | (1 << 14) | (1 << 15),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const limitedShareAfterCreatorDisabled = await json({
+  body: { password: "", path: "/share-limited-ok" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(limitedShareAfterCreatorDisabled.code, 404);
+await json({
+  body: {
+    id: shareLimitedUserCreate.data.id,
+    username: "share-limited",
+    base_path: "/moved",
+    disabled: false,
+    permission: (1 << 6) | (1 << 14) | (1 << 15),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
 const guestShareCreate = await json({
   body: { files: ["/moved/a.txt"], id: "share-guest-denied" },
   headers: { Authorization: "siyuan-cloud-port:2" },
@@ -2343,15 +2686,48 @@ const guestShareCreate = await json({
 assert.equal(guestShareCreate.code, 403);
 assert.equal(guestShareCreate.message, "permission denied");
 
+const limitedCopy = await json({
+  body: { dst_dir: "/moved/copies-limited", names: ["a.txt"], src_dir: "/moved" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/fs/copy",
+});
+assert.equal(limitedCopy.code, 200);
+assert.equal(limitedCopy.data.tasks[0].creator, "share-limited");
+assert.equal(limitedCopy.data.tasks[0].creator_id, shareLimitedUserCreate.data.id);
+const limitedCopyDone = await json({
+  headers: { Authorization: limitedToken },
+  method: "GET",
+  path: "/api/task/copy/done",
+});
+assert.equal(limitedCopyDone.code, 200);
+assert.deepEqual(limitedCopyDone.data.map((item) => item.id), [limitedCopy.data.tasks[0].id]);
+const limitedMoveDenied = await json({
+  body: { dst_dir: "/moved/copies-limited", names: ["a.txt"], src_dir: "/moved" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/fs/move",
+});
+assert.equal(limitedMoveDenied.code, 403);
+const limitedCopyOutsideBaseDenied = await json({
+  body: { dst_dir: "/moved/copies-limited", names: ["smoke"], src_dir: "/copies" },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/fs/copy",
+});
+assert.equal(limitedCopyOutsideBaseDenied.code, 403);
+
 const copyDone = await json({
   method: "GET",
   path: "/api/task/copy/done",
 });
 assert.equal(copyDone.code, 200);
 assert.equal(Array.isArray(copyDone.data), true);
-assert.equal(copyDone.data.length >= 1, true);
+assert.equal(copyDone.data.length >= 2, true);
 assert.equal(typeof copyDone.data[0].id, "string");
+assert.equal(typeof copyDone.data[0].creator_id, "number");
 assert.equal(typeof copyDone.data[0].creator_role, "number");
+assert.equal(copyDone.data.some((item) => item.id === limitedCopy.data.tasks[0].id), true);
 const copyTaskId = copyDone.data[0].id;
 const copyTaskInfo = await json({
   body: { tid: copyTaskId },
@@ -2360,6 +2736,13 @@ const copyTaskInfo = await json({
 });
 assert.equal(copyTaskInfo.code, 200);
 assert.equal(copyTaskInfo.data.id, copyTaskId);
+const limitedCannotReadAdminCopy = await json({
+  body: { tid: copyDone.data.find((item) => item.id !== limitedCopy.data.tasks[0].id).id },
+  headers: { Authorization: limitedToken },
+  method: "POST",
+  path: "/api/task/copy/info",
+});
+assert.equal(limitedCannotReadAdminCopy.code, 404);
 
 const moveDone = await json({
   method: "GET",
@@ -2467,6 +2850,58 @@ const indexProgress = await json({
 });
 assert.equal(indexProgress.data.is_done, true);
 assert.equal(indexProgress.data.obj_count > 0, true);
+const asyncIndexUpdate = await json({
+  body: { async: true, paths: ["/copy-skip-src"] },
+  method: "POST",
+  path: "/api/admin/index/update",
+});
+assert.equal(asyncIndexUpdate.code, 200);
+assert.equal(["pending", "running"].includes(asyncIndexUpdate.data.task.state), true);
+const asyncIndexTask = await waitFor(async () => {
+  const info = await json({
+    body: { tid: asyncIndexUpdate.data.task.id },
+    method: "POST",
+    path: "/api/task/index/info",
+  });
+  return info.data.state === "succeeded" ? info : null;
+});
+assert.equal(asyncIndexTask.code, 200);
+assert.equal(asyncIndexTask.data.progress, 100);
+const indexDoneTasks = await json({
+  method: "GET",
+  path: "/api/task/index/done",
+});
+assert.equal(indexDoneTasks.data.some((item) => item.id === asyncIndexUpdate.data.task.id), true);
+const stoppableIndexUpdate = await json({
+  body: { async: true, paths: ["/copy-skip-src"] },
+  method: "POST",
+  path: "/api/admin/index/update",
+});
+assert.equal(stoppableIndexUpdate.code, 200);
+const indexStop = await json({
+  method: "POST",
+  path: "/api/admin/index/stop",
+});
+if (indexStop.code === 200) {
+  assert.equal(indexStop.data.task_id, stoppableIndexUpdate.data.task.id);
+  const canceledIndexTask = await waitFor(async () => {
+    const info = await json({
+      body: { tid: stoppableIndexUpdate.data.task.id },
+      method: "POST",
+      path: "/api/task/index/info",
+    });
+    return info.data.state === "canceled" ? info : null;
+  });
+  assert.equal(canceledIndexTask.data.state, "canceled");
+} else {
+  assert.equal(indexStop.code, 400);
+  const finishedIndexTask = await json({
+    body: { tid: stoppableIndexUpdate.data.task.id },
+    method: "POST",
+    path: "/api/task/index/info",
+  });
+  assert.equal(["succeeded", "canceled"].includes(finishedIndexTask.data.state), true);
+}
 const searchFile = await json({
   body: { keywords: "fresh", page: 1, parent: "/", per_page: 10, scope: 2 },
   method: "POST",
@@ -2474,6 +2909,32 @@ const searchFile = await json({
 });
 assert.equal(searchFile.code, 200);
 assert.equal(searchFile.data.content.some((item) => item.parent === "/copy-skip-src" && item.name === "fresh.txt" && item.is_dir === false && typeof item.type === "number"), true);
+const searchLimitedUser = await json({
+  body: {
+    base_path: "/copy-skip-src",
+    permission: 0,
+    username: "search-limited",
+  },
+  method: "POST",
+  path: "/api/admin/user/create",
+});
+assert.equal(searchLimitedUser.code, 200);
+const searchLimitedToken = "siyuan-cloud-port:" + searchLimitedUser.data.id;
+const searchLimited = await json({
+  body: { keywords: "fresh", page: 1, parent: "/copies", per_page: 10, scope: 2 },
+  headers: { Authorization: searchLimitedToken },
+  method: "POST",
+  path: "/api/fs/search",
+});
+assert.equal(searchLimited.code, 403);
+const searchLimitedSubtree = await json({
+  body: { keywords: "fresh", page: 1, parent: "/copy-skip-src", per_page: 10, scope: 2 },
+  headers: { Authorization: searchLimitedToken },
+  method: "POST",
+  path: "/api/fs/search",
+});
+assert.equal(searchLimitedSubtree.code, 200);
+assert.equal(searchLimitedSubtree.data.content.some((item) => item.parent === "/copy-skip-src" && item.name === "fresh.txt"), true);
 const searchDir = await json({
   body: { keywords: "copy-skip", page: 1, parent: "/", per_page: 10, scope: 1 },
   method: "POST",
@@ -4173,6 +4634,46 @@ const s3Get = await text({
   path: "/s3/siyuan-cloud/smoke/s3.txt",
 });
 assert.equal(s3Get.text, "from s3");
+const s3ReadOnlyGet = await text({
+  headers: { Authorization: webdavReadOnlyToken },
+  method: "GET",
+  path: "/s3/siyuan-cloud/smoke/s3.txt",
+});
+assert.equal(s3ReadOnlyGet.text, "from s3");
+await json({
+  body: {
+    id: webdavReadOnlyUser.data.id,
+    username: "webdav-readonly",
+    base_path: "/",
+    permission: 1 << 8,
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const s3ReadOnlyPut = await text({
+  body: "blocked",
+  headers: { Authorization: webdavReadOnlyToken },
+  method: "PUT",
+  path: "/s3/siyuan-cloud/smoke/s3-readonly-denied.txt",
+});
+assert.equal(s3ReadOnlyPut.response.statusCode, 403);
+await json({
+  body: {
+    id: webdavReadOnlyUser.data.id,
+    username: "webdav-readonly",
+    base_path: "/",
+    permission: (1 << 8) | (1 << 9),
+  },
+  method: "POST",
+  path: "/api/admin/user/update",
+});
+const s3ManagePut = await text({
+  body: "allowed",
+  headers: { Authorization: webdavReadOnlyToken },
+  method: "PUT",
+  path: "/s3/siyuan-cloud/smoke/s3-manage-allowed.txt",
+});
+assert.equal(s3ManagePut.response.statusCode, 200);
 
 const s3List = await text({
   method: "GET",
@@ -4279,5 +4780,73 @@ const s3Delete = await text({
   path: "/s3/siyuan-cloud/smoke/s3.txt",
 });
 assert.equal(s3Delete.response.statusCode, 204);
+
+await json({
+  body: { path: "/s3-root", name: "s3-mapped" },
+  method: "POST",
+  path: "/api/fs/mkdir",
+});
+await json({
+  body: "mapped",
+  headers: { "File-Path": encodeURIComponent("/s3-root/mapped.txt"), "Content-Type": "text/plain" },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+await json({
+  body: [
+    { key: "s3_access_key_id", value: "S3AK" },
+    { key: "s3_secret_access_key", value: "S3SK" },
+    { key: "s3_buckets", value: JSON.stringify([{ name: "mapped", path: "/s3-root" }]) },
+  ],
+  method: "POST",
+  path: "/api/admin/setting/save",
+});
+const s3UnsignedDenied = await text({
+  method: "GET",
+  path: "/s3",
+});
+assert.equal(s3UnsignedDenied.response.statusCode, 403);
+const s3SignedBuckets = await text({
+  headers: signedS3Headers({ path: "/s3" }),
+  method: "GET",
+  path: "/s3",
+});
+assert.equal(s3SignedBuckets.response.statusCode, 200);
+assert.match(s3SignedBuckets.text, /<Name>mapped<\/Name>/);
+const s3WrongSignature = await text({
+  headers: { ...signedS3Headers({ path: "/s3/mapped/mapped.txt" }), Authorization: "AWS4-HMAC-SHA256 Credential=S3AK/20260101/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=bad" },
+  method: "GET",
+  path: "/s3/mapped/mapped.txt",
+});
+assert.equal(s3WrongSignature.response.statusCode, 403);
+const s3SignedMappedGet = await text({
+  headers: signedS3Headers({ path: "/s3/mapped/mapped.txt" }),
+  method: "GET",
+  path: "/s3/mapped/mapped.txt",
+});
+assert.equal(s3SignedMappedGet.text, "mapped");
+const s3SignedPutBody = "signed put";
+const s3SignedPut = await text({
+  body: s3SignedPutBody,
+  headers: { ...signedS3Headers({ body: s3SignedPutBody, method: "PUT", path: "/s3/mapped/written.txt" }), "Content-Type": "text/plain" },
+  method: "PUT",
+  path: "/s3/mapped/written.txt",
+});
+assert.equal(s3SignedPut.response.statusCode, 200);
+const s3SignedWrittenGet = await text({
+  headers: signedS3Headers({ path: "/s3/mapped/written.txt" }),
+  method: "GET",
+  path: "/s3/mapped/written.txt",
+});
+assert.equal(s3SignedWrittenGet.text, s3SignedPutBody);
+await json({
+  body: [
+    { key: "s3_access_key_id", value: "" },
+    { key: "s3_secret_access_key", value: "" },
+    { key: "s3_buckets", value: "[]" },
+  ],
+  method: "POST",
+  path: "/api/admin/setting/save",
+});
 
 console.log("kernel route smoke ok");

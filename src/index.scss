@@ -24,6 +24,15 @@
   min-width: 0;
 }
 
+.ol-dock {
+  overflow: hidden;
+}
+
+.ol-dock > .file-tree {
+  min-height: 0;
+  overflow: auto;
+}
+
 .ol-mount-form__actions {
   display: flex;
   flex-wrap: wrap;
@@ -41,12 +50,6 @@
   min-height: 0;
   overflow: auto;
   padding: 0 8px 8px;
-}
-
-.ol-body > .b3-list,
-.ol-body > .b3-list-item,
-.ol-body > .b3-list .b3-list-item {
-  margin-inline: 0;
 }
 
 .ol-field,
@@ -133,7 +136,7 @@
 .ol-mount-row {
   display: grid;
   grid-template-columns: var(--ol-mount-icon) minmax(0, 1fr) repeat(3, max-content);
-  align-items: start;
+  align-items: center;
   gap: var(--ol-mount-gap);
   width: auto;
   min-width: 0;
@@ -149,14 +152,9 @@
   text-align: left;
 }
 
-button.ol-mount-row {
-  appearance: none;
-  cursor: pointer;
-  font-family: inherit;
-}
-
 .ol-mount-row__cover {
   grid-row: span 3;
+  align-self: center;
   flex: 0 0 var(--ol-mount-icon);
   width: var(--ol-mount-icon);
   height: var(--ol-mount-icon);
@@ -214,17 +212,6 @@ button.ol-mount-row {
   border-radius: 8px;
   background: var(--b3-theme-background);
   box-sizing: border-box;
-}
-
-.ol-user-permission,
-.ol-permissions {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.ol-permission {
-  margin-inline: 0;
 }
 
 .ol-fold-action {

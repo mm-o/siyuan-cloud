@@ -36,190 +36,72 @@
       @change.stop
       @contextmenu.stop
     >
-      <template v-if="currentTab === 'settings'">
-        <DockSectionHeader icon="#iconSettings" :title="t('configImportExport')" :actions="sectionActions.config" />
-        <div class="b3-list b3-list--background">
-          <div class="b3-list-item">
-            <textarea v-model="configText" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('configJsonPlaceholder')" />
-          </div>
-        </div>
-
-        <DockSectionHeader icon="#iconOpen" :title="t('externalPreviews')" :actions="sectionActions.external" />
-        <div class="b3-list b3-list--background">
-          <div class="b3-list-item">
+      <template v-if="currentTab === 'tasks'">
+        <div class="ol-mount-list">
+          <div class="ol-mount-form">
             <label class="ol-field">
-              <textarea v-model="externalPreviews" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('externalPreviewsHelp')" />
-              <small>{{ t('externalPreviewsHelp') }}</small>
+              <span>{{ t('taskType') }}</span>
+              <select v-model="taskType" class="b3-select">
+                <option v-for="type in taskTypes" :key="type" :value="type">{{ taskTypeLabel(type) }}</option>
+              </select>
+            </label>
+            <label class="ol-field">
+              <span>{{ t('taskStatus') }}</span>
+              <select v-model="taskDone" class="b3-select">
+                <option value="undone">{{ t('taskUndone') }}</option>
+                <option value="done">{{ t('taskDone') }}</option>
+              </select>
             </label>
           </div>
+          <DockRow v-if="!taskItems.length" icon="#iconList" :title="t('taskEmpty')" :desc="`${taskTypeLabel(taskType)} / ${taskDone === 'done' ? t('taskDone') : t('taskUndone')}`" />
+          <DockRow v-for="item in taskItems" :key="item.id" icon="#iconList" :title="item.name || item.id" :desc="taskDetail(item)" :tags="taskTags(item)" :actions="taskActions(item)" />
         </div>
       </template>
 
-      <template v-else-if="currentTab === 'tasks'">
-        <DockSectionHeader icon="#iconAccount" :title="t('loginTitle')" :actions="sectionActions.account" />
-        <div class="b3-list b3-list--background">
-          <div class="b3-list-item">
-            <label class="ol-field">
-              <span>{{ t('verifyUsername') }}</span>
-              <input v-model="verifyUsername" class="b3-text-field" type="text">
-            </label>
+      <template v-else-if="currentTab === 'tools'">
+        <div class="ol-mount-list">
+          <div class="ol-mount-form">
+            <DockSectionHeader icon="#iconSettings" :title="t('configImportExport')" :actions="sectionActions.config" />
+            <textarea v-model="configText" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('configJsonPlaceholder')" />
           </div>
-          <div class="b3-list-item">
-            <label class="ol-field">
-              <span>{{ t('verifyPassword') }}</span>
-              <input v-model="verifyPassword" class="b3-text-field" type="password">
-            </label>
-          </div>
-          <div class="b3-list-item">
-            <span class="b3-list-item__text">{{ t('currentSession') }}</span>
-            <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="verifySession || accountInfo">{{ verifySession || accountInfo || t('unknown') }}</span>
-            <button class="b3-list-item__action b3-tooltips b3-tooltips__w" type="button" :aria-label="t('verifyLogin')" @click.stop="verifyLogin">
-              <svg><use xlink:href="#iconPlay" /></svg>
-            </button>
-          </div>
-        </div>
 
-        <DockSectionHeader icon="#iconList" :title="t('torrentTools')" :actions="[]" />
-        <div class="b3-list b3-list--background">
-          <div class="b3-list-item">
+          <div class="ol-mount-form">
+            <DockSectionHeader icon="#iconOpen" :title="t('externalPreviews')" :actions="sectionActions.external" />
+            <textarea v-model="externalPreviews" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('externalPreviewsHelp')" />
+          </div>
+
+          <div class="ol-mount-form">
+            <DockSectionHeader icon="#iconList" :title="t('torrentTools')" :actions="sectionActions.torrent" />
             <label class="ol-field">
               <span>{{ t('torrentPath') }}</span>
               <input v-model="torrentPath" class="b3-text-field" type="text" :placeholder="t('torrentPathPlaceholder')">
             </label>
-          </div>
-          <div class="b3-list-item">
             <label class="ol-field">
               <span>{{ t('torrentData') }}</span>
               <textarea v-model="torrentData" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('torrentDataPlaceholder')" />
             </label>
+            <textarea v-if="torrentResult" class="b3-text-field ol-addition" readonly spellcheck="false" :value="torrentResult" />
           </div>
-          <div class="b3-list-item">
-            <button class="b3-button" type="button" @click="generateTorrent">{{ t('torrentGenerate') }}</button>
-            <span class="fn__space" />
-            <button class="b3-button b3-button--outline" type="button" @click="parseTorrent">{{ t('torrentParse') }}</button>
-          </div>
-          <div v-if="torrentResult" class="b3-list-item">
-            <textarea class="b3-text-field ol-addition" readonly spellcheck="false" :value="torrentResult" />
-          </div>
-        </div>
-
-        <DockSectionHeader icon="#iconList" :title="t('verifyTaskList')" :actions="[]" />
-        <div class="b3-list b3-list--background">
-          <div v-for="item in verifyLog" :key="item.id" class="b3-list-item">
-            <svg class="b3-list-item__graphic" :class="{ 'ft__error': !item.ok }"><use :xlink:href="item.ok ? '#iconCheck' : '#iconClose'" /></svg>
-            <span class="b3-list-item__text">{{ item.title }}</span>
-            <span class="b3-list-item__meta">{{ item.detail }}</span>
-          </div>
-          <div v-if="!verifyLog.length" class="b3-list--empty">{{ t('verifyEmpty') }}</div>
         </div>
       </template>
 
-      <template v-else-if="currentTab === 'users'">
+      <template v-else-if="currentTab === 'status'">
         <div class="ol-mount-list">
-          <DockRow v-for="item in userItems" :key="item.id || item.username" icon="#iconAccount" :title="item.username" :desc="userDetail(item)" :tags="userTags(item)" :actions="userActions(item)">
-            <template #tags>
-              <button v-if="item.otp" class="b3-chip b3-chip--small" type="button" @click.stop="cancelUser2fa(item)">{{ t('userCancel2fa') }}</button>
-            </template>
-          </DockRow>
-          <DockRow v-if="!userFormOpen" icon="#iconAdd" :title="t('userAdd')" :desc="t('userAddHelp')" :open="openAddUser" />
-          <div v-else class="ol-mount-form">
-            <label class="ol-field">
-              <span>{{ t('verifyUsername') }}</span>
-              <input v-model="userForm.username" class="b3-text-field" type="text">
-            </label>
-            <label class="ol-field">
-              <span>{{ t('verifyPassword') }}</span>
-              <input v-model="userForm.password" class="b3-text-field" type="password" :placeholder="t('userPasswordPlaceholder')">
-            </label>
-            <label class="ol-field">
-              <span>{{ t('userBasePath') }}</span>
-              <input v-model="userForm.base_path" class="b3-text-field" type="text">
-            </label>
-            <div class="ol-user-permission">
-              <button class="b3-list-item b3-list-item--narrow" type="button" @pointerdown.prevent.stop @click.stop="userPermissionOpen = !userPermissionOpen">
-                <span class="b3-list-item__text">{{ t('userPermission') }}</span>
-                <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="userPermissionFormSummary()">{{ userPermissionFormSummary() }}</span>
-                <span class="b3-list-item__action ol-fold-action" :aria-label="userPermissionOpen ? t('collapse') : t('expand')">
-                  <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': userPermissionOpen }"><use xlink:href="#iconRight" /></svg>
-                </span>
-              </button>
-              <div v-if="userPermissionOpen" class="ol-permissions">
-                <label
-                  v-for="(permission, index) in userPermissionOptions"
-                  :key="permission"
-                  class="b3-list-item b3-list-item--narrow ol-permission"
-                >
-                  <span class="b3-list-item__text">{{ userPermissionLabel(permission) }}</span>
-                  <input class="b3-switch fn__flex-center" type="checkbox" :checked="userPermissionChecked(index)" @change="onUserPermissionChange(index, $event)">
-                </label>
-              </div>
-            </div>
-            <label class="b3-list-item b3-list-item--narrow">
-              <span class="b3-list-item__text">{{ t('userDisabled') }}</span>
-              <input v-model="userForm.disabled" class="b3-switch fn__flex-center" type="checkbox">
-            </label>
-            <div class="ol-mount-form__actions">
-              <button class="b3-button b3-button--outline" type="button" @click="closeUserForm">{{ t('cancel') }}</button>
-              <button class="b3-button" type="button" @click="saveUser">{{ t('confirmAction') }}</button>
-            </div>
-          </div>
-          <div v-if="!userItems.length" class="b3-list--empty">{{ t('userEmpty') }}</div>
+          <DockRow :icon="statusIcon" :title="statusTitle" :desc="statusDetail" />
+          <DockRow icon="#iconFile" :title="t('stateFile')" :desc="storageInfo.state_file || '/storage/petal/siyuan-cloud/config.json'" />
+          <DockRow icon="#iconRefresh" :title="t('sync')" :desc="storageSyncLabel" />
+          <DockRow icon="#iconHelp" :title="t('openHelp')" :desc="t('pluginHelp')" :open="openReadmeDoc" />
+          <DockRow icon="#iconOpen" :title="t('openApi')" :desc="storageInfo.source || t('waitingStatus')" :open="openApiDoc" />
+          <DockRow v-for="item in docItems" :key="item.key" :icon="item.icon" :title="item.title" :desc="item.desc" :open="() => openPackagedDoc(item.key)" />
         </div>
       </template>
 
-      <template v-else-if="currentTab === 'shares'">
+      <template v-else-if="currentTab === 'mounts'">
         <div class="ol-mount-list">
-          <DockRow v-for="item in shareItems" :key="item.id || item.sid" icon="#iconLink" :title="item.remark || item.id" :desc="shareDescription(item)" :detail="shareDetail(item)" :tags="shareTags(item)" :actions="shareActions(item)" />
-          <div v-if="shareFormOpen" class="ol-mount-form">
-            <label class="ol-field"><span>{{ t('shareId') }}</span><input v-model="shareForm.new_id" class="b3-text-field" type="text"></label>
-            <label class="ol-field"><span>{{ t('shareFiles') }}</span><textarea v-model="shareForm.files" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('shareFilesPlaceholder')" /></label>
-            <label class="ol-field"><span>{{ t('shareRemark') }}</span><input v-model="shareForm.remark" class="b3-text-field" type="text"></label>
-            <label class="ol-field"><span>{{ t('sharePwd') }}</span><input v-model="shareForm.pwd" class="b3-text-field" type="text" :placeholder="t('sharePasswordPlaceholder')"></label>
-            <label class="ol-field"><span>{{ t('shareMaxAccessed') }}</span><input v-model.number="shareForm.max_accessed" class="b3-text-field" type="number" min="0"></label>
-            <label class="ol-field"><span>{{ t('shareAccessed') }}</span><input v-model.number="shareForm.accessed" class="b3-text-field" type="number" min="0"></label>
-            <label class="ol-field"><span>{{ t('shareExpires') }}</span><input v-model="shareForm.expires" class="b3-text-field" type="text" placeholder="yyyy-MM-dd HH:mm:ss"></label>
-            <label class="ol-field"><span>{{ t('shareReadme') }}</span><textarea v-model="shareForm.readme" class="b3-text-field ol-addition" spellcheck="false" /></label>
-            <label class="ol-field"><span>{{ t('shareHeader') }}</span><textarea v-model="shareForm.header" class="b3-text-field ol-addition" spellcheck="false" /></label>
-            <label class="b3-list-item b3-list-item--narrow"><span class="b3-list-item__text">{{ t('shareDisabled') }}</span><input v-model="shareForm.disabled" class="b3-switch fn__flex-center" type="checkbox"></label>
-            <div class="ol-mount-form__actions">
-              <button class="b3-button b3-button--outline" type="button" @click="closeShareForm">{{ t('cancel') }}</button>
-              <button class="b3-button" type="button" @click="saveShare">{{ t('confirmAction') }}</button>
-            </div>
-          </div>
-          <div v-if="!shareItems.length" class="b3-list--empty">{{ t('shareEmpty') }}</div>
-        </div>
-      </template>
-
-      <template v-else-if="currentTab === 'about'">
-        <div class="b3-list b3-list--background">
-          <div class="b3-list-item">
-            <svg class="b3-list-item__graphic" :class="{ 'ft__error': statusClass.offline }"><use :xlink:href="statusIcon" /></svg>
-            <span class="b3-list-item__text">{{ statusTitle }}</span>
-            <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="statusDetail">{{ statusDetail }}</span>
-          </div>
-          <div class="b3-list-item">
-            <span class="b3-list-item__text">{{ t('stateFile') }}</span>
-            <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="storageInfo.state_file || '/storage/petal/siyuan-cloud/config.json'">{{ storageInfo.state_file || '/storage/petal/siyuan-cloud/config.json' }}</span>
-          </div>
-          <div class="b3-list-item">
-            <span class="b3-list-item__text">{{ t('sync') }}</span>
-            <span class="b3-list-item__meta">{{ storageSyncLabel }}</span>
-          </div>
-          <div class="b3-list-item">
-            <span class="b3-list-item__text">{{ storageInfo.source || t('waitingStatus') }}</span>
-          </div>
-        </div>
-      </template>
-
-      <template v-else>
-        <div class="ol-mount-list">
-          <DockRow v-for="item in verifyStorages" :key="item.id || item.mount_path" icon="#iconDatabase" :title="mountPath(item)" :desc="storageDescription(item)" :tags="storageTags(item)" :actions="mountActions(item)" :open="() => openMount(item)" />
-          <button v-if="!mountFormOpen" class="ol-mount-row b3-list-item--hide-action" type="button" @click.stop="openAddMount">
-            <span class="ol-mount-row__cover"><svg><use xlink:href="#iconAdd" /></svg></span>
-            <span class="ol-mount-row__title ariaLabel" :aria-label="t('mountAdd')">{{ t('mountAdd') }}</span>
-            <span class="ol-mount-row__desc ariaLabel" :aria-label="t('verifyStorageDriver')">{{ t('verifyStorageDriver') }}</span>
-          </button>
-          <div v-else class="ol-mount-form">
+          <template v-for="entry in mountEntries" :key="entry.key">
+            <DockRow v-if="entry.type === 'mount'" icon="#iconDatabase" :title="mountPath(entry.item)" :desc="storageDescription(entry.item)" :tags="storageTags(entry.item)" :actions="mountActions(entry.item)" :open="() => openMount(entry.item)" />
+            <DockRow v-else-if="entry.type === 'add'" icon="#iconAdd" :title="t('mountAdd')" :desc="t('verifyStorageDriver')" :open="openAddMount" />
+            <div v-else class="ol-mount-form">
             <label class="ol-field">
               <span>{{ t('verifyMountPath') }}</span>
               <input v-model="verifyMountPath" class="b3-text-field" type="text">
@@ -258,8 +140,8 @@
                     <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': mountMoreOpen }"><use xlink:href="#iconRight" /></svg>
                   </span>
                 </button>
-                <label v-else-if="row.field" class="ol-field">
-                  <span :title="row.field.name">{{ fieldLabel(row.field) }}{{ row.field.required ? ' *' : '' }}</span>
+                <label v-else-if="row.field" :class="row.field.type === 'bool' ? 'b3-list-item b3-list-item--narrow' : 'ol-field'">
+                  <span :class="{ 'b3-list-item__text': row.field.type === 'bool' }" :title="row.field.name">{{ fieldLabel(row.field) }}{{ row.field.required ? ' *' : '' }}</span>
                   <select v-if="row.field.type === 'select'" v-model="driverForm[row.field.name]" class="b3-select">
                     <option v-for="option in fieldOptions(row.field)" :key="option" :value="option">{{ fieldOptionLabel(row.field, option) }}</option>
                   </select>
@@ -302,7 +184,68 @@
               <button class="b3-button" type="button" :disabled="mountCreating" @click="submitMount">{{ mountCreating ? t('mountCreating') : selectedStorageId ? t('mountUpdate') : t('mountAdd') }}</button>
             </div>
             <small v-if="mountCreateResult" :class="{ 'ft__error': !mountCreateOk }">{{ mountCreateResult }}</small>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <template v-else-if="currentTab === 'users'">
+        <div class="ol-mount-list">
+          <DockRow v-for="(item, index) in userItems" :key="item.id || item.username" :style="{ order: index * 2 }" icon="#iconAccount" :title="item.username" :desc="userDetail(item)" :tags="userTags(item)" :actions="userActions(item)">
+              <template #tags>
+                <button v-if="item.otp" class="b3-chip b3-chip--small" type="button" @click.stop="cancelUser2fa(item)">{{ t('userCancel2fa') }}</button>
+              </template>
+          </DockRow>
+          <DockRow v-if="!userFormOpen" :style="{ order: userItems.length * 2 }" icon="#iconAdd" :title="t('userAdd')" :desc="t('userAddHelp')" :open="openAddUser" />
+          <div v-else class="ol-mount-form" :style="{ order: userFormOrder }">
+              <label class="ol-field"><span>{{ t('verifyUsername') }}</span><input v-model="userForm.username" class="b3-text-field" type="text"></label>
+              <label class="ol-field"><span>{{ t('verifyPassword') }}</span><input v-model="userForm.password" class="b3-text-field" type="password" :placeholder="t('userPasswordPlaceholder')"></label>
+              <label class="ol-field"><span>{{ t('userBasePath') }}</span><input v-model="userForm.base_path" class="b3-text-field" type="text"></label>
+              <div class="ol-driver-fields">
+                <button class="b3-list-item b3-list-item--narrow" type="button" @pointerdown.prevent.stop @click.stop="userPermissionOpen = !userPermissionOpen">
+                  <span class="b3-list-item__text">{{ t('userPermission') }}</span>
+                  <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="userPermissionFormSummary()">{{ userPermissionFormSummary() }}</span>
+                  <span class="b3-list-item__action ol-fold-action" :aria-label="userPermissionOpen ? t('collapse') : t('expand')">
+                    <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': userPermissionOpen }"><use xlink:href="#iconRight" /></svg>
+                  </span>
+                </button>
+                <div v-if="userPermissionOpen" class="ol-driver-fields">
+                  <label v-for="(permission, index) in userPermissionOptions" :key="permission" class="b3-list-item b3-list-item--narrow">
+                    <span class="b3-list-item__text">{{ userPermissionLabel(permission) }}</span>
+                    <input class="b3-switch fn__flex-center" type="checkbox" :checked="userPermissionChecked(index)" @change="onUserPermissionChange(index, $event)">
+                  </label>
+                </div>
+              </div>
+              <label class="b3-list-item b3-list-item--narrow"><span class="b3-list-item__text">{{ t('userDisabled') }}</span><input v-model="userForm.disabled" class="b3-switch fn__flex-center" type="checkbox"></label>
+              <div class="ol-mount-form__actions">
+                <button class="b3-button b3-button--outline" type="button" @click="closeUserForm">{{ t('cancel') }}</button>
+                <button class="b3-button" type="button" @click="saveUser">{{ t('confirmAction') }}</button>
+              </div>
           </div>
+          <DockRow v-if="!userItems.length" icon="#iconAccount" :title="t('userEmpty')" />
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="ol-mount-list">
+          <DockRow v-for="(item, index) in shareItems" :key="item.id || item.sid" :style="{ order: index * 2 }" icon="#iconLink" :title="item.remark || item.id" :desc="shareDescription(item)" :detail="shareDetail(item)" :tags="shareTags(item)" :actions="shareActions(item)" />
+          <div v-if="shareFormOpen" class="ol-mount-form" :style="{ order: shareFormOrder }">
+              <label class="ol-field"><span>{{ t('shareId') }}</span><input v-model="shareForm.new_id" class="b3-text-field" type="text"></label>
+              <label class="ol-field"><span>{{ t('shareFiles') }}</span><textarea v-model="shareForm.files" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('shareFilesPlaceholder')" /></label>
+              <label class="ol-field"><span>{{ t('shareRemark') }}</span><input v-model="shareForm.remark" class="b3-text-field" type="text"></label>
+              <label class="ol-field"><span>{{ t('sharePwd') }}</span><input v-model="shareForm.pwd" class="b3-text-field" type="text" :placeholder="t('sharePasswordPlaceholder')"></label>
+              <label class="ol-field"><span>{{ t('shareMaxAccessed') }}</span><input v-model.number="shareForm.max_accessed" class="b3-text-field" type="number" min="0"></label>
+              <label class="ol-field"><span>{{ t('shareAccessed') }}</span><input v-model.number="shareForm.accessed" class="b3-text-field" type="number" min="0"></label>
+              <label class="ol-field"><span>{{ t('shareExpires') }}</span><input v-model="shareForm.expires" class="b3-text-field" type="text" placeholder="yyyy-MM-dd HH:mm:ss"></label>
+              <label class="ol-field"><span>{{ t('shareReadme') }}</span><textarea v-model="shareForm.readme" class="b3-text-field ol-addition" spellcheck="false" /></label>
+              <label class="ol-field"><span>{{ t('shareHeader') }}</span><textarea v-model="shareForm.header" class="b3-text-field ol-addition" spellcheck="false" /></label>
+              <label class="b3-list-item b3-list-item--narrow"><span class="b3-list-item__text">{{ t('shareDisabled') }}</span><input v-model="shareForm.disabled" class="b3-switch fn__flex-center" type="checkbox"></label>
+              <div class="ol-mount-form__actions">
+                <button class="b3-button b3-button--outline" type="button" @click="closeShareForm">{{ t('cancel') }}</button>
+                <button class="b3-button" type="button" @click="saveShare">{{ t('confirmAction') }}</button>
+              </div>
+          </div>
+          <DockRow v-if="!shareItems.length" icon="#iconLink" :title="t('shareEmpty')" />
         </div>
       </template>
     </main>
@@ -421,6 +364,7 @@ const DockRow = (props: any, { emit, slots }: any) => {
   return h('div', {
     class: 'ol-mount-row b3-list-item--hide-action',
     role: props.open ? 'button' : undefined,
+    style: props.style,
     tabindex: props.open ? 0 : undefined,
     onClick: open,
     onKeydown: (event: KeyboardEvent) => {
@@ -444,7 +388,6 @@ const DockRow = (props: any, { emit, slots }: any) => {
 const plugin = usePlugin()
 
 const {
-  accountInfo,
   cancelUser2fa,
   closeShareForm,
   closeUserForm,
@@ -478,6 +421,10 @@ const {
   mountFormOpen,
   openAddMount,
   openAddUser,
+  openApiDoc,
+  openReadmeDoc,
+  docItems,
+  openPackagedDoc,
   openFileManager,
   openEditMount,
   openEditShare,
@@ -495,7 +442,6 @@ const {
   shareItems,
   shareTags,
   sectionActions,
-  statusClass,
   statusDetail,
   statusIcon,
   statusTitle,
@@ -506,6 +452,17 @@ const {
   submitMount,
   t,
   tabs,
+  taskActions,
+  taskDetail,
+  taskDone,
+  taskItems,
+  taskTags,
+  taskType,
+  taskTypeLabel,
+  taskTypes,
+  torrentData,
+  torrentPath,
+  torrentResult,
   toggleMount,
   toggleUser,
   toggleUserPermission,
@@ -520,18 +477,8 @@ const {
   userTags,
   verifyAddition,
   verifyDriver,
-  verifyLogin,
-  verifyLog,
   verifyMountPath,
-  verifyPassword,
-  torrentData,
-  torrentPath,
-  torrentResult,
-  generateTorrent,
-  parseTorrent,
-  verifySession,
   verifyStorages,
-  verifyUsername,
 } = useDock(plugin)
 
 const onUserPermissionChange = (index: number, event: Event) => {
@@ -539,9 +486,9 @@ const onUserPermissionChange = (index: number, event: Event) => {
 }
 
 const pageActionMap: Record<string, keyof typeof sectionActions.value> = {
-  about: 'about',
   mounts: 'mounts',
   shares: 'shares',
+  status: 'about',
   tasks: 'tasks',
   users: 'users',
 }
@@ -555,23 +502,29 @@ const currentPageActions = computed(() => {
     ]
   return sectionActions.value[pageActionMap[currentTab.value]] || []
 })
-const primaryDriverFieldNames = computed(() => {
-  if (verifyDriver.value === '115 Cloud' || verifyDriver.value === '115')
-    return new Set(['root_folder_id', 'cookie', 'qrcode_token', 'qrcode_source'])
-  return new Set<string>()
-})
+const primaryDriverFieldNames = computed(() => new Set(verifyDriver.value === '115 Cloud' || verifyDriver.value === '115' ? ['root_folder_id', 'cookie', 'qrcode_token', 'qrcode_source'] : []))
 const driverFormRows = computed(() => {
   const primary = driverFields.value.filter(field => field.required || primaryDriverFieldNames.value.has(field.name))
   const primaryNames = new Set(primary.map(field => field.name))
   const optional = driverFields.value.filter(field => !primaryNames.has(field.name))
   return [
     ...primary.map(field => ({ key: field.name, field })),
-    { key: '__more', more: true },
+    ...(optional.length ? [{ key: '__more', more: true }] : []),
     ...(mountMoreOpen.value ? optional.map(field => ({ key: field.name, field })) : []),
   ]
 })
 
 const mountPath = (item: any) => normalizePath(item?.mount_path || item?.path || '/')
+const mountEntries = computed(() => [
+  ...verifyStorages.value.flatMap(item => [{ type: 'mount', key: item.id || item.mount_path, item }, ...(mountFormOpen.value && Number(item.id) === selectedStorageId.value ? [{ type: 'form', key: 'form' }] : [])]),
+  mountFormOpen.value && !selectedStorageId.value ? { type: 'form', key: 'form' } : { type: 'add', key: 'add' },
+])
+const formOrder = (items: any[], selected: any, key: (item: any) => any) => {
+  const index = items.findIndex(item => String(key(item)) === String(selected))
+  return index >= 0 ? index * 2 + 1 : items.length * 2 + 1
+}
+const userFormOrder = computed(() => formOrder(userItems.value, userForm.value.id, item => item.id || item.username))
+const shareFormOrder = computed(() => formOrder(shareItems.value, shareForm.value.id, item => item.id || item.sid))
 const openMount = (item: any) => openFileManager(mountPath(item))
 const mountActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('mountEdit'), run: () => openEditMount(item) }, { key: 'toggle', icon: item.disabled ? '#iconEye' : '#iconEyeoff', label: item.disabled ? t('mountEnable') : t('mountDisable'), run: () => toggleMount(item) }, { key: 'delete', icon: '#iconTrashcan', label: t('mountDelete'), run: () => deleteMount(item) }]
 const shareActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('shareEdit'), run: () => openEditShare(item) }, { key: 'more', icon: '#iconMore', label: t('more'), run: event => openShareMenu(item, event as MouseEvent | KeyboardEvent) }]

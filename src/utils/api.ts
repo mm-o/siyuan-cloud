@@ -1,4 +1,4 @@
-import { privateBase, r, type OpenListResp } from './request'
+import { privateBase, r, withOpenListHeaders, type OpenListResp } from './request'
 import {
   clearLocalMountCache,
   getLocal,
@@ -147,7 +147,7 @@ export const fsWriteFile = async (path: string, file: File | Blob | string): Pro
   form.append('file', file, file instanceof File ? file.name : 'file')
   const response = await fetch(`${privateBase}/api/fs/form`, {
     method: 'PUT',
-    headers: { 'File-Path': encodeURIComponent(path), Overwrite: 'false' },
+    headers: withOpenListHeaders({ 'File-Path': encodeURIComponent(path), Overwrite: 'false' }),
     body: form,
   })
   const payload = await response.json()

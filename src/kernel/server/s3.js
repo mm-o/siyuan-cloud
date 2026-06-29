@@ -2,9 +2,21 @@ import {
   dirname,
   normalizePath,
 } from "../internal/model/path.js";
+import {
+  hmacSha256,
+  sha256Hex,
+} from "../internal/driver/aws4.js";
 import { textResponse } from "./common/response.js";
+import {
+  canWebdavManage,
+  canWebdavRead,
+} from "../internal/model/user.js";
 
 const DEFAULT_BUCKET = "siyuan-cloud";
+const DEFAULT_REGION = "us-east-1";
+
+const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+const encodeRfc3986 = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 const escapeXml = (value) => String(value ?? "")
   .replace(/&/g, "&amp;")
@@ -46,13 +58,92 @@ const headerValue = (requestMeta, name) => {
   return "";
 };
 
-const objectPath = (object) => normalizePath("/" + object);
+const objectPath = (bucket, object) => normalizePath(`${normalizePath(bucket.path || "/")}/${String(object || "").replace(/^\/+/, "")}`);
 
-const listBucketsXml = () => xmlResponse([
+const parseBuckets = (settings = {}) => {
+  try {
+    const buckets = JSON.parse(settings.s3_buckets || "[]");
+    if (Array.isArray(buckets) && buckets.length) {
+      return buckets
+        .filter((item) => item && item.name)
+        .map((item) => ({
+          name: String(item.name),
+          path: normalizePath(item.path || "/"),
+        }));
+    }
+  } catch (_) {
+    // Keep the compatibility default if the setting is malformed.
+  }
+  return [{ name: DEFAULT_BUCKET, path: "/" }];
+};
+
+const s3Credential = (settings = {}) => {
+  const accessKeyId = String(settings.s3_access_key_id || "");
+  const secretAccessKey = String(settings.s3_secret_access_key || "");
+  if (!accessKeyId && !secretAccessKey) return null;
+  return { accessKeyId, secretAccessKey };
+};
+
+const parseAuthParams = (authorization) => {
+  const match = String(authorization || "").match(/^AWS4-HMAC-SHA256\s+(.+)$/);
+  if (!match) return null;
+  const result = {};
+  for (const part of match[1].split(",")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key) result[key] = rest.join("=");
+  }
+  return result.Credential && result.SignedHeaders && result.Signature ? result : null;
+};
+
+const canonicalQuery = (params, skipSignature = false) => [...params.entries()]
+  .filter(([key]) => !(skipSignature && key === "X-Amz-Signature"))
+  .sort(([a, av], [b, bv]) => a === b ? av.localeCompare(bv) : a.localeCompare(b))
+  .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
+  .join("&");
+
+const signedHeaderValue = (requestMeta, name) => {
+  if (name === "host") return headerValue(requestMeta, "Host") || "localhost";
+  if (name === "x-amz-content-sha256") return headerValue(requestMeta, name);
+  return headerValue(requestMeta, name);
+};
+
+const signingKey = (secretAccessKey, date, region, service) => {
+  const kDate = hmacSha256(`AWS4${secretAccessKey}`, date);
+  const kRegion = hmacSha256(kDate, region || DEFAULT_REGION);
+  const kService = hmacSha256(kRegion, service || "s3");
+  return hmacSha256(kService, "aws4_request");
+};
+
+const expectedSignature = ({ bodyText, credential, dateTime, method, params, path, payloadHash, requestMeta, secretAccessKey, signedHeaders, skipQuerySignature = false }) => {
+  const headers = signedHeaders.split(";").filter(Boolean).map((item) => item.toLowerCase()).sort();
+  const canonicalHeaders = headers.map((name) => `${name}:${String(signedHeaderValue(requestMeta, name) || "").trim()}\n`).join("");
+  const canonicalRequest = [
+    method,
+    path || "/",
+    canonicalQuery(params, skipQuerySignature),
+    canonicalHeaders,
+    headers.join(";"),
+    payloadHash || sha256Hex(bodyText || ""),
+  ].join("\n");
+  const [, date, region, service, terminal] = credential.split("/");
+  if (!date || terminal !== "aws4_request") return "";
+  const scope = `${date}/${region || DEFAULT_REGION}/${service || "s3"}/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    dateTime,
+    scope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  return hex(hmacSha256(signingKey(secretAccessKey, date, region, service), stringToSign));
+};
+
+const listBucketsXml = (buckets) => xmlResponse([
   `<?xml version="1.0" encoding="UTF-8"?>`,
   `<ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">`,
   `<Owner><ID>siyuan-cloud</ID><DisplayName>Siyuan Cloud</DisplayName></Owner>`,
-  `<Buckets><Bucket><Name>${DEFAULT_BUCKET}</Name><CreationDate>${new Date().toISOString()}</CreationDate></Bucket></Buckets>`,
+  `<Buckets>`,
+  ...buckets.map((bucket) => `<Bucket><Name>${escapeXml(bucket.name)}</Name><CreationDate>${new Date().toISOString()}</CreationDate></Bucket>`),
+  `</Buckets>`,
   `</ListAllMyBucketsResult>`,
 ].join(""));
 
@@ -64,12 +155,67 @@ const errorXml = (code, message, statusCode) => xmlResponse([
 export const createS3Server = ({
   cloneEntryTree,
   createFile,
+  currentUser,
   ensureDir,
   getState,
   removeEntry,
   requestPath,
   saveState,
 }) => {
+  const authHeader = (requestMeta) => headerValue(requestMeta, "Authorization");
+  const shouldApplyUserPermission = (requestMeta) => authHeader(requestMeta).startsWith("siyuan-cloud-port:");
+  const bucketByName = (name) => parseBuckets(getState().settings || {}).find((item) => item.name === name);
+  const verifyS3Auth = async (requestMeta, method, path, params) => {
+    const credential = s3Credential(getState().settings || {});
+    if (!credential || shouldApplyUserPermission(requestMeta)) return null;
+    const bodyText = await requestBodyText(requestMeta);
+    const queryCredential = params.get("X-Amz-Credential");
+    if (params.get("X-Amz-Algorithm") === "AWS4-HMAC-SHA256" && queryCredential) {
+      const accessKeyId = queryCredential.split("/")[0] || "";
+      if (accessKeyId !== credential.accessKeyId) return errorXml("InvalidAccessKeyId", "invalid access key id", 403);
+      const signature = expectedSignature({
+        bodyText,
+        credential: queryCredential,
+        dateTime: params.get("X-Amz-Date") || "",
+        method,
+        params,
+        path,
+        payloadHash: params.get("X-Amz-Content-Sha256") || "UNSIGNED-PAYLOAD",
+        requestMeta,
+        secretAccessKey: credential.secretAccessKey,
+        signedHeaders: params.get("X-Amz-SignedHeaders") || "host",
+        skipQuerySignature: true,
+      });
+      return signature && signature === params.get("X-Amz-Signature")
+        ? null
+        : errorXml("SignatureDoesNotMatch", "signature does not match", 403);
+    }
+    const auth = parseAuthParams(authHeader(requestMeta));
+    if (!auth) return errorXml("AccessDenied", "access denied", 403);
+    const accessKeyId = auth.Credential.split("/")[0] || "";
+    if (accessKeyId !== credential.accessKeyId) return errorXml("InvalidAccessKeyId", "invalid access key id", 403);
+    const payloadHeader = headerValue(requestMeta, "x-amz-content-sha256");
+    const signature = expectedSignature({
+      bodyText,
+      credential: auth.Credential,
+      dateTime: headerValue(requestMeta, "x-amz-date"),
+      method,
+      params,
+      path,
+      payloadHash: payloadHeader === "UNSIGNED-PAYLOAD" ? "UNSIGNED-PAYLOAD" : (payloadHeader || sha256Hex(bodyText || "")),
+      requestMeta,
+      secretAccessKey: credential.secretAccessKey,
+      signedHeaders: auth.SignedHeaders,
+    });
+    return signature && signature === auth.Signature
+      ? null
+      : errorXml("SignatureDoesNotMatch", "signature does not match", 403);
+  };
+  const isWriteMethod = (method, params) => (
+    ["PUT", "DELETE"].includes(method)
+    || (method === "POST" && (params.has("delete") || params.has("uploads") || params.has("uploadId")))
+  );
+
   const listBucketXml = (bucket, options) => {
     const state = getState();
     const normalizedPrefix = String(options.prefix || "").replace(/^\/+/, "");
@@ -77,8 +223,9 @@ export const createS3Server = ({
     const maxKeys = Math.max(1, Number(options.maxKeys || 1000));
     const allObjects = Object.values(state.entries)
       .filter((entry) => entry.path !== "/" && !entry.is_dir)
+      .filter((entry) => bucket.path === "/" || entry.path === bucket.path || entry.path.startsWith(`${bucket.path}/`))
       .map((entry) => ({
-        key: entry.path.replace(/^\//, ""),
+        key: bucket.path === "/" ? entry.path.replace(/^\//, "") : entry.path.slice(bucket.path.length).replace(/^\/+/, ""),
         entry,
       }))
       .filter((item) => !normalizedPrefix || item.key.startsWith(normalizedPrefix))
@@ -134,9 +281,10 @@ export const createS3Server = ({
   const copySource = (requestMeta) => {
     const raw = decodeURIComponent(headerValue(requestMeta, "x-amz-copy-source").replace(/^\/+/, ""));
     if (!raw) return null;
-    const [bucket, ...objectParts] = raw.split("/");
-    if (bucket !== DEFAULT_BUCKET) return null;
-    return objectPath(objectParts.join("/"));
+    const [sourceBucketName, ...objectParts] = raw.split("/");
+    const sourceBucket = bucketByName(sourceBucketName);
+    if (!sourceBucket) return null;
+    return objectPath(sourceBucket, objectParts.join("/"));
   };
 
   const copyResultXml = () => xmlResponse([
@@ -224,6 +372,17 @@ export const createS3Server = ({
     const method = String(requestMeta.method || requestMeta.Method || "GET").toUpperCase();
     const path = requestPath(request);
     const { bucket, object } = s3PathParts(path);
+    const requestUrl = request.url || request.URL || {};
+    const query = requestUrl.query || requestUrl.Query || "";
+    const params = new URLSearchParams(query);
+    const authError = await verifyS3Auth(requestMeta, method, path, params);
+    if (authError) return authError;
+    if (shouldApplyUserPermission(requestMeta)) {
+      const user = currentUser?.(request);
+      if (!canWebdavRead(user) || (isWriteMethod(method, params) && !canWebdavManage(user))) {
+        return errorXml("AccessDenied", "access denied", 403);
+      }
+    }
 
     if (method === "OPTIONS") {
       const response = textResponse("", 204);
@@ -231,33 +390,30 @@ export const createS3Server = ({
       return response;
     }
 
+    const buckets = parseBuckets(getState().settings || {});
     if (!bucket) {
-      if (method === "GET" || method === "HEAD") return listBucketsXml();
+      if (method === "GET" || method === "HEAD") return listBucketsXml(buckets);
       return errorXml("MethodNotAllowed", "method not allowed", 405);
     }
-    if (bucket !== DEFAULT_BUCKET) return errorXml("NoSuchBucket", "bucket does not exist", 404);
+    const bucketInfo = buckets.find((item) => item.name === bucket);
+    if (!bucketInfo) return errorXml("NoSuchBucket", "bucket does not exist", 404);
 
     if (!object) {
       if (method === "POST") {
-        const requestUrl = request.url || request.URL || {};
-        const query = requestUrl.query || requestUrl.Query || "";
         if (new URLSearchParams(query).has("delete")) {
           const objects = await parseDeleteObjects(requestMeta);
-          for (const key of objects) removeEntry(objectPath(key));
+          for (const key of objects) removeEntry(objectPath(bucketInfo, key));
           await saveState();
           return multiDeleteXml(objects);
         }
       }
       if (method === "GET" || method === "HEAD") {
-        const requestUrl = request.url || request.URL || {};
-        const query = requestUrl.query || requestUrl.Query || "";
-        const params = new URLSearchParams(query);
         if (params.has("uploads")) {
           return listMultipartUploadsXml(bucket, ensureMultipartState(), {
             prefix: params.get("prefix") || "",
           });
         }
-        return listBucketXml(bucket, {
+        return listBucketXml(bucketInfo, {
           delimiter: params.get("delimiter") || "",
           maxKeys: params.get("max-keys") || params.get("maxKeys") || 1000,
           prefix: params.get("prefix") || "",
@@ -268,13 +424,9 @@ export const createS3Server = ({
       return errorXml("MethodNotAllowed", "method not allowed", 405);
     }
 
-    const fsPath = objectPath(object);
+    const fsPath = objectPath(bucketInfo, object);
     const state = getState();
     const entry = state.entries[fsPath];
-    const requestUrl = request.url || request.URL || {};
-    const query = requestUrl.query || requestUrl.Query || "";
-    const params = new URLSearchParams(query);
-
     if (method === "GET" || method === "HEAD") {
       if (params.has("uploadId")) {
         const uploadId = params.get("uploadId");

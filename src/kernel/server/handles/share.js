@@ -31,6 +31,40 @@ const pathWithinBase = (path, basePath) => {
   return base === "/" || target === base || target.startsWith(`${base}/`);
 };
 
+const shareCreatorUser = (state, share) => {
+  const normalized = normalizeShare(share);
+  const users = (state.users || []).map(normalizeUser);
+  return users.find((user) => Number(user.id) === Number(normalized.creator_id))
+    || users.find((user) => user.username === normalized.creator)
+    || null;
+};
+
+const canCreatorReadSharePath = (state, share, targetPath) => {
+  const creator = shareCreatorUser(state, share);
+  if (!creator || creator.disabled) return false;
+  if (!pathWithinBase(targetPath, creator.base_path)) return false;
+  const meta = nearestMeta(state, targetPath);
+  return canAccessByMeta(creator, meta, targetPath, "");
+};
+
+const canCreatorReadShareTargets = (state, share, targetPath) => {
+  const normalized = normalizeShare(share);
+  if (targetPath !== "/") return canCreatorReadSharePath(state, share, targetPath);
+  return normalized.files.length > 0
+    && normalized.files.every((file) => canCreatorReadSharePath(state, share, file));
+};
+
+const shareTargetPath = (share, inner) => {
+  const normalized = normalizeShare(share);
+  if (normalized.files.length === 1 || inner !== "/") {
+    const base = normalized.files.length === 1 ? normalized.files[0] : normalized.files.find((file) => basename(file) === inner.replace(/^\/+/, "").split("/")[0]);
+    if (!base) return "";
+    const rest = normalized.files.length === 1 ? inner : normalizePath("/" + inner.replace(/^\/+/, "").split("/").slice(1).join("/"));
+    return rest === "/" ? normalizePath(base) : normalizePath(`${base}/${rest.replace(/^\/+/, "")}`);
+  }
+  return "/";
+};
+
 export const normalizeShare = (share = {}, now) => {
   const files = shareFilesOf(share);
   const id = shareIdOf(share) || randomShareId();
@@ -82,6 +116,8 @@ export const shareNeedsPassword = ({ path, password, state }) => {
   if (source.disabled) return null;
   if (share.max_accessed > 0 && share.accessed >= share.max_accessed) return null;
   if (share.expires && !Number.isNaN(Date.parse(share.expires)) && Date.parse(share.expires) < Date.now()) return null;
+  const targetPath = shareTargetPath(source, normalizePath("/" + normalized.replace(/^\/+/, "").split("/").slice(1).join("/")));
+  if (!targetPath || !canCreatorReadShareTargets(state, source, targetPath)) return null;
   if (!share.pwd || share.pwd === password) return null;
   return { sid, share: source, normalizedShare: share };
 };
@@ -95,12 +131,12 @@ export const sharePathInfo = ({ path, password, state }) => {
   const share = normalizeShare(source);
   const inner = normalizePath("/" + innerParts.join("/"));
   if (share.files.length === 1 || inner !== "/") {
-    const base = share.files.length === 1 ? share.files[0] : share.files.find((file) => basename(file) === inner.replace(/^\/+/, "").split("/")[0]);
-    if (!base) return null;
-    const rest = share.files.length === 1 ? inner : normalizePath("/" + inner.replace(/^\/+/, "").split("/").slice(1).join("/"));
-    const targetPath = rest === "/" ? normalizePath(base) : normalizePath(`${base}/${rest.replace(/^\/+/, "")}`);
+    const targetPath = shareTargetPath(source, inner);
+    if (!targetPath) return null;
+    if (!canCreatorReadShareTargets(state, source, targetPath)) return null;
     return { inner, share: source, normalizedShare: share, targetPath };
   }
+  if (!canCreatorReadShareTargets(state, source, "/")) return null;
   return { inner, share: source, normalizedShare: share, targetPath: "/" };
 };
 

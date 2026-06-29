@@ -14,6 +14,7 @@ export const TASK_TYPES = [
   "aria2_transfer",
   "qbit_down",
   "qbit_transfer",
+  "index",
   "decompress",
   "decompress_upload",
 ]

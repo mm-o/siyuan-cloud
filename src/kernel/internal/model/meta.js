@@ -72,6 +72,12 @@ export const canReadByMeta = (user, meta, path) => {
   return !metaCoversPath(meta.path, path, meta.read_users_sub) || meta.read_users.map(Number).includes(userId);
 };
 
+export const canWriteByMeta = (user, meta, path) => {
+  if (!user || !meta || !meta.write_users?.length) return true;
+  const userId = Number(user.id || 0);
+  return !metaCoversPath(meta.path, path, meta.write_users_sub) || meta.write_users.map(Number).includes(userId);
+};
+
 export const canAccessByMeta = (user, meta, path, password = "") => {
   if (!user || !meta) return true;
   if (!canSeeHides(user) && isHiddenByMeta(meta, path, path.split("/").pop() || "")) return false;

@@ -22,10 +22,15 @@ import {
   SETTING_GROUP,
 } from "./internal/model/setting.js";
 import {
+  parseAuthToken,
+  tokenFingerprint,
+} from "./internal/auth/token.js";
+import {
   accountFromSiyuanConf,
   defaultGuestUser,
   normalizeUser,
   syncDefaultUserWithSiyuan,
+  USER_ROLE,
 } from "./internal/model/user.js";
 import {
   driverInfoMap,
@@ -263,13 +268,50 @@ import { createWebDavServer } from "./server/webdav.js";
     return "";
   };
 
-  const currentUser = (request) => {
-    const token = requestHeader(request, "Authorization").replace(/^Bearer\s+/i, "");
-    const id = token.startsWith("siyuan-cloud-port:") ? Number(token.slice("siyuan-cloud-port:".length)) : 0;
-    const user = id
-      ? state.users.find((item) => Number(item.id) === id)
-      : state.users.find((item) => Number(item.role) === 2) || state.users[0];
-    return normalizeUser(user || defaultGuestUser(), Math.max(0, Number(user?.id || 2) - 1));
+  const adminUser = () => state.users.find((item) => Number(item.role) === USER_ROLE.ADMIN) || state.users[0];
+  const guestUser = () => state.users.find((item) => Number(item.role) === USER_ROLE.GUEST) || defaultGuestUser();
+  const currentUser = (request, options = {}) => {
+    const token = (
+      requestHeader(request, "X-Siyuan-Cloud-Authorization")
+      || requestHeader(request, "Authorization")
+    ).replace(/^Bearer\s+/i, "");
+    const context = (user, auth = "token") => {
+      const normalized = normalizeUser(user || defaultGuestUser(), Math.max(0, Number(user?.id || 2) - 1));
+      return { auth, error: null, user: normalized };
+    };
+    if (token && token === String(state.settings?.token || "")) return context(adminUser(), "admin_token");
+    if (token.startsWith("siyuan-cloud-port:")) {
+      const id = Number(token.slice("siyuan-cloud-port:".length));
+      const user = state.users.find((item) => Number(item.id) === id);
+      if (user?.disabled && !options.allowDisabledGuest) return { auth: "legacy_token", error: "Current user is disabled, replace please", user: normalizeUser(user) };
+      return context(user || defaultGuestUser(), "legacy_token");
+    }
+    if (!token) {
+      const guest = guestUser();
+      if (guest.disabled && !options.allowDisabledGuest) return { auth: "guest", error: "Guest user is disabled, login please", user: normalizeUser(guest, 1) };
+      return context(guest, "guest");
+    }
+    try {
+      const claims = parseAuthToken(token, state.settings?.token || "siyuan-cloud-token");
+      const user = state.users.find((item) => item.username === claims.username);
+      if (!user) return { auth: "jwt", error: "user not found", user: normalizeUser(defaultGuestUser(), 1) };
+      if ((user.logout_tokens || []).includes(tokenFingerprint(token))) return { auth: "jwt", error: "Token has been logged out, login please", user: normalizeUser(user) };
+      if (Number(claims.pwd_ts || 0) !== Number(user.pwd_ts || 0)) return { auth: "jwt", error: "Password has been changed, login please", user: normalizeUser(user) };
+      if (user.disabled) return { auth: "jwt", error: "Current user is disabled, replace please", user: normalizeUser(user) };
+      return context(user, "jwt");
+    } catch (error) {
+      return { auth: "jwt", error: error?.message || "couldn't handle this token", user: normalizeUser(defaultGuestUser(), 1) };
+    }
+  };
+  const requestUser = (request, options) => currentUser(request, options).user;
+  const requireCurrentUser = (request, options = {}) => {
+    const ctx = currentUser(request, options);
+    return ctx.error ? { error: failure(ctx.error, 401), user: ctx.user, auth: ctx.auth } : ctx;
+  };
+  const requireAdmin = (request) => {
+    const ctx = requireCurrentUser(request);
+    if (ctx.error) return ctx;
+    return Number(ctx.user.role) !== USER_ROLE.ADMIN ? { ...ctx, error: failure("You are not an admin", 403) } : ctx;
   };
 
   const rawForwardHeaders = (headers = {}) => {
@@ -546,6 +588,7 @@ import { createWebDavServer } from "./server/webdav.js";
   const handleWebDav = createWebDavServer({
     cloneEntryTree,
     createFile,
+    currentUser: requestUser,
     ensureDir,
     getState: () => state,
     isWorkspacePath,
@@ -561,6 +604,7 @@ import { createWebDavServer } from "./server/webdav.js";
   const handleS3 = createS3Server({
     cloneEntryTree,
     createFile,
+    currentUser: requestUser,
     ensureDir,
     getState: () => state,
     removeEntry,
@@ -581,12 +625,14 @@ import { createWebDavServer } from "./server/webdav.js";
       handlersRef: () => handlers,
     }),
     ...createTaskHandlers({
+      currentUser: requestUser,
       parseJson,
       queryValue,
       saveState: saveRuntimeState,
       taskStore,
     }),
     ...createAuthHandlers({
+      currentUser,
       getState: () => state,
       parseJson,
       saveState: saveConfigState,
@@ -601,28 +647,36 @@ import { createWebDavServer } from "./server/webdav.js";
       pageSlice,
       parseJson,
       queryValue,
+      requireAdmin,
       saveState: saveConfigState,
     }),
     ...createMessageHandlers({
       getState: () => state,
       now,
       parseJson,
+      requireAdmin,
       saveState: saveRuntimeState,
     }),
     ...createIndexHandlers({
+      currentUser: requestUser,
       parseJson,
+      requireAdmin,
       searchIndex,
+      taskStore,
     }),
     ...createScanHandlers({
       getState: () => state,
       now,
+      requireAdmin,
       saveState: saveRuntimeState,
     }),
     ...createSecurityHandlers({
+      currentUser,
       getState: () => state,
       now,
       parseJson,
       queryValue,
+      requireAdmin,
       saveState: saveConfigState,
     }),
     ...createPublicHandlers({
@@ -640,6 +694,7 @@ import { createWebDavServer } from "./server/webdav.js";
       parseJson,
       queryValue,
       reloadConfigState,
+      requireAdmin,
       saveState: saveConfigState,
       saveToolSettings,
       settingItem,
@@ -650,6 +705,7 @@ import { createWebDavServer } from "./server/webdav.js";
       client: siyuan.client,
       cloneEntryTree,
       createFile,
+      currentUser: requestUser,
       driverRuntime,
       ensureDir,
       getState: () => state,
@@ -679,6 +735,7 @@ import { createWebDavServer } from "./server/webdav.js";
     ...createArchiveHandlers({
       client: siyuan.client,
       createFile,
+      currentUser: requestUser,
       driverRuntime,
       ensureDir,
       getState: () => state,
@@ -688,7 +745,7 @@ import { createWebDavServer } from "./server/webdav.js";
       taskStore,
     }),
     ...createShareHandlers({
-      currentUser,
+      currentUser: requestUser,
       driverRuntime,
       getState: () => state,
       isWorkspacePath,

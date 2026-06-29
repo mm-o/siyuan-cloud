@@ -1,11 +1,12 @@
 export const privateBase = '/plugin/private/siyuan-cloud'
-let openListAuthToken = ''
+const openListAuthHeader = 'X-Siyuan-Cloud-Authorization'
+let openListAuthToken = 'siyuan-cloud-token'
 
 export function setOpenListAuthToken(token = '') {
   openListAuthToken = String(token || '')
 }
 
-function withOpenListHeaders(headers?: HeadersInit) {
+export function withOpenListHeaders(headers?: HeadersInit) {
   const merged: Record<string, string> = {}
   if (headers instanceof Headers) {
     headers.forEach((value, key) => {
@@ -19,8 +20,11 @@ function withOpenListHeaders(headers?: HeadersInit) {
   else {
     Object.assign(merged, headers || {})
   }
-  if (openListAuthToken && !Object.keys(merged).some(key => key.toLowerCase() === 'authorization'))
-    merged.Authorization = openListAuthToken
+  if (openListAuthToken) {
+    const keys = Object.keys(merged).map(key => key.toLowerCase())
+    if (!keys.includes(openListAuthHeader.toLowerCase()))
+      merged[openListAuthHeader] = openListAuthToken
+  }
   return merged
 }
 

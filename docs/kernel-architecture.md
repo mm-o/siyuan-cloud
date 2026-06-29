@@ -59,12 +59,12 @@ OpenList-compatible JSON 响应统一使用：
 当前项目不是 OpenList 全量实现。以下能力只能按“浅兼容/占位/待迁移”理解：
 
 - 搜索：已有本地持久 search node index、admin index build/update/clear/progress、`ignore_paths` / `disable_index` 跳过规则和按索引查询初版；仍缺 OpenList 完整 searcher backend、异步 running/stop 取消、自动增量和多后端配置。
-- 任务：`/api/task/*` 已对齐 OpenList `server/handles/task.go` 的 TaskInfo 字段、done/undone 数组和 info/cancel/delete/retry/batch/clear/retry_failed 返回形态；批量接口只接受 OpenList JSON 字符串数组请求体。仍是轻量 task record，缺 OpenList `internal/task` + `tache` 的真实异步队列、取消传播、重试调度、creator 权限过滤和 task group coordinator。
-- 分享：`/api/share/*` 已按 OpenList `model.Sharing` 主字段和 `server/handles/sharing.go` 管理路由收口，支持 `id/files/pwd/accessed/max_accessed`、多文件分享根、密码/过期/禁用校验、按 share id + client IP 去重的访问计数、`/api/fs/{list,get}` 公开读取和 `/sd/{id}` 下载；share create/update 保存清洗后的路径而不要求本地 `state.entries` 存在，公开读取时可通过 `driverRuntime` 解析挂载云盘文件；`/sd` 下载按 storage/driver 策略在 plugin proxy 与 driver redirect 间分流，不保留额外强制代理开关；管理路由支持 OpenList query `id`，config import 保留字符串/CJK share ID，archive meta/list 已识别 OpenList `/@s` 分享 split 并真实解析单文件或子路径分享压缩包，`/sad/{id}` 已可在密码校验后委托 archive entry 提取。显式 token 的分享管理请求已接入 creator owner 过滤、`CanShare`/自定义 ID、`base_path` 和 nearest meta 读访问检查；公开读取仍按 share 自身校验，尚未等价于 OpenList 完整请求上下文权限模型。
+- 任务：`/api/task/*` 已对齐 OpenList `server/handles/task.go` 的 TaskInfo 字段、done/undone 数组和 info/cancel/delete/retry/batch/clear/retry_failed 返回形态；批量接口只接受 OpenList JSON 字符串数组请求体。move/copy/offline/decompress 这类当前会创建轻量 task record 的入口会写入请求用户 `creator/creator_id/creator_role`，task list/info/cancel/delete/retry/clear 会按当前用户过滤，管理员可见全量。仍缺 OpenList `internal/task` + `tache` 的真实异步队列、取消传播、重试调度、实时进度和 task group coordinator。
+- 分享：`/api/share/*` 已按 OpenList `model.Sharing` 主字段和 `server/handles/sharing.go` 管理路由收口，支持 `id/files/pwd/accessed/max_accessed`、多文件分享根、密码/过期/禁用校验、按 share id + client IP 去重的访问计数、`/api/fs/{list,get}` 公开读取和 `/sd/{id}` 下载；share create/update 保存清洗后的路径而不要求本地 `state.entries` 存在，公开读取时可通过 `driverRuntime` 解析挂载云盘文件；`/sd` 下载按 storage/driver 策略在 plugin proxy 与 driver redirect 间分流，不保留额外强制代理开关；管理路由支持 OpenList query `id`，config import 保留字符串/CJK share ID，archive meta/list 已识别 OpenList `/@s` 分享 split 并真实解析单文件或子路径分享压缩包，`/sad/{id}` 已可在密码校验后委托 archive entry 提取。显式 token 的分享管理请求已接入 creator owner 过滤、`CanShare`/自定义 ID、`base_path` 和 nearest meta 读访问检查；公开读取、`/sd`、`/@s` archive 和 `/sad` 现在会在分享密码/过期/次数之外复核 creator 当前未禁用、目标路径仍在 creator `base_path` 内且通过 nearest meta 读/password/hide 检查。仍未等价于 OpenList 完整 `internal/sharing`。
 - 离线/torrent/archive：route 已注册或返回结构化占位，archive extension discovery 已按 OpenList archive tool keys 对齐，`/api/fs/archive/meta|list` 能读取虚拟 FS 或 mounted driver `read()` body/link 中 ZIP、tar、tgz/tar.gz 的目录树和 inner_path 列表；`/@s` 分享 archive meta/list 已解包到真实分享文件；`/ae`、`/ad`、`/ap` 和 `/sad` 可提取 ZIP stored/deflate 与 tar/tgz entry；`/api/fs/archive/decompress` 已支持解压到虚拟 FS 或带 `put()` 的 mounted driver 目标并返回 `task` 数组。ZIP 加密条目只检测，不解密，`pass` / `archive_pass` 当前返回明确 `501 wrong archive password`；`/api/fs/add_offline_download` 已对齐 OpenList `urls` trim/空行跳过和 `{ tasks: [...] }` 外形，torrent parse/upload_parse/generate 已有 JS bencode reader/generator 和 CAS 扩展读取/写入。但 aria2/qbit/transmission/SimpleHttp、ed2k、189/189PC 远端 CAS rapid、rar/7z 和其它 archive reader 未迁移。
 - Auth/Admin：SSO/WebAuthn/2FA/SSH key/user/security settings 多数为兼容表面或轻量状态，不等价于 OpenList 安全模型。
 
-用户基线已经按 OpenList `model.User` 字段收口到 `src/kernel/internal/model/user.js`：默认 admin/disabled guest、`role`、`base_path`、`permission`、`sso_id`、`allow_ldap` 和脱敏响应都在这里规范化。kernel onload 会读取思源 `/api/system/getConf`，把默认 admin username 同步成当前思源账号昵称/用户名，并保留 `siyuan_account` 扩展信息；拿不到账号时继续使用 `admin`。`/api/admin/user/list/get/create/update/delete/cancel_2fa` 已保留 OpenList 的分页响应和角色限制，Dock 有紧凑用户管理页。当前用户权限位已开始用于 share 管理侧 creator/base_path/meta 检查，但还没有完整贯穿 FS/task/WebDAV/S3 和公开读取请求上下文；后续补权限时继续对照 OpenList `server/common/check.go`、`server/middlewares/auth.go` 和各 handler 的 `conf.UserKey` 使用点。
+用户基线已经按 OpenList `model.User` 字段收口到 `src/kernel/internal/model/user.js`：默认 admin/disabled guest、`role`、`base_path`、`permission`、`sso_id`、`allow_ldap`、`pwd_ts` 和脱敏响应都在这里规范化。kernel onload 会读取思源 `/api/system/getConf`，把默认 admin username 同步成当前思源账号昵称/用户名，并保留 `siyuan_account` 扩展信息；拿不到账号时继续使用 `admin`。`/api/auth/login` 和 `/api/auth/login/hash` 已返回 OpenList-style HS256 JWT payload（`username/pwd_ts/exp/iat/nbf`），settings `token` 作为 admin token，空 Authorization 按 OpenList `Auth` 语义解析为 guest，用户密码变更会让旧 JWT 因 `pwd_ts` 不匹配失效；旧 `siyuan-cloud-port:<id>` 仅作为既有插件集成兼容入口保留。`/api/admin/*`、admin meta/message/index/scan/sshkey 子路由已统一套 `AuthAdmin` 等价边界，`/api/me`、SSH key 和 2FA 使用当前 request user。当前用户权限位已用于 share 管理侧 creator/base_path/meta 检查，并在公开分享读取时复核 creator 当前权限；task 记录和 task API 已按 creator 做轻量过滤；普通 FS list/get/dirs/other 和 mkdir/upload/rename/move/copy/remove/batch rename/recursive move/remove empty/offline 已按 OpenList `user.JoinPath`、`CanAccess`、`CanRead`、`CanWrite` 和对应 permission bit 做入口校验。WebDAV 入口已按 OpenList `WebDAVAuth` 的 `CanWebdavRead` / `CanWebdavManage` 方法分组过滤；S3 上游是 access key/secret 认证，本端已消费 `s3_access_key_id`、`s3_secret_access_key` 和 `s3_buckets`，配置 AK/SK 后要求 AWS SigV4 header/query 签名，未配置时保留轻量兼容免签；显式 `siyuan-cloud-port:<id>` token 请求继续作为插件集成入口复用 WebDAV 读/管权限过滤。Archive meta/list/decompress、torrent generate/rapid_upload 和 search 也已按各自 OpenList handler 的入口语义接入权限边界。
 
 ## 流式代理边界
 
@@ -178,3 +178,33 @@ node ./scripts/kernel-route-smoke.mjs
 pnpm build
 node --check dist/kernel.js
 ```
+
+## 2026-06-29 Capability Matrix
+
+- `src/kernel/server/handles/public.js` now exposes structured capability discovery. `/api/public/api` keeps the legacy `capabilities: string[]` list and adds `capability_summary`, `capability_matrix`, and `driver_capabilities`.
+- `capability_matrix` uses `done` / `partial` / `placeholder` / `unsupported` so callers can distinguish a completed capability from a registered route or compatibility placeholder. Each partial/placeholder item should carry a short `next` note.
+- `driver_capabilities` is method-granular for Dock-exposed runtime drivers: `list/get/link/read/mkdir/rename/move/copy/remove/put/direct_upload/other/details/rapid_upload/torrent/offline`.
+- `src/kernel/server/handles/status.js` reuses the same summary and driver matrix, keeping `/siyuan-cloud/status` and `/api/public/api` aligned.
+- `scripts/kernel-route-smoke.mjs` asserts the matrix shape and representative driver method statuses.
+
+## 2026-06-29 Task Queue Base
+
+- `src/kernel/internal/task/manager.js` now has two task creation paths. `addTask()` keeps the old immediate record behavior for existing copy/move/decompress/offline placeholders, while `enqueueTask()` creates a real queued task with `pending -> running -> succeeded/failed/canceled` transitions.
+- The queue is intentionally small: one in-memory worker lane, persisted task status in `runtime.json`, progress updates through `progress({ progress, status, totalBytes, error })`, and cancel requests through existing `/api/task/{group}/cancel` routes. This is the base for later OpenList `internal/task` and `tache` alignment, not the full coordinator yet.
+- `TASK_TYPES` includes `index`, so `/api/task/index/*` is available.
+- `src/kernel/server/handles/index.js` keeps synchronous index build/update as the default. Passing `async: true`, `task: true`, or `queued: true` queues an index task and returns `{ task }`.
+- Smoke coverage creates an async index update task and verifies it reaches `/api/task/index/done`.
+
+## 2026-06-29 Index Stop
+
+- `src/kernel/internal/search/index.js` accepts `shouldCancel` during build. The directory walker checks it before object reads, during child traversal, and before committing nodes.
+- `/api/admin/index/stop` now cancels the active or first undone `index` task through `taskStore.markCanceled`. The queued worker observes the cancel token and finalizes the task as canceled.
+- `/api/admin/index/progress` returns the existing progress payload plus `task` and `task_id`, allowing callers to correlate search progress with `/api/task/index/*`.
+- The stop smoke test accepts both deterministic outcomes for a tiny local index: successful cancellation when stop wins the race, or `400 index is not running` when the task already completed.
+
+## 2026-06-29 Password Hash And Logout
+
+- `src/kernel/internal/auth/token.js` now mirrors OpenList's two-step password hash shape: static SHA-256 with the OpenList static salt, then SHA-256 with a per-user salt. New and changed passwords are stored as `pwd_hash` plus `pwd_salt/salt`; `password` is cleared.
+- `src/kernel/server/handles/auth.js` validates raw passwords through the stored hash and validates `/api/auth/login/hash` against the OpenList static hash. Legacy plaintext users are migrated on successful login.
+- `src/kernel/index.js` rejects JWTs whose fingerprint is present in the user's `logout_tokens`, giving `/api/auth/logout` current-token invalidation without blocking immediately reissued tokens.
+- User responses are sanitized so password hashes, salts, and logout token fingerprints are not returned.

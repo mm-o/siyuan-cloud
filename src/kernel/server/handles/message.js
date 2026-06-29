@@ -8,6 +8,7 @@ export const createMessageHandlers = ({
   getState,
   now,
   parseJson,
+  requireAdmin,
   saveState,
 }) => {
   const state = new Proxy({}, {
@@ -18,7 +19,13 @@ export const createMessageHandlers = ({
     },
   });
 
-  return {
+  const withAdmin = (handler) => async (request) => {
+    const ctx = requireAdmin?.(request);
+    if (ctx?.error) return jsonResponse(ctx.error, ctx.error.code);
+    return handler(request, ctx?.user);
+  };
+
+  const handlers = {
     "POST /api/admin/message/get": async () => {
       state.messages = state.messages || [];
       return jsonResponse(success(pageResp([...state.messages].reverse(), state.messages.length)));
@@ -37,4 +44,5 @@ export const createMessageHandlers = ({
       return jsonResponse(success());
     },
   };
+  return Object.fromEntries(Object.entries(handlers).map(([key, handler]) => [key, withAdmin(handler)]));
 };

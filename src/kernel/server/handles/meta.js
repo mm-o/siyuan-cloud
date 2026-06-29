@@ -13,6 +13,7 @@ export const createMetaHandlers = ({
   pageSlice,
   parseJson,
   queryValue,
+  requireAdmin,
   saveState,
 }) => {
   const state = new Proxy({}, {
@@ -25,7 +26,13 @@ export const createMetaHandlers = ({
 
   const nextId = () => Math.max(0, ...(state.metas || []).map((item) => item.id || 0)) + 1;
 
-  return {
+  const withAdmin = (handler) => async (request) => {
+    const ctx = requireAdmin?.(request);
+    if (ctx?.error) return jsonResponse(ctx.error, ctx.error.code);
+    return handler(request, ctx?.user);
+  };
+
+  const handlers = {
     "GET /api/admin/meta/list": async (request) => {
       state.metas = state.metas || [];
       return jsonResponse(success(pageSlice([...state.metas].sort((a, b) => a.id - b.id), request)));
@@ -71,4 +78,5 @@ export const createMetaHandlers = ({
       return jsonResponse(success());
     },
   };
+  return Object.fromEntries(Object.entries(handlers).map(([key, handler]) => [key, withAdmin(handler)]));
 };

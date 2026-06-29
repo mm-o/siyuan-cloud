@@ -5,8 +5,8 @@ import {
 } from "../http.js";
 import { signAwsV4 } from "../aws4.js";
 
-const API = "https://www.123pan.com/api";
-const B_API = "https://www.123pan.com/b/api";
+const API = "https://api.123pan.cn/api";
+const B_API = "https://api.123278.com/b/api";
 const LOGIN_API = "https://login.123pan.com/api";
 const SIGN_IN = LOGIN_API + "/user/sign_in";
 const USER_INFO = B_API + "/user/info";

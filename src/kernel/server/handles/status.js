@@ -4,6 +4,7 @@ import {
   RUNTIME_FILE,
   SEARCH_INDEX_FILE,
 } from "../../internal/conf/const.js";
+import { capabilitySummary, driverCapabilityMatrix } from "./public.js";
 import { jsonResponse, success, textResponse } from "../common/response.js";
 
 const ADAPTERS = [
@@ -106,6 +107,8 @@ export const createStatusPayload = async ({
     storage: await getSyncInfo(client),
     routes: Object.keys(handlers).sort(),
     stages: STAGES.map(([key, status]) => ({ key, status })),
+    capability_summary: capabilitySummary(),
+    driver_capabilities: driverCapabilityMatrix(),
   };
 };
 

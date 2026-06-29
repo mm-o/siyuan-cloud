@@ -6,6 +6,7 @@ import {
 } from "../common/response.js";
 
 export const createTaskHandlers = ({
+  currentUser,
   parseJson,
   queryValue,
   taskStore,
@@ -21,52 +22,54 @@ export const createTaskHandlers = ({
   const taskId = async (request) => (await parseTaskRequest(request)).tid;
   const targeted = (type, callback) => async (request) => {
     const tid = await taskId(request);
-    const task = taskStore.getTask(type, tid);
+    const user = currentUser?.(request);
+    const task = taskStore.getTask(type, tid, user);
     if (!task) return jsonResponse(failure("task not found", 404));
-    await callback(task, tid);
+    await callback(task, tid, user);
     return jsonResponse(success());
   };
   const batch = (type, callback) => async (request) => {
     const req = await parseJson(request);
+    const user = currentUser?.(request);
     if (!Array.isArray(req)) return jsonResponse(failure("invalid request format", 400));
     const tids = req;
     const errors = {};
     for (const tid of tids) {
-      if (!taskStore.getTask(type, tid)) {
+      if (!taskStore.getTask(type, tid, user)) {
         errors[tid] = "task not found";
         continue;
       }
-      await callback(String(tid));
+      await callback(String(tid), user);
     }
     return jsonResponse(success(errors));
   };
   for (const type of TASK_TYPES) {
-    map[`GET /api/task/${type}/undone`] = async () => jsonResponse(success(taskStore.listTasks(type, false)));
-    map[`GET /api/task/${type}/done`] = async () => jsonResponse(success(taskStore.listTasks(type, true)));
+    map[`GET /api/task/${type}/undone`] = async (request) => jsonResponse(success(taskStore.listTasks(type, false, currentUser?.(request))));
+    map[`GET /api/task/${type}/done`] = async (request) => jsonResponse(success(taskStore.listTasks(type, true, currentUser?.(request))));
     const infoHandler = async (request) => {
-      const task = taskStore.getTask(type, await taskId(request));
+      const task = taskStore.getTask(type, await taskId(request), currentUser?.(request));
       return task ? jsonResponse(success(task)) : jsonResponse(failure("task not found", 404));
     };
     map[`POST /api/task/${type}/info`] = infoHandler;
     map[`GET /api/task/${type}/info`] = infoHandler;
-    map[`POST /api/task/${type}/retry`] = targeted(type, async (_, tid) => taskStore.retryTask(type, tid));
-    map[`POST /api/task/${type}/retry_failed`] = async () => {
-      await taskStore.retryFailed(type);
+    map[`POST /api/task/${type}/retry`] = targeted(type, async (_, tid, user) => taskStore.retryTask(type, tid, user));
+    map[`POST /api/task/${type}/retry_failed`] = async (request) => {
+      await taskStore.retryFailed(type, currentUser?.(request));
       return jsonResponse(success());
     };
-    map[`POST /api/task/${type}/clear_done`] = async () => {
-      await taskStore.clearDone(type);
+    map[`POST /api/task/${type}/clear_done`] = async (request) => {
+      await taskStore.clearDone(type, currentUser?.(request));
       return jsonResponse(success());
     };
-    map[`POST /api/task/${type}/clear_succeeded`] = async () => {
-      await taskStore.clearSucceeded(type);
+    map[`POST /api/task/${type}/clear_succeeded`] = async (request) => {
+      await taskStore.clearSucceeded(type, currentUser?.(request));
       return jsonResponse(success());
     };
-    map[`POST /api/task/${type}/cancel`] = targeted(type, async (_, tid) => taskStore.markCanceled(type, tid));
-    map[`POST /api/task/${type}/delete`] = targeted(type, async (_, tid) => taskStore.removeTask(type, tid));
-    map[`POST /api/task/${type}/cancel_some`] = batch(type, async (tid) => taskStore.markCanceled(type, tid));
-    map[`POST /api/task/${type}/delete_some`] = batch(type, async (tid) => taskStore.removeTask(type, tid));
-    map[`POST /api/task/${type}/retry_some`] = batch(type, async (tid) => taskStore.retryTask(type, tid));
+    map[`POST /api/task/${type}/cancel`] = targeted(type, async (_, tid, user) => taskStore.markCanceled(type, tid, user));
+    map[`POST /api/task/${type}/delete`] = targeted(type, async (_, tid, user) => taskStore.removeTask(type, tid, user));
+    map[`POST /api/task/${type}/cancel_some`] = batch(type, async (tid, user) => taskStore.markCanceled(type, tid, user));
+    map[`POST /api/task/${type}/delete_some`] = batch(type, async (tid, user) => taskStore.removeTask(type, tid, user));
+    map[`POST /api/task/${type}/retry_some`] = batch(type, async (tid, user) => taskStore.retryTask(type, tid, user));
   }
   return map;
 };
