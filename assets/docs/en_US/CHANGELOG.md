@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.3.6
+
+### Fixed
+
+- Removed SiYuan superblock markers from packaged docs because the rendered layout was too noisy.
+- Rebuilt `package.zip` so the release artifact contains the cleaned documentation.
+
 ## 0.3.5
 
 > [!INFO]
