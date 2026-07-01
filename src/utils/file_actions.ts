@@ -4,7 +4,15 @@ import {
   showMessage,
 } from 'siyuan'
 import { fsRemove } from '@/utils/api'
+import {
+  itemStableUrl,
+  triggerDownload,
+  type OpenListUrlItem,
+} from '@/utils/file_ui'
+import { escapeHtml } from '@/utils/file_ui'
 import { handleResp } from '@/utils/handle_resp'
+import { formatResourceUrlForMarkdown } from '@/utils/request'
+import { createShareForPaths } from '@/utils/share'
 
 export interface OpenListFileItem {
   name: string
@@ -13,7 +21,11 @@ export interface OpenListFileItem {
   path?: string
   parent?: string
   modified?: string
+  raw_url?: string
+  url?: string
 }
+
+type TranslateFallback = (key: string, fallback: string) => string
 
 export const normalizeOpenListPath = (path: string) => {
   const input = path === undefined || path === null || path === '' ? '/' : String(path)
@@ -81,6 +93,61 @@ export async function deleteOpenListSelection(options: {
       window.dispatchEvent(new CustomEvent('siyuan-cloud:changed'))
     },
   )
+}
+
+export async function downloadOpenListItem<T extends OpenListFileItem>(options: {
+  item: T
+  itemPath: (item: T) => string
+  resolveUrl: (path: string) => Promise<string>
+}) {
+  if (options.item.is_dir)
+    return
+  triggerDownload(await options.resolveUrl(options.itemPath(options.item)), options.item.name)
+}
+
+export async function copyOpenListItemLink<T extends OpenListUrlItem & { name: string }>(options: {
+  item: T
+  path: string
+  t: (key: string) => string
+  link?: (item: T, path: string) => string
+}) {
+  await navigator.clipboard?.writeText(options.link?.(options.item, options.path) || `[${options.item.name}](${itemStableUrl(options.item, options.path)})`)
+  showMessage(options.t('linkCopied'), 2000)
+}
+
+export async function shareOpenListSelection<T extends OpenListFileItem>(options: {
+  items: T[]
+  itemPath: (item: T) => string
+  tf: TranslateFallback
+}) {
+  await createShareForPaths({
+    paths: options.items.map(item => options.itemPath(item)),
+    tf: options.tf,
+  })
+}
+
+export const fallbackTranslator = (t: (key: string) => string): TranslateFallback =>
+  (key, fallback) => {
+    const value = t(key)
+    return value === key ? fallback : value
+  }
+
+const extensionOf = (name: string) => name.split('.').pop()?.toLowerCase() || ''
+const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
+const escapeMdDest = (url: string) => url.replace(/([\\()])/g, '\\$1')
+
+export function openListDocumentLink<T extends OpenListUrlItem & { name: string; is_dir?: boolean }>(options: {
+  item: T
+  path: string
+  imageExts?: Set<string>
+  videoExts?: Set<string>
+}) {
+  const url = itemStableUrl(options.item, options.path)
+  const ext = extensionOf(options.item.name)
+  if (!options.item.is_dir && options.videoExts?.has(ext))
+    return `<video controls src="${escapeHtml(formatResourceUrlForMarkdown(url))}"></video>`
+  const isImage = !options.item.is_dir && options.imageExts?.has(ext)
+  return `${isImage ? '!' : ''}[${escapeMdText(options.item.name)}](${escapeMdDest(isImage ? formatResourceUrlForMarkdown(url) : url)})`
 }
 
 export function openOpenListFileItemMenu(options: {

@@ -20,6 +20,11 @@ export const createWorkspaceAdapter = ({
     return rel.replace(/^\/+/, "");
   };
 
+  const workspacePublicUrl = (path) => {
+    const parts = workspaceRelPath(path).split("/").filter(Boolean);
+    return parts[0] === "data" && parts.length > 2 ? `/${parts.slice(1).join("/")}` : "";
+  };
+
   const siyuanApiJson = async (apiPath, data) => {
     const response = await client.fetch(apiPath, {
       method: "POST",
@@ -120,6 +125,7 @@ export const createWorkspaceAdapter = ({
     siyuanApiJson,
     workspaceGet,
     workspaceList,
+    workspacePublicUrl,
     workspaceReadText,
     workspaceRelPath,
   };

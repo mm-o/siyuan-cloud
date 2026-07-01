@@ -1,4 +1,4 @@
-import { privateBase, r, withOpenListHeaders, type OpenListResp } from './request'
+import { normalizeResourceUrl, privateBase, r, withOpenListHeaders, type OpenListResp } from './request'
 import {
   clearLocalMountCache,
   getLocal,
@@ -241,29 +241,45 @@ export const fsTorrentParse = (body: {
   return r.post('/fs/torrent/parse', body)
 }
 
-export function openListAbsoluteUrl(url: string) {
+export function openListAbsoluteUrl(url: string, options: { escapeHash?: boolean, escapeQuestion?: boolean } = {}) {
   if (!url)
     return ''
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url))
-    return url
-  return `${location.origin}${url.startsWith('/') ? '' : '/'}${url}`
+    return normalizeResourceUrl(url, options)
+  return normalizeResourceUrl(`${location.origin}${url.startsWith('/') ? '' : '/'}${url}`, options)
+}
+
+export function openListStableUrl(url: string, options: { escapeHash?: boolean, escapeQuestion?: boolean } = {}) {
+  if (!url)
+    return ''
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url))
+    return normalizeResourceUrl(url, options)
+  return normalizeResourceUrl(`${url.startsWith('/') ? '' : '/'}${url}`, options)
+}
+
+export function siyuanWorkspacePublicUrl(path: string) {
+  const parts = String(path || '').split('/').filter(Boolean)
+  const index = parts.indexOf('data')
+  return index >= 0 && parts.length > index + 2 ? `/${parts.slice(index + 1).join('/')}` : ''
 }
 
 function openListDownloadRoute(path: string, data: Record<string, any> = {}) {
   const sign = data.sign ? `?sign=${encodeURIComponent(String(data.sign))}` : ''
-  return openListAbsoluteUrl(`${privateBase}/d${path}${sign}`)
+  const route = openListAbsoluteUrl(`${privateBase}/d${path}`, { escapeHash: true, escapeQuestion: true })
+  return `${route}${sign}`
 }
 
 export async function resolveOpenListFile(path: string, password = '') {
   const local = await getLocal(path)
   if (local?.code === 200) {
     const data = local.data || {}
+    const url = String(data.raw_url || data.url || '')
     return {
       ...data,
       path,
-      raw_url: String(data.raw_url || data.url || ''),
-      d_url: String(data.raw_url || data.url || ''),
-      url: String(data.raw_url || data.url || ''),
+      raw_url: url,
+      d_url: normalizeResourceUrl(url),
+      url: normalizeResourceUrl(url),
     }
   }
   const payload = await fsGet(path, password)

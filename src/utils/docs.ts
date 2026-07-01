@@ -34,8 +34,10 @@ export function createDocs(plugin: any, t: (key: string) => string) {
       await siyuanData('/api/block/updateBlock', { id, dataType: 'markdown', data: markdown })
     else
       id = await siyuanData('/api/filetree/createDocWithMd', { notebook: notebook.id, path, markdown })
-    if (open)
+    if (open) {
       openTab({ app: plugin.app, doc: { id } })
+      await fetchSyncPost('/api/notification/pushErrMsg', { msg: t('docEditWarning'), timeout: 7000 })
+    }
     return id
   }
 

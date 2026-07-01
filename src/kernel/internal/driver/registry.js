@@ -12,6 +12,7 @@ import { createQuarkOpenDriver } from "./quark_open/driver.js";
 import { createQuarkDriver } from "./quark_uc/driver.js";
 import { createQuarkUCTVDriver } from "./quark_uc_tv/driver.js";
 import { createS3Driver } from "./s3/driver.js";
+import { createSiYuanWorkspaceDriver } from "./siyuan_workspace/driver.js";
 import { createWebDavDriver } from "./webdav/driver.js";
 
 const parseAddition = (storage) => {
@@ -31,8 +32,9 @@ const relPathForMount = (mountPath, path) => {
   return normalizePath(rest || "/");
 };
 
-export const createDriverRuntime = ({ client, getSettings, saveStorageAddition }) => {
+export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, workspaceGet, workspaceList, workspacePublicUrl, workspaceReadText }) => {
   const drivers = {
+    SiYuanWorkspace: createSiYuanWorkspaceDriver({ workspaceGet, workspaceList, workspacePublicUrl, workspaceReadText }),
     OpenList: createOpenListDriver({ client }),
     AListV3: createOpenListDriver({ client }),
     "AList V3": createOpenListDriver({ client }),

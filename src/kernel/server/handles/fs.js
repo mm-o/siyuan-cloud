@@ -576,13 +576,6 @@ export const createFsHandlers = ({
         .filter((item) => !isHiddenByMeta(meta, item.path, item.name))
         .map(toObjResp);
       if (path === "/") {
-        children.unshift(toObjResp({
-          name: "@workspace",
-          is_dir: true,
-          size: 0,
-          modified: now(),
-          created: now(),
-        }));
         for (const mountEntry of driverRuntime.mountEntries(state.storages, now)) {
           if (!children.some((item) => item.name === mountEntry.name)) children.unshift(toObjResp(mountEntry));
         }
@@ -618,7 +611,7 @@ export const createFsHandlers = ({
           const shouldProxy = storageShouldProxy(mount.storage);
           const data = await mount.driver.get(mount.storage, mount.relPath, { skipLink: shouldProxy });
           let rawUrl = data.raw_url || "";
-          if (data && !data.is_dir && shouldProxy) {
+          if (data && !data.is_dir && shouldProxy && !rawUrl) {
             rawUrl = rawUrlForStorage(mount.storage, path);
           }
           return jsonResponse(success(driverGetResp(data, rawUrl)));
@@ -812,7 +805,7 @@ export const createFsHandlers = ({
       }
       for (const name of names) {
         const path = normalizePath(dir + "/" + name);
-        const storage = state.storages.find((item) => Number(item.id) !== 1 && normalizePath(item.mount_path || "/") === path);
+        const storage = state.storages.find((item) => normalizePath(item.mount_path || "/") === path);
         if (storage) {
           state.storages = state.storages.filter((item) => item !== storage);
           storageRemoved = true;

@@ -294,6 +294,14 @@ Conclusion: `siyuan.storage` is persistent and syncable by default. Users can st
 - `/api/auth/logout` records the current JWT fingerprint in `logout_tokens`; JWT auth rejects those fingerprints. This avoids the timestamp race where logging out and immediately logging back in during the same second could invalidate the new token.
 - `sanitizeUser` removes password hash, salt, and logout fingerprint fields from user responses. Smoke coverage verifies raw login, hash login, logout invalidation, re-login, and password-change `pwd_ts` invalidation.
 
+## 2026-07-01 WebDAV And File UI Consolidation
+
+- WebDav runtime has been compared against `docs/OpenList-main/drivers/webdav` and `docs/OpenList-main/pkg/gowebdav`. The JS driver now keeps the same main helper shape: `readDir`, `stat`, `link`, `mkdirAll`, `renamePath`, `copyPath`, `removeAll`, and `writeStream`.
+- `readDir` uses `PROPFIND Depth:1`, skips the self collection response, and names children from href basename before falling back to `displayname`. `stat` uses `PROPFIND Depth:0`; the old HEAD-based get path was removed. `read()` returns a link/header object only, leaving `/d` and `/p` to produce preview/download URLs.
+- Remaining WebDAV parity gaps are explicit: persistent cookie jar, SharePoint `odrvcookie`, `tls_insecure_skip_verify`, Basic/Digest 401 negotiation, 409 parent retry for create/copy/move, and OpenList's no-redirect `Link(args.Redirect)` probe.
+- FileTab and Dock no longer maintain separate image viewer, download, copy-link, share, delete, prompt, size formatting, or context-menu logic. Shared behavior lives in `src/utils/file_ui.ts` and `src/utils/file_actions.ts`; component code should only provide current item lists and path resolvers.
+- The image viewer lazy-loads siblings and explicitly selects the clicked item after Viewer is shown, fixing the regression where preview opened from the first image instead of the clicked one. Error handling now uses shared `showErrorMessage`, fixing the previous Dock/FileTab `handleError is not defined` failures.
+
 ## 2026-05-25 FS Manage Batch
 
 - `src/kernel/server/handles/fs.js` now routes the common OpenList-style manage path through shared upload and same-mount transfer helpers instead of per-button frontend logic: raw `PUT /api/fs/put`, multipart `PUT /api/fs/form`, `POST /api/fs/get_direct_upload_info`, and same-storage `POST /api/fs/copy` / `POST /api/fs/move` all share the same normalized path, overwrite, and driver dispatch flow.

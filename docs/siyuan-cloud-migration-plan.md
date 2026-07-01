@@ -273,7 +273,7 @@
 
 - `/api/public/api` 在保留旧 `capabilities: string[]` 的同时新增 `capability_summary`、`capability_matrix` 和 `driver_capabilities`。矩阵按 `done`、`partial`、`placeholder`、`unsupported` 标记系统能力，并给 `partial`/`placeholder` 写明下一步。
 - `/siyuan-cloud/status` 复用同一份 `capability_summary` 和 `driver_capabilities`，Dock 和 companion 插件后续可以按机器可读状态决定是否显示入口，而不是只看 route 或 driver 名。
-- 首批 driver 方法矩阵覆盖 Dock 暴露的 runtime driver：SiYuanKernel、SiYuanWorkspace、Local、WebDav、OpenList/AList、S3/Doge、115、123、189、AliyundriveOpen、BaiduNetdisk、OneDrive、Quark/UC/QuarkOpen/QuarkTV/UCTV。115 上传、189PC rapid/CAS、offline、archive entry range、RAR/7z/ISO 等明确保持 placeholder/unsupported。
+- 首批 driver 方法矩阵覆盖 Dock 暴露的 runtime driver：SiYuanWorkspace、Local、WebDav、OpenList/AList、S3/Doge、115、123、189、AliyundriveOpen、BaiduNetdisk、OneDrive、Quark/UC/QuarkOpen/QuarkTV/UCTV。虚拟 FS 是思盘内置根能力，不再作为 `SiYuanKernel` driver 暴露；115 上传、189PC rapid/CAS、offline、archive entry range、RAR/7z/ISO 等明确保持 placeholder/unsupported。
 - `pnpm test:kernel` 已补 smoke 断言，校验 capability summary、代表性 `partial`/`placeholder`/`unsupported` 项，以及 115、189CloudPC、QuarkTV 的方法级状态；`pnpm build` 和生成 bundle 语法检查通过。
 
 ## 2026-06-29 Task 队列基座 / Index 异步模式
@@ -306,6 +306,20 @@
 - 真实登录验证确认：`login.123pan.com/api/user/sign_in` 仍返回 token，但旧 OpenList 常量 `https://www.123pan.com/b/api/user/info` 即使带新 token 也返回 `200 text/html` 网页兜底，导致 `invalid character '<' looking for beginning of value`。
 - 当前 123Pan 网页包生产配置使用 `postUrlPath=https://api.123278.com/b/api/`、`mainApiOrigin=https://api.123pan.cn`；`user/info` 和 `file/list/new` 已用真实请求确认 `https://api.123278.com/b/api/*` 返回 JSON。
 - 本端 `123Pan` runtime 的 `B_API` 已切到 `https://api.123278.com/b/api`，`origin/referer` 仍按网页请求保留 `https://www.123pan.com/`；smoke mock 同步改为新 host。
+
+## 2026-06-30 默认挂载收口
+
+- 新状态不再自动创建 `/` 的 `SiYuanKernel` 默认挂载；虚拟 FS 根目录继续由 `state.entries["/"]` 提供，并且不再作为可添加 driver 暴露。
+- 文件管理根目录不再自动插入 `@workspace` 入口；`/@workspace` 路径仍可被显式访问、局部索引和测试。用户手动添加 `SiYuanWorkspace` 挂载后，可通过自定义挂载路径进入工作空间。
+- `/api/admin/config/import` 和配置加载会过滤历史 `SiYuanKernel` storage，避免旧 `/` 或测试内核挂载继续出现在挂载页。
+- 已有配置中的旧 `/`、`@workspace` 相关入口或 `verify-*` 测试挂载不会被自动删除；用户可以在挂载页手动删除，避免升级时误删真实自定义配置。
+
+## 2026-07-01 WebDAV 对齐与文件 UI 收敛
+
+- WebDav driver 已按 `docs/OpenList-main/drivers/webdav` 和 `docs/OpenList-main/pkg/gowebdav` 主流程重整：列表走 `PROPFIND Depth:1`，对象 stat/get 走 `PROPFIND Depth:0`，跳过 self collection，文件名优先取 href basename，`read()` 只返回 OpenList `model.Link` 风格 URL/header，预览地址交给 `/d`、`/p` 统一代理。
+- 为了避免图片 503、目录 404、图片查看器打开第一张等问题继续被前端补丁掩盖，WebDAV 差异后续只在 driver/gowebdav 对齐层处理；当前明确剩余项包括 cookie jar、SharePoint `odrvcookie`、`tls_insecure_skip_verify`、Basic/Digest 401 negotiation、409 parent retry 和 no-redirect link probe。
+- FileTab 与 Dock 的文件行为收敛为一套维护点：`src/utils/file_ui.ts` 负责图片 Viewer、URL、大小、prompt、错误提示等 UI 小工具；`src/utils/file_actions.ts` 负责下载、复制链接、分享、删除、右键菜单和文档链接生成。组件只保留各自的列表渲染、选择状态和路径解析。
+- 已修复 Dock 与 FileTab 图片预览中的 `handleError is not defined`，并在 Viewer shown 后显式切到点击项，避免从第一张图片开始显示。
 
 ## 下一步
 

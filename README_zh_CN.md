@@ -20,6 +20,7 @@
 | 实时 API | [[API]] |
 | 驱动教程 | [[驱动说明]] |
 | 百度网盘 | [[百度网盘挂载]] |
+| Local 本地存储 | [[Local 本地存储]] |
 
 ---
 
@@ -49,17 +50,18 @@
 
 Dock 当前可见的运行时适配包括：
 
-- OpenList / AList V3
-- WebDAV
-- S3 / Doge
-- 115 Cloud
-- OneDrive
-- 123Pan
+- [[OpenList 兼容挂载]]
+- [[WebDAV 挂载]]
+- [[S3 兼容存储]]
+- [[115 Cloud 挂载]]
+- [[OneDrive 挂载]]
+- [[123Pan 挂载]]
 - [[百度网盘挂载]]
-- AliyundriveOpen
-- 189Cloud / 189CloudPC / 189CloudTV
-- Quark / UC / QuarkOpen / QuarkTV / UCTV
-- Local 本地存储
+- [[阿里云盘开放平台]]
+- [[189Cloud 系列]]
+- [[Quark UC 系列]]
+- [[Local 本地存储]]
+- [[思源工作空间]]
 - 内置虚拟存储
 
 > [!NOTE]
@@ -71,6 +73,7 @@ Dock 当前可见的运行时适配包括：
 | --- | --- |
 | 浏览云盘 | <kbd>Dock</kbd> 文件树或顶部栏文件管理 |
 | 管理文件 | 右键菜单上传、下载、重命名、复制、移动、删除 |
+| 管理用户 | 内置 `admin` 和 `guest` 用户跟随 OpenList 行为不可删除，Dock 用户管理不会为这两个用户显示删除按钮 |
 | 放进文档 | 复制 Markdown 图片、音视频标签、下载链接或 `siyuan://` 链接 |
 | 分享文件 | 使用分享菜单生成 `/sd/{id}` 私有路由链接 |
 | 接入插件 | companion 插件消费 `raw_url`、`/p/<path>`、`/d/<path>` 或 OpenList-compatible HTTP API |

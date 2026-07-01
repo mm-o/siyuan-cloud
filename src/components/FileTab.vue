@@ -183,20 +183,31 @@ import {
 } from '@/utils/archive'
 import {
   baseOpenListName,
+  copyOpenListItemLink,
   deleteOpenListSelection,
+  downloadOpenListItem,
+  fallbackTranslator,
   itemOpenListPath,
   joinOpenListPath,
   normalizeOpenListPath,
+  openListDocumentLink,
   openOpenListFileItemMenu,
   parentOpenListPath,
   selectedOpenListGroups,
+  shareOpenListSelection,
 } from '@/utils/file_actions'
 import {
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
-import { privateBase } from '@/utils/request'
-import { createShareForPaths } from '@/utils/share'
+import {
+  itemOpenUrl as openListItemOpenUrl,
+  escapeHtml,
+  formatSize,
+  openLazyImageViewer,
+  promptText,
+  showErrorMessage,
+} from '@/utils/file_ui'
 
 interface FsItem {
   name: string
@@ -337,16 +348,6 @@ function toggleSelectionMode() {
     clearSelection()
 }
 
-function formatSize(size = 0) {
-  if (size < 1024)
-    return `${size} B`
-  if (size < 1024 * 1024)
-    return `${(size / 1024).toFixed(1)} KB`
-  if (size < 1024 * 1024 * 1024)
-    return `${(size / 1024 / 1024).toFixed(1)} MB`
-  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
-}
-
 function formatModified(value?: string) {
   if (!value)
     return ''
@@ -370,135 +371,40 @@ function fileKind(item: FsItem) {
 const isImageFile = (item: FsItem) => fileKind(item) === 'image'
 const isArchiveFile = (item: FsItem) => !item.is_dir && isArchiveFileName(item.name)
 
-const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
-const escapeMdDest = (url: string) => url.replace(/([\\()])/g, '\\$1')
-const docProxyUrl = (path: string) => decodeURI(encodeURI(`${privateBase}/p${path}`)).replace(/#/g, '%23').replace(/\?/g, '%3F')
-const itemOpenUrl = (item: FsItem) => String(item.raw_url || item.url || '') || docProxyUrl(itemPath(item))
 const companionHref = (item: FsItem) => !item.is_dir && companionExts.has(extensionOf(item.name)) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
-function documentLink(item: FsItem, path: string) {
-  const kind = fileKind(item)
-  const url = itemOpenUrl(item) || docProxyUrl(path)
-  if (kind === 'video')
-    return `<video controls src="${escapeHtml(url)}"></video>`
-  return `${kind === 'image' ? '!' : ''}[${escapeMdText(item.name)}](${escapeMdDest(kind === 'image' ? url : docProxyUrl(path))})`
-}
-
-function triggerDownload(url: string, filename?: string) {
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.target = '_blank'
-  anchor.rel = 'noopener'
-  if (filename)
-    anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-}
+const itemOpenUrl = (item: FsItem) => openListItemOpenUrl(item, itemPath)
+const documentLink = (item: FsItem, path: string) => openListDocumentLink({ imageExts: fileKinds.image, item, path, videoExts: fileKinds.video })
 
 async function resolveDownloadUrl(path: string) {
   const local = items.value.find(item => itemPath(item) === path)
   if (local?.raw_url || local?.url)
-    return String(local.raw_url || local.url)
+    return itemOpenUrl(local)
   return (await resolveOpenListFile(path)).url
 }
 
-async function copyLink(item: FsItem, path: string) {
-  await navigator.clipboard?.writeText(documentLink(item, path))
-  showMessage(t('linkCopied'), 2000)
-}
-
-function loadViewerScript() {
-  if (document.getElementById('protyleViewerScript'))
-    return Promise.resolve()
-  return new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.id = 'protyleViewerScript'
-    script.src = '/stage/protyle/js/viewerjs/viewer.js?v=1.11.7'
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('viewer.js load failed'))
-    document.head.appendChild(script)
-  })
-}
+const copyLink = (item: FsItem, path: string) => copyOpenListItemLink({ item, link: documentLink, path, t })
 
 async function imageUrlFor(item: FsItem) {
   return resolveDownloadUrl(itemPath(item))
 }
 
 async function openImageViewer(item: FsItem) {
-  const currentUrl = await imageUrlFor(item)
-  const imageItems = items.value.filter(isImageFile)
-  const urls = await Promise.all(imageItems.map(imageUrlFor))
-  await loadViewerScript()
-  const imagesElement = document.createElement('ul')
-  urls.filter(Boolean).forEach((url) => {
-    const li = document.createElement('li')
-    const img = document.createElement('img')
-    img.src = encodeURI(url)
-    li.appendChild(img)
-    imagesElement.appendChild(li)
-  })
-  const initialViewIndex = Math.max(0, urls.findIndex(url => url === currentUrl))
-  window.siyuan.viewer = new window.Viewer(imagesElement, {
-    button: false,
-    initialViewIndex,
-    transition: false,
-    hidden() {
-      window.siyuan.viewer?.destroy?.()
-    },
-    toolbar: {
-      close() {
-        window.siyuan.viewer?.destroy?.()
-      },
-      flipHorizontal: true,
-      flipVertical: true,
-      next: true,
-      oneToOne: true,
-      play: true,
-      prev: true,
-      reset: true,
-      rotateLeft: true,
-      rotateRight: true,
-      zoomIn: true,
-      zoomOut: true,
-    },
-  })
-  window.siyuan.viewer.show()
-}
-
-function promptText(title: string, value = '', placeholder = '') {
-  return new Promise<string | null>((resolve) => {
-    const dialog = new Dialog({
-      title,
-      width: '520px',
-      content: `<div class="b3-dialog__content">
-  <input class="b3-text-field fn__block" id="siyuanCloudPromptInput" spellcheck="false" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}">
-</div>
-<div class="b3-dialog__action">
-  <button class="b3-button b3-button--cancel" id="siyuanCloudPromptCancel">${escapeHtml(tf('cancel', 'Cancel'))}</button><div class="fn__space"></div>
-  <button class="b3-button b3-button--text" id="siyuanCloudPromptConfirm">${escapeHtml(tf('confirmAction', 'Confirm'))}</button>
-</div>`,
-    })
-    const input = dialog.element.querySelector('#siyuanCloudPromptInput') as HTMLInputElement | null
-    const cancel = dialog.element.querySelector('#siyuanCloudPromptCancel') as HTMLButtonElement | null
-    const ok = dialog.element.querySelector('#siyuanCloudPromptConfirm') as HTMLButtonElement | null
-    const finish = (result: string | null) => {
-      dialog.destroy()
-      resolve(result)
-    }
-    cancel?.addEventListener('click', () => finish(null))
-    ok?.addEventListener('click', () => finish(input?.value ?? ''))
-    if (input)
-      dialog.bindInput(input, () => finish(input.value))
+  await openLazyImageViewer({
+    current: item,
+    items: items.value.filter(isImageFile),
+    keyOf: itemPath,
+    onError: showErrorMessage,
+    urlOf: imageUrlFor,
   })
 }
 
-function escapeHtml(value: string) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
+const promptInput = (title: string, value = '', placeholder = '') => promptText({
+  title,
+  value,
+  placeholder,
+  cancelText: tf('cancel', 'Cancel'),
+  confirmText: tf('confirmAction', 'Confirm'),
+})
 
 async function refresh() {
   if (searchActive.value && searchInput.value.trim()) {
@@ -610,7 +516,7 @@ async function goParent() {
 }
 
 async function createFolder() {
-  const value = await promptText(tf('createFolder', 'Create Folder'), '', tf('folderNamePlaceholder', 'Folder name'))
+  const value = await promptInput(tf('createFolder', 'Create Folder'), '', tf('folderNamePlaceholder', 'Folder name'))
   const name = String(value || '').trim()
   if (!name)
     return
@@ -622,7 +528,7 @@ async function createFolder() {
 }
 
 async function createFile() {
-  const value = await promptText(tf('createFile', 'Create File'), '', tf('fileNamePlaceholder', 'File name'))
+  const value = await promptInput(tf('createFile', 'Create File'), '', tf('fileNamePlaceholder', 'File name'))
   const name = String(value || '').trim()
   if (!name)
     return
@@ -700,7 +606,7 @@ async function renameSelection() {
   const item = primarySelectedItem.value
   if (!item)
     return
-  const value = await promptText(tf('rename', 'Rename'), item.name, tf('renamePlaceholder', 'New name'))
+  const value = await promptInput(tf('rename', 'Rename'), item.name, tf('renamePlaceholder', 'New name'))
   const nextName = String(value || '').trim()
   if (!nextName || nextName === item.name)
     return
@@ -717,7 +623,7 @@ async function renameSelection() {
 async function runTransferAction(type: 'copy' | 'move') {
   if (!selectedItems.value.length)
     return
-  const value = await promptText(
+  const value = await promptInput(
     tf(type, type === 'copy' ? 'Copy' : 'Move'),
     currentPath.value,
     tf(type === 'copy' ? 'copyTargetPlaceholder' : 'moveTargetPlaceholder', 'Target directory path'),
@@ -754,10 +660,7 @@ async function moveSelection() {
 async function shareSelection() {
   if (!selectedItems.value.length)
     return
-  await createShareForPaths({
-    paths: selectedItems.value.map(item => itemPath(item)),
-    tf,
-  })
+  await shareOpenListSelection({ itemPath, items: selectedItems.value, tf })
 }
 
 function openUpload() {
@@ -788,12 +691,7 @@ async function onUploadChange(event: Event) {
   }
 }
 
-async function downloadItem(item: FsItem) {
-  if (item.is_dir)
-    return
-  const url = await resolveDownloadUrl(itemPath(item))
-  triggerDownload(url, item.name)
-}
+const downloadItem = (item: FsItem) => downloadOpenListItem({ item, itemPath, resolveUrl: resolveDownloadUrl })
 
 async function downloadSelection() {
   for (const item of downloadableSelection.value)

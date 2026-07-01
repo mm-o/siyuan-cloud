@@ -88,7 +88,6 @@ const baseManage = {
 };
 
 const DRIVER_CAPABILITIES = {
-  SiYuanKernel: methodRow({ ...baseManage, direct_upload: STATUS.UNSUPPORTED }, "Virtual FS backed by siyuan.storage."),
   SiYuanWorkspace: methodRow({ list: STATUS.DONE, get: STATUS.DONE, link: STATUS.DONE, read: STATUS.DONE, rename: STATUS.PARTIAL, remove: STATUS.PARTIAL }, "Workspace adapter is intentionally conservative; upload stays guarded."),
   Local: methodRow({ ...baseManage, link: STATUS.UNSUPPORTED, read: STATUS.DONE }, "Desktop frontend Electron runtime only; kernel HTTP does not proxy local disks."),
   WebDav: methodRow({ ...baseManage }, "Runtime WebDAV driver is available; protocol-server compatibility is tracked separately."),

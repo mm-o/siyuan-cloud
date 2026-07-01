@@ -1,46 +1,8 @@
-import { Dialog, showMessage } from 'siyuan'
+import { showMessage } from 'siyuan'
 import { shareCreate } from './api'
+import { promptText } from './file_ui'
 import { handleRespWithNotifySuccess } from './handle_resp'
 import { openListShareUrl, privateBase } from './request'
-
-const escapeHtml = (value: string) => String(value)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-
-export function promptText(options: {
-  title: string
-  value?: string
-  placeholder?: string
-  cancelText: string
-  confirmText: string
-}) {
-  return new Promise<string | null>((resolve) => {
-    const dialog = new Dialog({
-      title: options.title,
-      width: '520px',
-      content: `<div class="b3-dialog__content">
-  <input class="b3-text-field fn__block" id="siyuanCloudPromptInput" spellcheck="false" placeholder="${escapeHtml(options.placeholder || '')}" value="${escapeHtml(options.value || '')}">
-</div>
-<div class="b3-dialog__action">
-  <button class="b3-button b3-button--cancel" id="siyuanCloudPromptCancel">${escapeHtml(options.cancelText)}</button><div class="fn__space"></div>
-  <button class="b3-button b3-button--text" id="siyuanCloudPromptConfirm">${escapeHtml(options.confirmText)}</button>
-</div>`,
-    })
-    const input = dialog.element.querySelector('#siyuanCloudPromptInput') as HTMLInputElement | null
-    const cancel = dialog.element.querySelector('#siyuanCloudPromptCancel') as HTMLButtonElement | null
-    const ok = dialog.element.querySelector('#siyuanCloudPromptConfirm') as HTMLButtonElement | null
-    const finish = (result: string | null) => {
-      dialog.destroy()
-      resolve(result)
-    }
-    cancel?.addEventListener('click', () => finish(null))
-    ok?.addEventListener('click', () => finish(input?.value ?? ''))
-    if (input)
-      dialog.bindInput(input, () => finish(input.value))
-  })
-}
 
 export async function createShareForPaths(options: {
   paths: string[]

@@ -10,20 +10,7 @@ export const defaultState = (now) => ({
     defaultAdminUser(),
     defaultGuestUser(),
   ],
-  storages: [
-    {
-      id: 1,
-      mount_path: "/",
-      order: 0,
-      driver: "SiYuanKernel",
-      cache_expiration: 30,
-      status: "work",
-      addition: "{}",
-      remark: "Virtual OpenList storage backed by SiYuan kernel plugin storage.",
-      modified: now(),
-      disabled: false,
-    },
-  ],
+  storages: [],
   entries: {
     "/": {
       name: "",

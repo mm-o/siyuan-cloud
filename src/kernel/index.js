@@ -158,6 +158,7 @@ import { createWebDavServer } from "./server/webdav.js";
     siyuanApiJson,
     workspaceGet,
     workspaceList,
+    workspacePublicUrl,
     workspaceReadText,
     workspaceRelPath,
   } = createWorkspaceAdapter({
@@ -362,6 +363,10 @@ import { createWebDavServer } from "./server/webdav.js";
     client: siyuan.client,
     getSettings: () => state.settings,
     saveStorageAddition,
+    workspaceGet,
+    workspaceList,
+    workspacePublicUrl,
+    workspaceReadText,
   });
   const searchFs = {
     async get(path) {
@@ -404,7 +409,6 @@ import { createWebDavServer } from "./server/webdav.js";
         ? (entry.children || []).map((childPath) => state.entries[childPath]).filter(Boolean).map(toObjResp)
         : [];
       if (normalized === "/") {
-        children.unshift({ name: "@workspace", is_dir: true, size: 0 });
         for (const mountEntry of driverRuntime.mountEntries(state.storages, now)) {
           if (!children.some((item) => item.name === mountEntry.name)) children.unshift(toObjResp(mountEntry));
         }
@@ -553,6 +557,7 @@ import { createWebDavServer } from "./server/webdav.js";
       try {
         const options = proxyReadOptions(request, filePath);
         const data = await mount.driver.read(mount.storage, mount.relPath, options);
+        if (data.redirect) return redirectResponse(data.redirect);
         if (data.link) {
           const link = linkFromDriverData(data);
           if (readOptions.shareDownload && !shareDownloadShouldProxy(mount, filePath)) return redirectResponse(link.url);

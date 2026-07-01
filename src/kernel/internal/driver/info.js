@@ -123,7 +123,6 @@ const withAliases = (map) => ({
 });
 
 const driverNameOrder = [
-  "SiYuanKernel",
   "SiYuanWorkspace",
   "Local",
   "WebDav",
@@ -170,24 +169,6 @@ const driverNameOrder = [
 
 const buildDriverInfoMap = () => withAliases({
   ...Object.fromEntries(metadataOnlyNames.map((name) => [name, unsupported(name)])),
-  SiYuanKernel: {
-    common: [field("root_folder_path", "string", "/", "", false, "Virtual OpenList root inside siyuan.storage.")],
-    additional: [],
-    config: {
-      name: "SiYuanKernel",
-      local_sort: true,
-      only_proxy: false,
-      no_cache: true,
-      no_upload: false,
-      need_ms: false,
-      default_root: "/",
-      alert: "success",
-      only_indices: false,
-      prefer_proxy: false,
-      status: "ported",
-      note: "Virtual OpenList storage backed by SiYuan kernel plugin storage.",
-    },
-  },
   SiYuanWorkspace: {
     common: [field("root_folder_path", "string", "/@workspace", "", false, "SiYuan workspace files exposed through /api/file.")],
     additional: [],
@@ -554,7 +535,6 @@ const buildDriverInfoMap = () => withAliases({
 export const driverInfoMap = () => buildDriverInfoMap();
 
 const exposedDriverNames = [
-  "SiYuanKernel",
   "SiYuanWorkspace",
   "Local",
   "WebDav",

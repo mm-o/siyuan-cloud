@@ -116,7 +116,7 @@ export const createAdminHandlers = ({
     };
   };
   const normalizeStorageForImport = (storage, index) => {
-    const driver = storage.driver || "SiYuanKernel";
+    const driver = storage.driver || "SiYuanWorkspace";
     return {
       id: Number(storage.id || index + 1),
       mount_path: normalizePath(storage.mount_path || storage.mountPath || "/"),
@@ -133,6 +133,7 @@ export const createAdminHandlers = ({
       ...proxyDefaults(driver, storage),
     };
   };
+  const isLegacyKernelStorage = (storage) => storage?.driver === "SiYuanKernel";
   const nextUserId = () => Math.max(0, ...state.users.map((item) => Number(item.id || 0))) + 1;
   const userById = (id) => state.users.find((item) => Number(item.id) === Number(id));
   const userList = () => state.users.map(sanitizeUser);
@@ -227,7 +228,7 @@ export const createAdminHandlers = ({
       const mountPath = normalizePath(req.mount_path || req.mountPath || "");
       const existing = mountPath && state.storages.find((item) => item.mount_path === mountPath);
       if (existing) {
-        const driver = req.driver || existing.driver || "SiYuanKernel";
+        const driver = req.driver || existing.driver || "SiYuanWorkspace";
         Object.assign(existing, {
           order: Number(req.order ?? existing.order ?? 0),
           driver,
@@ -245,8 +246,8 @@ export const createAdminHandlers = ({
         return jsonResponse(success({ id: existing.id, updated: true }));
       }
       const id = Math.max(0, ...state.storages.map((item) => item.id || 0)) + 1;
-      const driver = req.driver || "SiYuanKernel";
-      state.storages.push({
+      const driver = req.driver || "SiYuanWorkspace";
+      const storage = {
         id,
         mount_path: mountPath || normalizePath("/mount-" + id),
         order: Number(req.order || 0),
@@ -260,7 +261,8 @@ export const createAdminHandlers = ({
         disabled: !!req.disabled,
         disable_index: boolValue(req.disable_index),
         ...proxyDefaults(driver, req),
-      });
+      };
+      state.storages.push(storage);
       await saveState();
       return jsonResponse(success({ id }));
     },
@@ -284,7 +286,6 @@ export const createAdminHandlers = ({
     "POST /api/admin/storage/delete": async (request) => {
       const req = await parseJson(request);
       const id = Number(req.id);
-      if (id === 1) return jsonResponse(failure("root storage cannot be deleted", 403));
       state.storages = state.storages.filter((item) => item.id !== id);
       await saveState();
       return jsonResponse(success());
@@ -324,10 +325,7 @@ export const createAdminHandlers = ({
         state.users = importedUsers.length ? importedUsers : state.users;
       }
       if (payload.storages) {
-        const importedStorages = asArray(payload.storages).map(normalizeStorageForImport);
-        if (!importedStorages.some((item) => item.mount_path === "/")) {
-          importedStorages.unshift(normalizeStorageForImport({ id: 1, mount_path: "/", driver: "SiYuanKernel", addition: "{}" }, 0));
-        }
+        const importedStorages = asArray(payload.storages).map(normalizeStorageForImport).filter((storage) => !isLegacyKernelStorage(storage));
         state.storages = importedStorages;
       }
       if (payload.metas) state.metas = asArray(payload.metas).map((meta, index) => ({ ...meta, id: Number(meta.id || index + 1) }));
@@ -343,14 +341,14 @@ export const createAdminHandlers = ({
     "GET /api/admin/driver/names": async () => jsonResponse(success(driverNames())),
     "GET /api/admin/driver/list": async () => jsonResponse(success(driverInfoMap())),
     "GET /api/admin/driver/info": async (request) => {
-      const driver = queryValue(request, "driver") || "SiYuanKernel";
+      const driver = queryValue(request, "driver") || "SiYuanWorkspace";
       const info = driverInfoMap()[driver];
       if (!info) return jsonResponse(failure(`driver [${driver}] not found`, 404));
       return jsonResponse(success(info));
     },
     "POST /api/admin/driver/test": async (request) => {
       const req = await parseJson(request);
-      const driver = req.driver || "SiYuanKernel";
+      const driver = req.driver || "SiYuanWorkspace";
       let addition;
       try {
         addition = typeof req.addition === "string" ? JSON.parse(req.addition || "{}") : (req.addition || {});

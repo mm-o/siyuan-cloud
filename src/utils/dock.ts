@@ -76,7 +76,7 @@ export function useDock(plugin: Plugin) {
   const statusDetail = ref(t('waitingKernel'))
   const storageInfo = ref<StorageInfo>({})
   const verifyMountPath = ref('/')
-  const verifyDriver = ref('SiYuanKernel')
+  const verifyDriver = ref('SiYuanWorkspace')
   const verifyAddition = ref('{}')
   const verifyStorages = ref<any[]>([])
   const taskType = ref('copy')
@@ -87,7 +87,7 @@ export function useDock(plugin: Plugin) {
   const torrentResult = ref('')
   const selectedStorageId = ref<number | null>(null)
   const selectedStorage = ref<any | null>(null)
-  const driverOptions = ref(['SiYuanKernel', 'SiYuanWorkspace'])
+  const driverOptions = ref(['SiYuanWorkspace'])
   const driverInfo = ref<DriverInfo | null>(null)
   const driverForm = ref<Record<string, any>>({})
   const mountCreating = ref(false)
@@ -673,7 +673,7 @@ export function useDock(plugin: Plugin) {
       selectedStorageId.value = Number(storage.id)
       selectedStorage.value = storage
       verifyMountPath.value = storage.mount_path || '/'
-      verifyDriver.value = storage.driver || 'SiYuanKernel'
+      verifyDriver.value = storage.driver || 'SiYuanWorkspace'
       await loadDriverInfoForEdit(verifyDriver.value)
       verifyAddition.value = JSON.stringify(parseAddition(storage.addition), null, 2)
       syncFormFromJson()
@@ -713,7 +713,7 @@ export function useDock(plugin: Plugin) {
 
   async function deleteMount(item: any) {
     const id = Number(item.id)
-    if (!id || id === 1)
+    if (!id)
       return
     confirm(t('mountDelete'), `${t('mountDelete')} ${item.mount_path || `#${id}`}?`, async () => {
       await openListJson('/api/admin/storage/delete', { id })
@@ -760,10 +760,10 @@ export function useDock(plugin: Plugin) {
       if (Array.isArray(payload.data) && payload.data.length)
         driverOptions.value = payload.data
       if (!driverOptions.value.includes(verifyDriver.value))
-        verifyDriver.value = driverOptions.value[0] || 'SiYuanKernel'
+        verifyDriver.value = driverOptions.value[0] || 'SiYuanWorkspace'
       await loadDriverInfo()
     } catch {
-      driverOptions.value = ['SiYuanKernel', 'SiYuanWorkspace']
+      driverOptions.value = ['SiYuanWorkspace']
     }
   }
 
@@ -1091,7 +1091,7 @@ export function useDock(plugin: Plugin) {
 
   function openShareMenu(item: any, event: MouseEvent | KeyboardEvent) {
     const menu = new Menu('siyuan-cloud-share')
-    menu.addItem({ icon: 'iconCopy', label: t('copyRoute'), click: () => copyShare(item) })
+    menu.addItem({ icon: 'iconEdit', label: t('shareEdit'), click: () => openEditShare(item) })
     menu.addItem({ icon: item?.disabled ? 'iconEye' : 'iconEyeoff', label: item?.disabled ? t('shareEnable') : t('shareDisable'), click: () => toggleShare(item) })
     menu.addSeparator()
     menu.addItem({ icon: 'iconTrashcan', label: t('shareDelete'), click: () => deleteShare(item) })
@@ -1200,6 +1200,10 @@ export function useDock(plugin: Plugin) {
     return window._siyuan_cloud?.openPackagedDoc?.(key)
   }
 
+  function openMountHelpDoc() {
+    return openPackagedDoc(t('openHelp') === '打开说明' ? '驱动说明' : 'Drivers')
+  }
+
   async function copyRoute() {
     const route = await openListShareUrl(`${privateBase}/`)
     try {
@@ -1236,7 +1240,7 @@ export function useDock(plugin: Plugin) {
     ],
     mounts: [
       { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadStorageList) },
-      { key: 'add', icon: '#iconAdd', label: t('mountAdd'), run: openAddMount },
+      { key: 'help', icon: '#iconHelp', label: t('mountHelp'), run: openMountHelpDoc },
     ],
     users: [
       { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadUserList) },

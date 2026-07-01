@@ -3,6 +3,7 @@ import { fsArchiveList, fsArchiveMeta, openListAbsoluteUrl } from './api'
 import { parseArchive, extractArchiveEntry } from '../kernel/internal/fs/archive.js'
 import { openListFileIconHref, openListFileIconName } from './icon'
 import { readLocalFileBytes } from './local_fs'
+import { normalizeResourceUrl } from './request'
 
 export const archiveSuffixes = ['.zip', '.tar', '.tgz', '.tar.gz']
 
@@ -75,7 +76,7 @@ function fileKind(name: string) {
 }
 
 function absoluteHref(url: string) {
-  return /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : openListAbsoluteUrl(url)
+  return /^[a-z][a-z0-9+.-]*:/i.test(url) ? normalizeResourceUrl(url) : openListAbsoluteUrl(url)
 }
 
 function mimeType(name: string) {
@@ -309,7 +310,7 @@ export async function openArchiveBrowser(options: {
     urls.forEach((url) => {
       const li = document.createElement('li')
       const img = document.createElement('img')
-      img.src = encodeURI(url)
+      img.src = absoluteHref(url)
       li.appendChild(img)
       imagesElement.appendChild(li)
     })

@@ -89,8 +89,8 @@ export default defineConfig(({
             dest: "./",
           },
           {
-            src: "./assets/docs/**",
-            dest: "./assets/docs",
+            src: "./assets/docs",
+            dest: "./assets",
           },
           {
             src: "./icon.png",

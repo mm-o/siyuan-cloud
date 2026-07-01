@@ -19,6 +19,7 @@
 | File browsing and links | Available |
 | Runtime API discovery | Generated from `/api/public/api` |
 | Driver guides | See [[Drivers]] |
+| Local storage | See [[Local Storage]] |
 | Release notes | See [[CHANGELOG]] |
 
 ---
@@ -47,17 +48,18 @@
 
 Runtime adapters currently exposed in the Dock include:
 
-- OpenList / AList V3
-- WebDAV
-- S3 / Doge
-- 115 Cloud
-- OneDrive
-- 123Pan
+- [[OpenList Compatible]]
+- [[WebDAV]]
+- [[S3 Compatible]]
+- [[115 Cloud]]
+- [[OneDrive]]
+- [[123Pan]]
 - [[Baidu Netdisk]]
-- AliyundriveOpen
-- 189Cloud / 189CloudPC / 189CloudTV
-- Quark / UC / QuarkOpen / QuarkTV / UCTV
-- Local desktop storage
+- [[Aliyundrive Open]]
+- [[189Cloud Series]]
+- [[Quark UC Series]]
+- [[Local Storage]]
+- [[SiYuan Workspace]]
 - Built-in virtual storage
 
 > [!NOTE]
@@ -69,6 +71,7 @@ Runtime adapters currently exposed in the Dock include:
 | --- | --- |
 | Browse cloud files | Use the Dock file tree or top-bar file manager |
 | Manage files | Upload, download, rename, copy, move, remove from the context menu |
+| Manage users | Built-in `admin` and `guest` users follow OpenList behavior and cannot be deleted, so Dock user management does not show a delete action for them |
 | Use in documents | Copy Markdown image/audio/video tags, download links, or `siyuan://` links |
 | Share files | Create `/sd/{id}` private-route share links |
 | Integrate plugins | Consume `raw_url`, `/p/<path>`, `/d/<path>`, or OpenList-compatible HTTP APIs |

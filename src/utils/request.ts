@@ -39,13 +39,34 @@ export function openListCurrentUrl(path: string) {
   if (!path)
     return ''
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path))
-    return path
+    return normalizeResourceUrl(path)
   const route = path.startsWith('/') ? path : `/${path}`
-  return `${location.origin}${route}`
+  return normalizeResourceUrl(`${location.origin}${route}`)
 }
 
 export async function openListShareUrl(path: string) {
   return openListCurrentUrl(path)
+}
+
+export function normalizeResourceUrl(url: string, options: { escapeHash?: boolean, escapeQuestion?: boolean } = {}) {
+  let prepared = String(url || '')
+  if (options.escapeHash)
+    prepared = prepared.replace(/#/g, '%23')
+  if (options.escapeQuestion)
+    prepared = prepared.replace(/\?/g, '%3F')
+  const absolute = /^[a-z][a-z0-9+.-]*:/i.test(prepared)
+  const base = 'http://siyuan-cloud.local'
+  const parsed = new URL(prepared, base)
+  return absolute ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`
+}
+
+export function formatResourceUrlForMarkdown(url: string) {
+  const normalized = normalizeResourceUrl(url)
+  if (!normalized.toLowerCase().startsWith('file://'))
+    return normalized.replace(/(?:%[89A-F][0-9A-F])+/gi, value => decodeURIComponent(value))
+  const parsed = new URL(normalized)
+  const pathname = decodeURIComponent(parsed.pathname).replace(/\s/g, '%20').replace(/#/g, '%23').replace(/\?/g, '%3F')
+  return `file://${pathname}`
 }
 
 export interface OpenListResp<T = any> {

@@ -200,6 +200,18 @@ globalThis.siyuan = {
         } else if (url.hostname === "s3.example.test" && req.method === "GET") {
           contentType = "text/plain";
           body = "s3 object";
+        } else if (url.hostname === "webdav.example.test" && req.method === "PROPFIND") {
+          contentType = "application/xml";
+          const depth = (req.headers || []).map((item) => Object.entries(item)[0]).find(([key]) => key.toLowerCase() === "depth")?.[1] || "";
+          const targetName = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "remote-image.jpg");
+          if (depth === "0") {
+            body = `<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>${url.pathname}</d:href><d:propstat><d:prop><d:displayname>${targetName}</d:displayname><d:getcontentlength>42</d:getcontentlength><d:getlastmodified>Thu, 01 Jan 2026 00:00:00 GMT</d:getlastmodified><d:resourcetype/></d:prop></d:propstat></d:response></d:multistatus>`;
+          } else {
+            body = `<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>${url.pathname.replace(/\/?$/, "/")}</d:href><d:propstat><d:prop><d:displayname>${targetName}</d:displayname><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response><d:response><d:href>${url.pathname.replace(/\/?$/, "/")}remote-image.jpg</d:href><d:propstat><d:prop><d:displayname>remote-image.jpg</d:displayname><d:getcontentlength>42</d:getcontentlength><d:getlastmodified>Thu, 01 Jan 2026 00:00:00 GMT</d:getlastmodified><d:resourcetype/></d:prop></d:propstat></d:response></d:multistatus>`;
+          }
+        } else if (url.hostname === "webdav.example.test" && req.method === "HEAD") {
+          status = 503;
+          body = "";
         } else if (url.hostname === "graph.microsoft.com" && url.pathname === "/v1.0/me/drive") {
           body = {
             id: "onedrive-drive-1",
@@ -1263,7 +1275,16 @@ globalThis.siyuan = {
       if (path === "/api/file/readDir") {
         const req = JSON.parse(init.body || "{}");
         const dirs = {
-          "": [{ name: "search-root", isDir: true, size: 0, updated: 1780000000 }],
+          "": [
+            { name: "data", isDir: true, size: 0, updated: 1780000000 },
+            { name: "search-root", isDir: true, size: 0, updated: 1780000000 },
+          ],
+          "data": [
+            { name: "assets", isDir: true, size: 0, updated: 1780000000 },
+            { name: "widgets", isDir: true, size: 0, updated: 1780000000 },
+          ],
+          "data/assets": [{ name: "workspace-hit.pdf", isDir: false, size: 4, updated: 1780000000 }],
+          "data/widgets": [{ name: "workspace-widget.mp4", isDir: false, size: 4, updated: 1780000000 }],
           "E:/openlist-local": [{ name: "local-file.txt", isDir: false, size: 5, updated: 1780000000 }],
           "search-root": [{ name: "nested", isDir: true, size: 0, updated: 1780000000 }],
           "search-root/nested": [{ name: "workspace-hit.md", isDir: false, size: 13, updated: 1780000000 }],
@@ -2942,6 +2963,12 @@ const searchDir = await json({
 });
 assert.equal(searchDir.code, 200);
 assert.equal(searchDir.data.content.some((item) => item.name === "copy-skip-src" && item.is_dir === true), true);
+const workspaceIndexUpdate = await json({
+  body: { paths: ["/@workspace/search-root"] },
+  method: "POST",
+  path: "/api/admin/index/update",
+});
+assert.equal(workspaceIndexUpdate.code, 200);
 const searchWorkspace = await json({
   body: { keywords: "workspace-hit", page: 1, parent: "/@workspace/search-root", per_page: 10, scope: 2 },
   method: "POST",
@@ -3020,7 +3047,7 @@ await json({
   path: "/api/fs/put",
 });
 const noIndexStorage = await json({
-  body: { driver: "SiYuanKernel", mount_path: "/no-index", disable_index: true },
+  body: { addition: { address: "https://webdav.example.test", password: "p", username: "u" }, driver: "WebDav", mount_path: "/no-index", disable_index: true },
   method: "POST",
   path: "/api/admin/storage/create",
 });
@@ -3047,13 +3074,13 @@ const scanProgress = await json({
 assert.equal(scanProgress.data.status, "done");
 
 const storageCreate = await json({
-  body: { driver: "SiYuanKernel", mount_path: "/verify-smoke", remark: "first" },
+  body: { addition: { address: "https://webdav.example.test", password: "p", username: "u" }, driver: "WebDav", mount_path: "/verify-smoke", remark: "first" },
   method: "POST",
   path: "/api/admin/storage/create",
 });
 assert.equal(storageCreate.code, 200);
 const storageCreateAgain = await json({
-  body: { driver: "SiYuanKernel", mount_path: "/verify-smoke", remark: "second" },
+  body: { addition: { address: "https://webdav.example.test", password: "p", username: "u" }, driver: "WebDav", mount_path: "/verify-smoke", remark: "second" },
   method: "POST",
   path: "/api/admin/storage/create",
 });
@@ -3064,6 +3091,60 @@ const storageList = await json({
   path: "/api/admin/storage/list",
 });
 assert.equal(storageList.data.content.filter((item) => item.mount_path === "/verify-smoke").length, 1);
+const webdavImageGet = await json({
+  body: { path: "/verify-smoke/remote-image.jpg" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(webdavImageGet.code, 200);
+assert.equal(webdavImageGet.data.name, "remote-image.jpg");
+assert.equal(webdavImageGet.data.raw_url, "/plugin/private/siyuan-cloud/p/verify-smoke/remote-image.jpg");
+const webdavRootList = await json({
+  body: { page: 1, path: "/verify-smoke", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(webdavRootList.code, 200);
+assert.deepEqual(webdavRootList.data.content.map((item) => item.name), ["remote-image.jpg"]);
+const workspaceMount = await json({
+  body: { addition: { root_folder_path: "/@workspace" }, driver: "SiYuanWorkspace", mount_path: "/workspace-smoke" },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+assert.equal(workspaceMount.code, 200);
+const workspaceMountList = await json({
+  body: { page: 1, path: "/workspace-smoke", per_page: 10 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(workspaceMountList.code, 200);
+assert.equal(workspaceMountList.data.content.some((item) => item.name === "search-root"), true);
+const workspaceAssetGet = await json({
+  body: { path: "/workspace-smoke/data/assets/workspace-hit.pdf" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(workspaceAssetGet.code, 200);
+assert.equal(workspaceAssetGet.data.raw_url, "/assets/workspace-hit.pdf");
+const workspaceAssetPreview = await call({
+  method: "GET",
+  path: "/p/workspace-smoke/data/assets/workspace-hit.pdf",
+});
+assert.equal(workspaceAssetPreview.statusCode, 302);
+assert.equal(workspaceAssetPreview.headers.Location[0], "/assets/workspace-hit.pdf");
+const workspaceGenericPublicGet = await json({
+  body: { path: "/workspace-smoke/data/widgets/workspace-widget.mp4" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(workspaceGenericPublicGet.code, 200);
+assert.equal(workspaceGenericPublicGet.data.raw_url, "/widgets/workspace-widget.mp4");
+const workspaceGenericPublicPreview = await call({
+  method: "GET",
+  path: "/p/workspace-smoke/data/widgets/workspace-widget.mp4",
+});
+assert.equal(workspaceGenericPublicPreview.statusCode, 302);
+assert.equal(workspaceGenericPublicPreview.headers.Location[0], "/widgets/workspace-widget.mp4");
 const persistedStorage = await json({
   body: {
     addition: { root_folder_path: "/persisted", token: "mount-token" },
@@ -3107,6 +3188,8 @@ assert.equal(driverNames.data.includes("QuarkTV"), true);
 assert.equal(driverNames.data.includes("UCTV"), true);
 assert.equal(driverNames.data.includes("Local"), true);
 assert.equal(driverNames.data.includes("115 Cloud"), true);
+assert.equal(driverNames.data.includes("SiYuanKernel"), false);
+assert.equal(driverNames.data.includes("SiYuanWorkspace"), true);
 assert.equal(driverNames.data.includes("GoogleDrive"), false);
 const quarkInfo = await json({
   method: "GET",
@@ -3404,6 +3487,7 @@ const importedConfig = await json({
       ...exportedConfig.data,
       storages: [
         ...exportedConfig.data.storages,
+        { addition: "{}", driver: "SiYuanKernel", id: 98, mount_path: "/" },
         { addition: { refresh_token: "rt" }, driver: "BaiduNetdisk", id: 99, mount_path: "/baidu-smoke" },
       ],
       sharings: [
@@ -3418,6 +3502,11 @@ const importedConfig = await json({
 assert.equal(importedConfig.code, 200);
 assert.equal(importedConfig.data.storages >= 2, true);
 assert.equal(importedConfig.data.sharings >= 1, true);
+const importedAfterFilter = await json({
+  method: "GET",
+  path: "/api/admin/config/export",
+});
+assert.equal(importedAfterFilter.data.storages.some((item) => item.driver === "SiYuanKernel"), false);
 const importedShare = await json({
   method: "GET",
   path: "/api/share/get",

@@ -78,6 +78,9 @@ const normalizeUsers = (users) => {
   }));
 };
 
+const normalizeStorages = (storages) => (Array.isArray(storages) ? storages : [])
+  .filter((storage) => storage?.driver !== "SiYuanKernel");
+
 const normalizeDomains = (domains) => {
   if (!domains) return ["config", "runtime", "search"];
   if (typeof domains === "string") return [domains];
@@ -98,7 +101,7 @@ export const loadConfigState = async ({ storage }) => {
   return {
     settings: { ...defaultSettings(), ...(config.settings || {}) },
     users: normalizeUsers(config.users),
-    storages: Array.isArray(config.storages) ? config.storages : [],
+    storages: normalizeStorages(config.storages),
     metas: config.metas || [],
     sharings: config.sharings || [],
     ssh_keys: config.ssh_keys || [],
@@ -128,6 +131,7 @@ export const loadState = async ({ now, storage }) => {
           ...loaded,
           settings: { ...defaultSettings(), ...(loaded.settings || {}) },
           users: normalizeUsers(loaded.users),
+          storages: normalizeStorages(loaded.storages),
           tasks: loaded.tasks || {},
           metas: loaded.metas || [],
           messages: loaded.messages || [],

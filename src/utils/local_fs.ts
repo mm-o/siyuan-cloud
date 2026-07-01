@@ -1,4 +1,4 @@
-import { fetchOpenListJson, type OpenListResp } from './request'
+import { fetchOpenListJson, normalizeResourceUrl, type OpenListResp } from './request'
 import {
   joinOpenListPath,
   normalizeOpenListPath,
@@ -29,6 +29,7 @@ const fsMod = () => req('fs')?.promises
 const pathMod = () => req('path')
 const osMod = () => req('os')
 const processMod = () => req('process') || (typeof process !== 'undefined' ? process : null)
+const urlMod = () => req('url')
 
 const ok = <T>(data: T): OpenListResp<T> => ({ code: 200, message: 'success', data })
 const fail = (message: string, code = 500): OpenListResp => ({ code, message, data: null })
@@ -213,8 +214,12 @@ async function toEntry(target: string, name: string, openListPath: string) {
 
 export function localFileUrl(target: string) {
   const path = pathMod()
-  const normalized = path ? path.resolve(target).replace(/\\/g, '/') : String(target).replace(/\\/g, '/')
-  return encodeURI(`file://${normalized.startsWith('/') ? '' : '/'}${normalized}`).replace(/#/g, '%23')
+  const resolved = path ? path.resolve(target) : String(target)
+  const href = urlMod()?.pathToFileURL?.(resolved)?.href
+  if (href)
+    return normalizeResourceUrl(href)
+  const normalized = resolved.replace(/\\/g, '/')
+  return normalizeResourceUrl(`file://${normalized.startsWith('/') ? '' : '/'}${normalized}`, { escapeHash: true, escapeQuestion: true })
 }
 
 export async function listLocal(path: string, page = 1, perPage = 0) {

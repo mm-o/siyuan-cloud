@@ -276,18 +276,28 @@ import {
   openArchiveBrowser,
 } from '@/utils/archive'
 import {
+  copyOpenListItemLink,
   deleteOpenListSelection,
+  downloadOpenListItem,
+  fallbackTranslator,
   itemOpenListPath,
   joinOpenListPath,
   normalizeOpenListPath,
   openOpenListFileItemMenu,
+  shareOpenListSelection,
 } from '@/utils/file_actions'
 import {
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
-import { privateBase } from '@/utils/request'
-import { createShareForPaths } from '@/utils/share'
+import {
+  itemOpenUrl as openListItemOpenUrl,
+  escapeAttr,
+  escapeHtml,
+  formatSize as formatByteSize,
+  openLazyImageViewer,
+  showErrorMessage,
+} from '@/utils/file_ui'
 
 interface DockAction {
   key: string
@@ -527,8 +537,8 @@ const userFormOrder = computed(() => formOrder(userItems.value, userForm.value.i
 const shareFormOrder = computed(() => formOrder(shareItems.value, shareForm.value.id, item => item.id || item.sid))
 const openMount = (item: any) => openFileManager(mountPath(item))
 const mountActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('mountEdit'), run: () => openEditMount(item) }, { key: 'toggle', icon: item.disabled ? '#iconEye' : '#iconEyeoff', label: item.disabled ? t('mountEnable') : t('mountDisable'), run: () => toggleMount(item) }, { key: 'delete', icon: '#iconTrashcan', label: t('mountDelete'), run: () => deleteMount(item) }]
-const shareActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('shareEdit'), run: () => openEditShare(item) }, { key: 'more', icon: '#iconMore', label: t('more'), run: event => openShareMenu(item, event as MouseEvent | KeyboardEvent) }]
-const userActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('userEdit'), run: () => openEditUser(item) }, { key: 'toggle', icon: item.disabled ? '#iconEye' : '#iconEyeoff', label: item.disabled ? t('userEnable') : t('userDisable'), run: () => toggleUser(item) }, { key: 'delete', icon: '#iconTrashcan', label: t('userDelete'), run: () => deleteUser(item) }]
+const shareActions = (item: any) => [{ key: 'copy', icon: '#iconCopy', label: t('copyRoute'), run: () => copyShare(item) }, { key: 'more', icon: '#iconMore', label: t('more'), run: event => openShareMenu(item, event as MouseEvent | KeyboardEvent) }]
+const userActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('userEdit'), run: () => openEditUser(item) }, { key: 'toggle', icon: item.disabled ? '#iconEye' : '#iconEyeoff', label: item.disabled ? t('userEnable') : t('userDisable'), run: () => toggleUser(item) }, ...(Number(item.role) === 1 || Number(item.role) === 2 ? [] : [{ key: 'delete', icon: '#iconTrashcan', label: t('userDelete'), run: () => deleteUser(item) }])]
 
 const rootItems = ref<DockTreeItem[]>([])
 const childrenByPath = ref<Record<string, DockTreeItem[]>>({})
@@ -616,8 +626,7 @@ function extensionOf(name: string) {
 const isImageFile = (item: DockTreeItem) => !item.is_dir && imageExts.has(extensionOf(item.name))
 const isCompanionFile = (item: DockTreeItem) => !item.is_dir && companionExts.has(extensionOf(item.name))
 const isArchiveFile = (item: DockTreeItem) => !item.is_dir && isArchiveFileName(item.name)
-const docProxyUrl = (path: string) => decodeURI(encodeURI(`${privateBase}/p${path}`)).replace(/#/g, '%23').replace(/\?/g, '%3F')
-const itemOpenUrl = (item: DockTreeItem) => String(item.raw_url || item.url || '') || docProxyUrl(item.path)
+const itemOpenUrl = (item: DockTreeItem) => openListItemOpenUrl(item, node => node.path)
 const companionHref = (item: DockTreeItem) => isCompanionFile(item) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
 
 function toTreeItem(item: any, dir: string): DockTreeItem {
@@ -718,22 +727,8 @@ function clearTreeSelection() {
   selectedTreePaths.value = []
 }
 
-function triggerDownload(url: string, filename?: string) {
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.target = '_blank'
-  anchor.rel = 'noopener'
-  if (filename)
-    anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-}
-
 async function downloadTreeItem(item: DockTreeItem) {
-  if (item.is_dir)
-    return
-  triggerDownload(await resolveDownloadUrl(item.path), item.name)
+  await downloadOpenListItem({ item, itemPath: treeItemPath, resolveUrl: resolveDownloadUrl })
 }
 
 async function browseTreeArchive(item: DockTreeItem) {
@@ -749,8 +744,7 @@ async function browseTreeArchive(item: DockTreeItem) {
 }
 
 async function copyTreeLink(item: DockTreeItem, path: string) {
-  await navigator.clipboard?.writeText(`[${item.name}](${docProxyUrl(path)})`)
-  showMessage(t('linkCopied'), 2000)
+  await copyOpenListItemLink({ item, path, t })
 }
 
 function openTreeInFileManager() {
@@ -765,21 +759,12 @@ async function deleteTreeSelection() {
     items: selectedTreeItems.value,
     refresh: refreshTree,
     t,
-    tf: (key, fallback) => {
-      const value = t(key)
-      return value === key ? fallback : value
-    },
+    tf: fallbackTranslator(t),
   })
 }
 
 async function shareTreeSelection() {
-  await createShareForPaths({
-    paths: selectedTreeItems.value.map(item => treeItemPath(item)),
-    tf: (key, fallback) => {
-      const value = t(key)
-      return value === key ? fallback : value
-    },
-  })
+  await shareOpenListSelection({ itemPath: treeItemPath, items: selectedTreeItems.value, tf: fallbackTranslator(t) })
 }
 
 function onTreeContextMenu(event: MouseEvent) {
@@ -803,96 +788,29 @@ function onTreeContextMenu(event: MouseEvent) {
     selectOnly: selectOnlyTree,
     shareSelection: shareTreeSelection,
     t,
-    tf: (key, fallback) => {
-      const value = t(key)
-      return value === key ? fallback : value
-    },
+    tf: fallbackTranslator(t),
   })
 }
 
 async function resolveDownloadUrl(path: string) {
   const local = visibleNodes.value.find(item => item.path === path)
   if (local?.raw_url || local?.url)
-    return String(local.raw_url || local.url)
+    return itemOpenUrl(local)
   return (await resolveOpenListFile(path)).url
 }
 
-function loadViewerScript() {
-  if (document.getElementById('protyleViewerScript'))
-    return Promise.resolve()
-  return new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.id = 'protyleViewerScript'
-    script.src = '/stage/protyle/js/viewerjs/viewer.js?v=1.11.7'
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('viewer.js load failed'))
-    document.head.appendChild(script)
-  })
-}
-
 async function openImageViewer(item: DockTreeItem) {
-  const siblings = visibleNodes.value.filter(isImageFile)
-  const urls = await Promise.all(siblings.map(node => resolveDownloadUrl(node.path)))
-  const currentUrl = await resolveDownloadUrl(item.path)
-  await loadViewerScript()
-  const imagesElement = document.createElement('ul')
-  urls.filter(Boolean).forEach((url) => {
-    const li = document.createElement('li')
-    const img = document.createElement('img')
-    img.src = encodeURI(url)
-    li.appendChild(img)
-    imagesElement.appendChild(li)
+  await openLazyImageViewer({
+    current: item,
+    items: visibleNodes.value.filter(isImageFile),
+    keyOf: node => node.path,
+    onError: showErrorMessage,
+    urlOf: node => resolveDownloadUrl(node.path),
   })
-  const initialViewIndex = Math.max(0, urls.findIndex(url => url === currentUrl))
-  window.siyuan.viewer = new window.Viewer(imagesElement, {
-    button: false,
-    initialViewIndex,
-    transition: false,
-    hidden() {
-      window.siyuan.viewer?.destroy?.()
-    },
-    toolbar: {
-      close() {
-        window.siyuan.viewer?.destroy?.()
-      },
-      flipHorizontal: true,
-      flipVertical: true,
-      next: true,
-      oneToOne: true,
-      play: true,
-      prev: true,
-      reset: true,
-      rotateLeft: true,
-      rotateRight: true,
-      zoomIn: true,
-      zoomOut: true,
-    },
-  })
-  window.siyuan.viewer.show()
-}
-
-function escapeHtml(value: string) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-function escapeAttr(value: string) {
-  return escapeHtml(value)
 }
 
 function formatSize(size = 0) {
-  if (!size)
-    return ''
-  if (size < 1024)
-    return `${size} B`
-  if (size < 1024 * 1024)
-    return `${(size / 1024).toFixed(1)} KB`
-  if (size < 1024 * 1024 * 1024)
-    return `${(size / 1024 / 1024).toFixed(1)} MB`
-  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
+  return formatByteSize(size, true)
 }
 
 

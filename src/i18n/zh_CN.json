@@ -33,8 +33,8 @@
   "ignoredBySyncignore": "已被 syncignore 排除",
   "syncableByDefault": "默认参与同步",
   "openApi": "打开 API",
-  "copyRoute": "复制路由",
-  "routeCopied": "思盘私有路由已复制",
+  "copyRoute": "复制链接",
+  "routeCopied": "思盘链接已复制",
   "folderCreated": "思盘目录已创建",
   "fileCreated": "思盘文件已创建",
   "unableCreateFolder": "无法创建目录",
@@ -89,7 +89,6 @@
   "driverName.OpenList": "OpenList",
   "driverName.AList": "AList",
   "driverName.AListV3": "AList V3",
-  "driverName.SiYuanKernel": "思源内核",
   "driverName.SiYuanWorkspace": "思源工作空间",
   "driverName.Local": "本地存储",
   "driverName.BaiduNetdisk": "百度网盘",
@@ -129,7 +128,6 @@
   "driverName.URLTree": "URL 树",
   "driverName.USS": "又拍云 USS",
   "driverName.Virtual": "虚拟存储",
-  "driverNote.SiYuanKernel": "使用思源内核插件存储保存的虚拟存储。",
   "driverNote.SiYuanWorkspace": "通过思源 /api/file 接入工作空间文件，读取、列目录、删除和重命名已接入，上传仍受保护。",
   "driverNote.Local": "桌面端前端运行时直接通过 Electron fs 访问本地文件系统；根目录为 / 时显示本机全部设备，填 D:\\ 则只挂载 D 盘。",
   "driverNote.OpenList": "通过 OpenList 兼容接口接入远端存储。",
@@ -263,6 +261,7 @@
   "driverFieldHelp.sign_key": "如果没有自己的签名密钥，可以按 OpenList 说明留空或使用导入配置。",
   "driverFieldHelp.query_token": "OpenList 登录流程保存的数据，通常不需要手动修改。",
   "mountAdd": "添加",
+  "mountHelp": "挂载说明",
   "mountUpdate": "修改",
   "mountUpdatePassed": "修改成功",
   "mountEditing": "正在修改挂载",
@@ -427,5 +426,6 @@
   "torrentParsed": "Torrent 已解析",
   "shareLocalUnsupported": "本地 Local 分享无法通过浏览器分享链接下载",
   "openHelp": "打开说明",
-  "pluginHelp": "思盘说明文档"
+  "pluginHelp": "思盘说明文档",
+  "docEditWarning": "你正在编辑思盘文档，请不要在这里编辑，因为在这里编辑的内容不会被保存，请在你自己创建的笔记本中记录笔记"
 }

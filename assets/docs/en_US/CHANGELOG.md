@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 0.3.7
+
+### Fixed
+
+- Hid the delete action for built-in `admin` and `guest` users in Dock user management.
+- Changed share row actions to show Copy Link directly and move Edit Share into the More menu.
+- Fixed Local image preview and copied links for Chinese filenames by applying the shared resource URL normalization path, and kept Chinese paths readable in copied cloud-drive/proxy links.
+- Show a SiYuan message when opening Siyuan Cloud docs to remind users not to edit packaged docs directly.
+- Added Chinese and English mount guides for runtime drivers exposed in the Dock, with README links to each guide.
+- Added the SiYuan Workspace driver guide, including workspace root mounting, native public resource links, and stable copied-link behavior.
+- Fixed the `assets/docs` packaging copy rule to avoid duplicated root, language, and category copies of driver guides in the release package.
+- Fixed SiYuan Workspace media, image, and PDF previews by routing workspace `data/<name>/...` files to their native SiYuan public URLs instead of proxying them through plugin-private `/p` links.
+- Fixed WebDAV image preview and folder navigation edge cases by aligning list/get with OpenList's PROPFIND flow, avoiding the previous first-image selection, undefined error handler, and duplicated self-directory response problems.
+
+### Improved
+
+- Replaced the Mounts page header Add action with a Help action that opens the packaged driver guide index; the bottom Add entry remains the mount creation path.
+- Added the OpenList token helper link to the OpenList-compatible mount guide.
+- Rewrote the Baidu Netdisk driver guide from the OpenList upstream documentation, including refresh-token setup, `download_api` choices, upload fields, and a step-by-step test checklist.
+- Stopped exposing `SiYuanKernel` as an addable driver; the virtual FS remains an internal root capability, `SiYuanWorkspace` is the only addable SiYuan-native mount, and legacy `/` kernel mounts are cleaned from config.
+- Unified stable copied links for SiYuan Workspace public files, so copied links use portable relative paths such as `/assets/...` rather than changing localhost origins.
+- Reworked the WebDAV runtime around OpenList/gowebdav naming and behavior: `ReadDir` uses `PROPFIND Depth:1`, `Stat` uses `PROPFIND Depth:0`, href basenames are used for object names, and the driver no longer injects UI-only `raw_url` fields.
+- Consolidated FileTab and Dock file UI behavior into shared `file_ui` and `file_actions` helpers, so image viewer, download, copy-link, share, delete, and right-click menu behavior are maintained in one place.
+
 ## 0.3.6
 
 ### Fixed

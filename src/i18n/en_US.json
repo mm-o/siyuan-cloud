@@ -33,8 +33,8 @@
   "ignoredBySyncignore": "ignored by syncignore",
   "syncableByDefault": "syncable by default",
   "openApi": "Open API",
-  "copyRoute": "Copy Route",
-  "routeCopied": "Siyuan Cloud private route copied",
+  "copyRoute": "Copy Link",
+  "routeCopied": "Siyuan Cloud link copied",
   "folderCreated": "Siyuan Cloud folder created",
   "fileCreated": "Siyuan Cloud file created",
   "unableCreateFolder": "Unable to create folder",
@@ -89,7 +89,6 @@
   "driverName.OpenList": "OpenList",
   "driverName.AList": "AList",
   "driverName.AListV3": "AList V3",
-  "driverName.SiYuanKernel": "SiYuan Kernel",
   "driverName.SiYuanWorkspace": "SiYuan Workspace",
   "driverName.Local": "Local Storage",
   "driverName.BaiduNetdisk": "Baidu Netdisk",
@@ -129,7 +128,6 @@
   "driverName.URLTree": "URL Tree",
   "driverName.USS": "USS",
   "driverName.Virtual": "Virtual",
-  "driverNote.SiYuanKernel": "Virtual storage backed by SiYuan kernel plugin storage.",
   "driverNote.SiYuanWorkspace": "Workspace files are wired through SiYuan /api/file. Read, list, remove, and rename are available; upload is still guarded.",
   "driverNote.Local": "Desktop frontend runtime accesses the host filesystem directly through Electron fs. Use / to show all local devices, or D:\\ to mount only drive D.",
   "driverNote.OpenList": "Remote storage through OpenList-compatible APIs.",
@@ -263,6 +261,7 @@
   "driverFieldHelp.sign_key": "Keep it empty if you do not have one.",
   "driverFieldHelp.query_token": "OpenList marks this as login flow data; do not edit it manually.",
   "mountAdd": "Add",
+  "mountHelp": "Mount help",
   "mountUpdate": "Update",
   "mountUpdatePassed": "Mount updated",
   "mountEditing": "Editing mount",
@@ -427,5 +426,6 @@
   "torrentParsed": "Torrent parsed",
   "shareLocalUnsupported": "Local shares cannot be downloaded from browser share links",
   "openHelp": "Open Docs",
-  "pluginHelp": "Siyuan Cloud docs"
+  "pluginHelp": "Siyuan Cloud docs",
+  "docEditWarning": "You are editing Siyuan Cloud docs. Please do not edit here, because changes made here will not be saved. Please take notes in a notebook you created yourself"
 }
