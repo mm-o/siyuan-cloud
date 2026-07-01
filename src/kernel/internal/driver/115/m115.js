@@ -89,7 +89,18 @@ const bigIntToBytes = (value, length) => {
   return out;
 };
 
-const randomNonZero = () => Math.max(1, Math.floor(Math.random() * 255));
+const bigIntToMinimalBytes = (value) => {
+  if (value === 0n) return new Uint8Array();
+  const out = [];
+  let current = value;
+  while (current > 0n) {
+    out.unshift(Number(current & 0xffn));
+    current >>= 8n;
+  }
+  return Uint8Array.from(out);
+};
+
+const randomNonZero = () => Math.floor(Math.random() * 255) + 1;
 
 const rsaEncryptSlice = (input) => {
   const padSize = KEY_LENGTH - input.length - 3;
@@ -111,7 +122,7 @@ const rsaEncrypt = (input) => {
 };
 
 const rsaDecryptSlice = (input) => {
-  const data = bigIntToBytes(modPow(bytesToBigInt(input), E, N), KEY_LENGTH);
+  const data = bigIntToMinimalBytes(modPow(bytesToBigInt(input), E, N));
   const start = data.findIndex((byte, index) => index > 0 && byte === 0);
   return start >= 0 ? data.slice(start + 1) : new Uint8Array();
 };

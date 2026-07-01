@@ -10,6 +10,11 @@ export function createDocs(plugin: any, t: (key: string) => string) {
   const docParent = (path: string) => path.split('/')[1] || ''
   const docRef = (id: string, title: string) => `((${id} '${title}'))`
   const docIndex = (title: string, refs: string[]) => [`# ${title}`, '', ...refs.map(ref => `- ${ref}`), ''].join('\n')
+  const replaceDocRefs = (markdown: string, refs: Map<string, string>) => {
+    for (const [title, ref] of refs)
+      markdown = markdown.split(`[[${title}]]`).join(ref)
+    return markdown
+  }
 
   async function fetchText(url: string, fallback = '') {
     const response = await fetch(url)
@@ -78,14 +83,17 @@ export function createDocs(plugin: any, t: (key: string) => string) {
   async function syncDocs() {
     const refs = new Map<string, string>()
     const groups = new Map<string, string[]>()
+    const docs: Array<{ path: string; markdown: string }> = []
     const files = await docFiles()
     for (const parent of new Set(files.map(file => docPath(file)).filter(path => path.split('/').length > 2).map(docParent)))
       await writeDoc(`/${parent}`, `# ${parent}\n`)
     for (const file of files) {
       const path = docPath(file)
       const title = docTitle(path)
-      const ref = docRef(await writeDoc(path, await fetchText(asset(`assets/docs/${file}`), `# ${title}\n`)), title)
+      const markdown = await fetchText(asset(`assets/docs/${file}`), `# ${title}\n`)
+      const ref = docRef(await writeDoc(path, markdown), title)
       refs.set(title, ref)
+      docs.push({ path, markdown })
       if (path.split('/').length > 2) {
         const parent = docParent(path)
         groups.set(parent, [...(groups.get(parent) || []), ref])
@@ -94,7 +102,9 @@ export function createDocs(plugin: any, t: (key: string) => string) {
     for (const [title, items] of groups)
       refs.set(title, docRef(await writeDoc(`/${title}`, docIndex(title, items)), title))
     refs.set('API', docRef(await writeDoc('/API', await apiDoc()), 'API'))
-    return refs
+    for (const item of docs)
+      await writeDoc(item.path, replaceDocRefs(item.markdown, refs))
+    return { refs, groups }
   }
 
   async function openApiDoc() {
@@ -102,11 +112,9 @@ export function createDocs(plugin: any, t: (key: string) => string) {
   }
 
   async function openReadmeDoc() {
-    const refs = await syncDocs()
+    const { refs } = await syncDocs()
     let markdown = await fetchText(asset(lang() === 'zh_CN' ? 'README_zh_CN.md' : 'README.md'), '# README\n')
-    for (const [title, ref] of refs)
-      markdown = markdown.split(`[[${title}]]`).join(ref)
-    await writeDoc('/README', markdown, true)
+    await writeDoc('/README', replaceDocRefs(markdown, refs), true)
   }
 
   async function loadDocList() {
@@ -129,23 +137,17 @@ export function createDocs(plugin: any, t: (key: string) => string) {
   }
 
   async function openPackagedDoc(key: string) {
-    const files = await docFiles()
-    const children = files.filter(file => docPath(file).startsWith(`/${key}/`))
-    if (children.length) {
-      const refs = []
-      for (const file of children) {
-        const path = docPath(file)
-        const title = docTitle(path)
-        refs.push(docRef(await writeDoc(path, await fetchText(asset(`assets/docs/${file}`), `# ${title}\n`)), title))
-      }
-      await writeDoc(`/${key}`, docIndex(key, refs), true)
+    const { refs, groups } = await syncDocs()
+    if (groups.has(key)) {
+      await writeDoc(`/${key}`, docIndex(key, groups.get(key) || []), true)
       return
     }
+    const files = await docFiles()
     const file = files.find(file => docPath(file) === key)
     if (!file)
       return
     const path = docPath(file)
-    await writeDoc(path, await fetchText(asset(`assets/docs/${file}`), `# ${docTitle(path)}\n`), true)
+    await writeDoc(path, replaceDocRefs(await fetchText(asset(`assets/docs/${file}`), `# ${docTitle(path)}\n`), refs), true)
   }
 
   return { loadDocList, openApiDoc, openReadmeDoc, openPackagedDoc }

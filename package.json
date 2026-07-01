@@ -1,6 +1,6 @@
 {
   "name": "siyuan-cloud",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "type": "module",
   "description": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
   "author": "mm-o",

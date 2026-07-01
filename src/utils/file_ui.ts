@@ -70,6 +70,45 @@ export function triggerDownload(url: string, filename?: string) {
   anchor.remove()
 }
 
+async function tryOpenMedia(name: string, url: string) {
+  const payload = {
+    name,
+    path: url,
+    raw_url: url,
+    title: name,
+    type: 'media',
+    url,
+  }
+  const target = (window as any).siyuanMediaPlayer || (window as any).siyuanMedia || (window as any).sibo
+  if (typeof target === 'function') {
+    await target(payload)
+    return true
+  }
+  for (const method of ['open', 'play', 'playMediaItem', 'add', 'load']) {
+    if (typeof target?.[method] === 'function') {
+      await target[method](payload)
+      return true
+    }
+  }
+  window.dispatchEvent(new CustomEvent('playMediaItem', { detail: payload }))
+  return false
+}
+
+export async function openMediaPreview(name: string, url: string, kind: 'audio' | 'video') {
+  const href = normalizeResourceUrl(url)
+  if (await tryOpenMedia(name, href))
+    return
+  new Dialog({
+    title: name,
+    width: 'min(860px, 92vw)',
+    content: `<div class="b3-dialog__content">
+  ${kind === 'audio'
+    ? `<audio controls autoplay style="width:100%;" src="${escapeHtml(href)}"></audio>`
+    : `<video controls autoplay playsinline style="width:100%;max-height:70vh;background:#000;" src="${escapeHtml(href)}"></video>`}
+</div>`,
+  })
+}
+
 export function promptText(options: {
   title: string
   value?: string

@@ -262,6 +262,10 @@
     grid-template-columns: max-content minmax(0, 1fr) var(--ol-file-size) var(--ol-file-modified);
   }
 
+  &--focus {
+    background-color: color-mix(in srgb, var(--b3-theme-primary) 16%, transparent);
+  }
+
   .b3-list-item__text {
     display: flex;
     min-width: 0;

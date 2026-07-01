@@ -147,7 +147,9 @@ export function openListDocumentLink<T extends OpenListUrlItem & { name: string;
   if (!options.item.is_dir && options.videoExts?.has(ext))
     return `<video controls src="${escapeHtml(formatResourceUrlForMarkdown(url))}"></video>`
   const isImage = !options.item.is_dir && options.imageExts?.has(ext)
-  return `${isImage ? '!' : ''}[${escapeMdText(options.item.name)}](${escapeMdDest(isImage ? formatResourceUrlForMarkdown(url) : url)})`
+  if (isImage)
+    return `![${escapeMdText(options.item.name)}](${escapeMdDest(formatResourceUrlForMarkdown(url))})`
+  return `[${escapeMdText(options.item.name)}](siyuan://plugins/siyuan-cloud/open?path=${normalizeOpenListPath(options.path)})`
 }
 
 export function openOpenListFileItemMenu(options: {

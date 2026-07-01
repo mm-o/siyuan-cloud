@@ -97,6 +97,8 @@ const DRIVER_CAPABILITIES = {
   S3: methodRow({ ...baseManage, direct_upload: STATUS.DONE }, "S3/Doge runtime supports presigned direct upload info."),
   Doge: methodRow({ ...baseManage, direct_upload: STATUS.DONE }, "S3-compatible Doge runtime."),
   "115 Cloud": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, details: STATUS.DONE, offline: STATUS.PLACEHOLDER }, "Upload/offline remain blocked on 115 rapid/ECDH and OSS multipart work."),
+  "115 Open": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, details: STATUS.DONE, offline: STATUS.PARTIAL }, "115 Open token/list/link/basic management/details are ported; upload remains blocked on OSS multipart work."),
+  "115 Share": methodRow({ list: STATUS.DONE, get: STATUS.DONE, link: STATUS.DONE, read: STATUS.DONE, mkdir: STATUS.UNSUPPORTED, rename: STATUS.UNSUPPORTED, move: STATUS.UNSUPPORTED, copy: STATUS.UNSUPPORTED, remove: STATUS.UNSUPPORTED, put: STATUS.UNSUPPORTED }, "OpenList marks 115 Share management/upload methods as NotSupport."),
   "123Pan": methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED }, "123Pan upload path is ported; copy is not exposed by the current runtime."),
   "189Cloud": methodRow({ ...baseManage, rapid_upload: STATUS.PLACEHOLDER, torrent: STATUS.PLACEHOLDER }, "Normal login/list/upload have smoke coverage; real-account SMS and large upload validation remain pending."),
   "189CloudPC": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, rapid_upload: STATUS.PLACEHOLDER, torrent: STATUS.PLACEHOLDER }, "PC login/upload/CAS/torrent remain structured placeholders."),

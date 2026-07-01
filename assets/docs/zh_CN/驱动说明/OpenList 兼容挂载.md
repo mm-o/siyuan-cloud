@@ -23,14 +23,14 @@ OpenList token 获取工具：<https://api.oplist.org/>。
 | --- | --- |
 | 驱动 | `OpenList` |
 | 挂载路径 | `/Remote` |
-| `url` | 上游服务地址 |
+| `url` | 上游服务地址，不要带 `/admin` |
 | `token` | 有 token 时优先使用 |
 
 ## 字段
 
 | 字段 | 说明 |
 | --- | --- |
-| `url` | **必填**，上游 OpenList/AList 地址 |
+| `url` | 必填，上游 OpenList/AList API 基础地址 |
 | `username` / `password` | 登录用户名和密码 |
 | `token` | 已有认证 token |
 | `meta_password` | OpenList 元信息密码 |
@@ -41,14 +41,22 @@ OpenList token 获取工具：<https://api.oplist.org/>。
 
 ## 注意
 
-- `OpenList` 会按需登录并缓存 token。
-- 文件管理动作会转发给上游 `/api/fs/*`。
-- 上游不可用、证书异常或认证过期时，思盘只能返回上游错误。
+- 不要填写后台页面地址。应填写 `http://127.0.0.1:5244`，不要填写 `http://127.0.0.1:5244/admin`。
+- 思源 v3.7.0 会因为 SSRF 防护拦截内核代理访问 `127.0.0.1`、`localhost`、`192.168.x.x`、`10.x`、`172.16-31.x`。
+- 桌面端文件管理器可以对本机/内网 OpenList/AList 挂载走前端直连，覆盖常用交互操作。
+- 分享、WebDAV、S3、服务端压缩包/torrent 操作、外部客户端仍然走标准后端路径。
+- 多设备或协议访问建议把 OpenList/AList 暴露成正常 HTTPS 反代或隧道地址。
+
+## 详细说明
+
+- [[OpenList AList 本地挂载与代理]]
 
 ## 排查
 
 | 现象 | 处理 |
 | --- | --- |
 | 登录失败 | 检查 `url`、账号密码或 token |
-| 列表为空 | 确认上游挂载自身可用 |
-| 下载失败 | 检查上游 raw_url、代理配置和跨域/证书问题 |
+| 列表为空 | 确认上游 OpenList/AList 自身可用 |
+| `ip address ... is prohibited` | 使用桌面端文件管理器直连，或挂载 HTTPS 反代地址 |
+| 其他设备无法使用本地挂载 | 使用反代或隧道，并挂载它的 HTTPS 地址 |
+| 下载失败 | 检查上游 `raw_url`、代理配置、跨域和证书问题 |

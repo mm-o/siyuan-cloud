@@ -10,6 +10,7 @@ The source trees are intentionally ignored by Git because they are large upstrea
 - `docs/kernel-architecture.md`: Kernel-side source layout and generated `kernel.js` build rule.
 - `docs/siyuan-cloud-migration-plan.md`: Chinese migration plan table for continuing the Siyuan Cloud OpenList-compatible port.
 - `docs/platform-roadmap.md`: Platform roadmap for the OpenList-compatible base layer and deeper SiYuan-native integrations.
+- `docs/openlist-alist-mounting.md`: OpenList/AList mounting guide, SiYuan v3.7.0 private-IP proxy limit, frontend direct shortcut, and reverse-proxy/tunnel setup.
 - `docs/bazaar-review-checklist.md`: marketplace submission and maintainer review checklist.
 - `AGENTS.md`: short handoff file for future agents. It records the "align with OpenList and copy/adapt directly" rule, current architecture mapping, and source locations.
 

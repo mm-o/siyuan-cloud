@@ -19,6 +19,7 @@
 | File browsing and links | Available |
 | Runtime API discovery | Generated from `/api/public/api` |
 | Driver guides | See [[Drivers]] |
+| OpenList/AList local mounting | See [[OpenList AList Local Mounting and Proxy]] |
 | Local storage | See [[Local Storage]] |
 | Release notes | See [[CHANGELOG]] |
 
@@ -49,9 +50,13 @@
 Runtime adapters currently exposed in the Dock include:
 
 - [[OpenList Compatible]]
+- [[OpenList AList Local Mounting and Proxy]]
 - [[WebDAV]]
 - [[S3 Compatible]]
+- [[DogeCloud]]
 - [[115 Cloud]]
+- [[115 Open]]
+- [[115 Share]]
 - [[OneDrive]]
 - [[123Pan]]
 - [[Baidu Netdisk]]

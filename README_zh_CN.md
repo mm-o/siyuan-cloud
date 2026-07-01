@@ -19,6 +19,7 @@
 | 版本变化 | [[更新日志]] |
 | 实时 API | [[API]] |
 | 驱动教程 | [[驱动说明]] |
+| OpenList/AList 本地挂载 | [[OpenList AList 本地挂载与代理]] |
 | 百度网盘 | [[百度网盘挂载]] |
 | Local 本地存储 | [[Local 本地存储]] |
 
@@ -51,9 +52,13 @@
 Dock 当前可见的运行时适配包括：
 
 - [[OpenList 兼容挂载]]
+- [[OpenList AList 本地挂载与代理]]
 - [[WebDAV 挂载]]
 - [[S3 兼容存储]]
+- [[DogeCloud 挂载]]
 - [[115 Cloud 挂载]]
+- [[115 Open 挂载]]
+- [[115 Share 挂载]]
 - [[OneDrive 挂载]]
 - [[123Pan 挂载]]
 - [[百度网盘挂载]]

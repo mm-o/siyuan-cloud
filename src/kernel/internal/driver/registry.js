@@ -1,5 +1,7 @@
 import { normalizePath } from "../model/path.js";
 import { create115Driver } from "./115/driver.js";
+import { create115OpenDriver } from "./115_open/driver.js";
+import { create115ShareDriver } from "./115_share/driver.js";
 import { create123PanDriver } from "./123/driver.js";
 import { create189CloudDriver } from "./189/driver.js";
 import { create189CloudTVDriver } from "./189_tv/driver.js";
@@ -43,6 +45,10 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
     WebDav: createWebDavDriver({ client }),
     "115 Cloud": create115Driver({ client }),
     "115": create115Driver({ client }),
+    "115 Open": create115OpenDriver({ client }),
+    "115Open": create115OpenDriver({ client }),
+    "115 Share": create115ShareDriver({ client }),
+    "115Share": create115ShareDriver({ client }),
     Onedrive: createOneDriveDriver({ client }),
     OneDrive: createOneDriveDriver({ client }),
     "123Pan": create123PanDriver({ client }),
@@ -113,7 +119,7 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
         relPath: relPathForMount(storage.mount_path, current),
       };
     },
-    async test(driverName, addition) {
+    async test(driverName, addition, verify) {
       const driver = drivers[driverName];
       if (!driver?.test) throw new Error(`driver [${driverName}] does not expose a test method`);
       return driver.test({
@@ -121,7 +127,7 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
         driver: driverName,
         mount_path: "/",
         settings: getSettings ? getSettings() : {},
-      });
+      }, verify);
     },
   };
 

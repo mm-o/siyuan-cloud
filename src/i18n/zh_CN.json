@@ -285,6 +285,8 @@
   "qrPolling": "等待扫码...",
   "qrRefreshHelp": "刷新获取二维码，扫码后等待登录完成。",
   "qrScanPrompt": "请用移动端扫码登录。",
+  "qrScannedPrompt": "已扫码，请在移动端确认登录。",
+  "qrExpiredPrompt": "二维码已过期，请刷新后重试。",
   "qrLoginDone": "扫码登录完成",
   "smsCodeRequired": "需要短信二次验证。",
   "smsCodeSent": "短信验证码已发送",

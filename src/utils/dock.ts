@@ -58,6 +58,8 @@ const USER_PERMISSION_KEYS = [
   'customize_share_id',
 ] as const
 const TASK_TYPES = ['copy', 'move', 'upload', 'offline_download', 'offline_download_transfer', 'decompress', 'decompress_upload']
+const QR_SESSION_KEYS = ['query_token', 'QueryToken', 'access_token', 'AccessToken', 'refresh_token', 'RefreshToken', 'temp_uuid', 'TempUuid', 'qrcode_token', 'QRCodeToken', 'qrcode_sign', 'QRCodeSign', 'qrcode_time', 'QRCodeTime', 'qrcode_content', 'QRCodeContent', 'qrcode_cookie', 'QRCodeCookie']
+const COOKIE_OR_QR_DRIVERS = new Set(['115 Cloud', '115 Share'])
 const ZH_OPTION_LABELS: Record<string, string> = { password: '密码', qrcode: '二维码', personal: '个人云', family: '家庭云', stream: '普通上传', rapid: '秒传', old: '旧版上传', default: '默认', resource: '资源库', backup: '备份盘', trash: '移入回收站', delete: '直接删除', official: '官方', crack: '破解', crack_video: '视频破解', download: '下载链接', streaming: '流式链接', asc: '升序', desc: '降序', ASC: '升序', DESC: '降序', none: '不排序', name: '名称', file_name: '文件名', filename: '文件名', size: '大小', file_size: '文件大小', filesize: '文件大小', file_type: '文件类型', time: '时间', updated_at: '更新时间', created_at: '创建时间', lastOpTime: '最后操作时间', user_utime: '用户更新时间', sharepoint: 'SharePoint', other: '其它', alipanTV: '阿里云盘 TV' }
 const humanizeOption = (option: string) => option.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 
@@ -170,6 +172,8 @@ export function useDock(plugin: Plugin) {
       return '115 Cloud'
     if (/^115open$/i.test(driver))
       return '115 Open'
+    if (/^115share$/i.test(driver))
+      return '115 Share'
     return driver
   }
 
@@ -230,7 +234,7 @@ export function useDock(plugin: Plugin) {
 
   const driverQrLoginAvailable = computed(() => {
     const driver = normalizeDriverName(verifyDriver.value)
-    return driverFields.value.some(field => field.name === 'query_token')
+    return driverFields.value.some(field => ['query_token', 'qrcode_token'].includes(field.name))
       || driverForm.value.login_type === 'qrcode'
       || ['QuarkTV', 'UCTV', '189CloudTV'].includes(driver)
   })
@@ -412,8 +416,10 @@ export function useDock(plugin: Plugin) {
   function syncAddition(clearQrSession = false) {
     const addition = additionFromForm()
     if (clearQrSession) {
-      for (const key of ['query_token', 'QueryToken', 'access_token', 'AccessToken', 'refresh_token', 'RefreshToken', 'temp_uuid', 'TempUuid'])
+      for (const key of QR_SESSION_KEYS)
         delete addition[key]
+      if (driverFields.value.some(field => field.name === 'qrcode_token') && driverFields.value.some(field => field.name === 'cookie'))
+        delete addition.cookie
     }
     verifyAddition.value = JSON.stringify(addition, null, 2)
     syncFormFromJson()
@@ -421,7 +427,7 @@ export function useDock(plugin: Plugin) {
   }
 
   function validateMountAddition(addition: Record<string, any>) {
-    if (normalizeDriverName(verifyDriver.value) === '115 Cloud' && !String(addition.cookie || '').trim() && !String(addition.qrcode_token || '').trim())
+    if (COOKIE_OR_QR_DRIVERS.has(normalizeDriverName(verifyDriver.value)) && !String(addition.cookie || '').trim() && !String(addition.qrcode_token || '').trim())
       throw new Error(t('driverValidation.115CloudLoginRequired'))
   }
 
@@ -449,7 +455,15 @@ export function useDock(plugin: Plugin) {
       })
     }
     if (driverVerifyQr.value)
-      driverVerifyMessage.value = t('qrScanPrompt')
+      driverVerifyMessage.value = (
+        verify.status === 'scanned'
+          ? tFallback('qrScannedPrompt', t('qrScanPrompt'))
+          : verify.status === 'expired' || verify.status === 'canceled'
+            ? (verify.message || tFallback('qrExpiredPrompt', t('qrScanPrompt')))
+            : (verify.message || t('qrScanPrompt'))
+      )
+    else if (verify.type === 'qrcode' && verify.message)
+      driverVerifyMessage.value = verify.message
   }
 
   async function requestDriverTest(addition: Record<string, any>, verify?: Record<string, any>) {
@@ -460,6 +474,12 @@ export function useDock(plugin: Plugin) {
     })
     await applyDriverTestData(payload.data)
     return payload
+  }
+
+  function driverTestPayloadError(payload: any) {
+    const status = String(payload.data?.verify?.status || '')
+    const pending = ['waiting', 'pending', 'scanned'].includes(status)
+    return pending ? (payload.data?.verify?.message || t('qrScanPrompt')) : (payload.message || `Siyuan Cloud code ${payload.code}`)
   }
 
   function stopDriverQrPolling() {
@@ -474,7 +494,8 @@ export function useDock(plugin: Plugin) {
     driverVerifyPolling.value = true
     driverVerifyTimer = window.setInterval(async () => {
       try {
-        const payload = await requestDriverTest(parseAddition(verifyAddition.value))
+        const addition = parseAddition(verifyAddition.value)
+        const payload = await requestDriverTest(addition, { type: 'qrcode' })
         if (payload.code === 200) {
           stopDriverQrPolling()
           driverVerifyQr.value = ''
@@ -482,11 +503,23 @@ export function useDock(plugin: Plugin) {
           mountCreateOk.value = true
           mountCreateResult.value = `${t('qrLoginDone')} / ${t('mountCreating')}`
           showMessage(t('qrLoginDone'))
-          if (await saveMount())
+          if (await saveMount({ skipDriverTest: true }))
             closeMountForm()
+        } else if (['expired', 'canceled'].includes(String(payload.data?.verify?.status || ''))) {
+          stopDriverQrPolling()
+        } else if (!['waiting', 'pending', 'scanned'].includes(String(payload.data?.verify?.status || ''))) {
+          stopDriverQrPolling()
+          const message = driverTestPayloadError(payload)
+          mountCreateOk.value = false
+          mountCreateResult.value = message
+          driverVerifyMessage.value = message
         }
-      } catch {
-        // Keep polling while the QR session is waiting for scan confirmation.
+      } catch (error) {
+        stopDriverQrPolling()
+        const message = error instanceof Error ? error.message : String(error)
+        mountCreateOk.value = false
+        mountCreateResult.value = message
+        driverVerifyMessage.value = message
       }
     }, 2500)
   }
@@ -518,7 +551,6 @@ export function useDock(plugin: Plugin) {
       mountCreateOk.value = false
       mountCreateResult.value = message
       driverVerifyMessage.value = message
-      showMessage(message, 3000, 'error')
     } finally {
       mountCreating.value = false
     }
@@ -590,12 +622,21 @@ export function useDock(plugin: Plugin) {
     driverForm.value = defaultDriverForm(driverInfo.value || {})
   }
 
+  function driverHasQrSession(addition: Record<string, any>) {
+    return driverFields.value.some(field => field.name === 'qrcode_token')
+      && !!String(addition.qrcode_token || addition.QRCodeToken || '').trim()
+      && !String(addition.cookie || addition.Cookie || '').trim()
+  }
+
   async function tryDriverTest(addition: Record<string, any>) {
-    const payload = await requestDriverTest(addition)
+    const payload = await requestDriverTest(addition, driverHasQrSession(addition) ? { type: 'qrcode' } : undefined)
     if (payload.code === 501 || payload.message?.includes('does not expose a test method yet') || payload.message?.includes('not found'))
       return ''
-    if (payload.code && payload.code !== 200)
-      throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+    if (payload.code && payload.code !== 200) {
+      throw new Error(driverTestPayloadError(payload))
+    }
+    if (payload.data?.addition)
+      Object.assign(addition, payload.data.addition)
     driverVerifySmsRequired.value = false
     const user = payload.data?.user || {}
     return user.nickname ? `${t('driverTestPassed')}: ${user.nickname}` : t('driverTestPassed')
@@ -612,7 +653,8 @@ export function useDock(plugin: Plugin) {
       validateMountAddition(addition)
       const testMessage = options.skipDriverTest ? '' : await tryDriverTest(addition)
       const isUpdate = !!selectedStorageId.value
-      const payload = await openListJson(isUpdate ? '/api/admin/storage/update' : '/api/admin/storage/create', isUpdate
+      const storagePath = isUpdate ? '/api/admin/storage/update' : '/api/admin/storage/create'
+      const storageBody = isUpdate
         ? {
             ...(selectedStorage.value || {}),
             id: selectedStorageId.value,
@@ -627,7 +669,8 @@ export function useDock(plugin: Plugin) {
             driver: verifyDriver.value,
             addition,
             order: 0,
-          })
+          }
+      const payload = await openListJson(storagePath, storageBody)
       await refreshMounts()
       mountCreateOk.value = true
       const title = isUpdate ? t('mountUpdate') : t('mountAdd')
@@ -641,7 +684,6 @@ export function useDock(plugin: Plugin) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mountCreateResult.value = message
-      showMessage(`${selectedStorageId.value ? t('mountUpdate') : t('mountAdd')}: ${message}`, 3000, 'error')
       return false
     } finally {
       mountCreating.value = false

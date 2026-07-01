@@ -10,6 +10,11 @@ import {
 
 const trimAddress = (address) => String(address || "").replace(/\/+$/, "");
 
+const addressOf = (addition) => {
+  const address = trimAddress(addition.url || addition.address || addition.Address);
+  return address.replace(/\/(?:admin|@manage)$/i, "");
+};
+
 const headersFor = (addition) => ({
   Authorization: addition.token || addition.Token || "",
 });
@@ -19,12 +24,32 @@ const checkResp = (payload) => {
   return payload.data;
 };
 
+const absoluteUrl = (addition, rawUrl) => {
+  const value = String(rawUrl || "");
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const address = addressOf(addition);
+  return `${address}${value.startsWith("/") ? "" : "/"}${value}`;
+};
+
+const withOpenListHint = async (operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = error?.message || "";
+    if (/ip address .*prohibited|prohibited/i.test(message)) {
+      throw new Error("SiYuan v3.7.0 blocked this OpenList/AList upstream in /api/network/forwardProxy SSRF protection. Use an address the SiYuan kernel is allowed to dial, or expose OpenList/AList through a routed domain/reverse proxy. The API base URL should not include /admin.");
+    }
+    throw error;
+  }
+};
+
 const login = async (client, storage) => {
   const addition = storage.addition_json;
   if (!addition.username && !addition.Username) return;
-  const payload = await remoteJson(
+  const payload = await withOpenListHint(() => remoteJson(
     client,
-    `${trimAddress(addition.url || addition.address || addition.Address)}/api/auth/login`,
+    `${addressOf(addition)}/api/auth/login`,
     {
       body: {
         username: addition.username || addition.Username || "",
@@ -33,7 +58,7 @@ const login = async (client, storage) => {
       method: "POST",
       timeout: Number(addition.timeout || 30000),
     },
-  );
+  ));
   addition.token = payload?.data?.token || "";
   if (storage.saveDriverStorage) await storage.saveDriverStorage(addition);
 };
@@ -54,16 +79,16 @@ const objFrom = (item, path) => ({
 export const createOpenListDriver = ({ client }) => {
   const request = async (storage, apiPath, method, body, retry = false) => {
     const addition = storage.addition_json;
-    const payload = await remoteJson(
+    const payload = await withOpenListHint(() => remoteJson(
       client,
-      `${trimAddress(addition.url || addition.address || addition.Address)}/api${apiPath}`,
+      `${addressOf(addition)}/api${apiPath}`,
       {
         body,
         headers: headersFor(addition),
         method,
         timeout: Number(addition.timeout || 30000),
       },
-    );
+    ));
     if ((payload.code === 401 || payload.code === 403) && !retry) {
       await login(client, storage);
       return request(storage, apiPath, method, body, true);
@@ -91,7 +116,7 @@ export const createOpenListDriver = ({ client }) => {
         direct_upload_tools: [],
       };
     },
-    async get(storage, relPath) {
+    async get(storage, relPath, options = {}) {
       const addition = storage.addition_json;
       const data = await request(storage, "/fs/get", "POST", {
         path: relPath,
@@ -99,11 +124,24 @@ export const createOpenListDriver = ({ client }) => {
       });
       return {
         ...objFrom(data, relPath),
-        raw_url: data.raw_url || "",
+        raw_url: options.skipLink ? "" : absoluteUrl(addition, data.raw_url || data.url || ""),
         readme: data.readme || "",
         header: data.header || "",
         provider: "OpenList",
         related: data.related || [],
+      };
+    },
+    async read(storage, relPath, options = {}) {
+      const data = await this.get(storage, relPath);
+      const url = absoluteUrl(storage.addition_json, data.raw_url || data.url || "");
+      if (!url) throw new Error("OpenList returned empty raw_url");
+      return {
+        link: {
+          content_length: Number(data.size || 0),
+          header: options.proxyHeaders || options.headers || {},
+          method: "GET",
+          url,
+        },
       };
     },
     async mkdir(storage, relPath) {
@@ -140,11 +178,22 @@ export const createOpenListDriver = ({ client }) => {
         password: storage.addition_json.meta_password || "",
       });
     },
+    async test(storage) {
+      const addition = storage.addition_json;
+      await request(storage, "/fs/list", "POST", {
+        page: 1,
+        per_page: 1,
+        path: addition.root_folder_path || addition.root_folder_id || "/",
+        password: addition.meta_password || "",
+        refresh: false,
+      });
+      return { ok: true };
+    },
     async put(storage, relPath, content, mime, options = {}) {
       const addition = storage.addition_json;
-      const response = await forwardProxy(
+      const response = await withOpenListHint(() => forwardProxy(
         client,
-        `${trimAddress(addition.url || addition.address || addition.Address)}/api/fs/put`,
+        `${addressOf(addition)}/api/fs/put`,
         {
           allowErrorStatus: true,
           body: content || "",
@@ -159,7 +208,7 @@ export const createOpenListDriver = ({ client }) => {
           responseEncoding: "text",
           timeout: Number(addition.timeout || 30000),
         },
-      );
+      ));
       const payload = JSON.parse(response.body || "{}");
       checkResp(payload);
     },

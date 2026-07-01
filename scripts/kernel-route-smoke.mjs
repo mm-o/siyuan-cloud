@@ -11,6 +11,8 @@ import {
   configure as configureZipJs,
 } from "@zip.js/zip.js";
 import { create115Driver } from "../src/kernel/internal/driver/115/driver.js";
+import { create115OpenDriver } from "../src/kernel/internal/driver/115_open/driver.js";
+import { create115ShareDriver } from "../src/kernel/internal/driver/115_share/driver.js";
 import { createOneDriveDriver } from "../src/kernel/internal/driver/onedrive/driver.js";
 import { staticPasswordHash } from "../src/kernel/internal/auth/token.js";
 import { signAwsV4 } from "../src/kernel/internal/driver/aws4.js";
@@ -28,6 +30,11 @@ let quarkUploadedBody = "";
 let quarkUploadCommitBody = "";
 let quarkUploadFinishBody = null;
 const pan115Forms = [];
+const pan115OpenForms = [];
+const pan115ShareQueries = [];
+const pan115QrLoginPaths = [];
+let pan115QrStatusCalls = 0;
+let pan115DownurlCalls = 0;
 const cloud189TvListParents = [];
 let pan123UploadRequestBody = null;
 let pan123S3AuthBody = null;
@@ -145,6 +152,8 @@ const baiduZipBytes = makeZip([
   { name: "Cap 中文版安装包/", nameBytes: Buffer.from("43617020d6d0cec4b0e6b0b2d7b0b0fc2f", "hex"), content: "" },
 ].map((item) => ({ ...item, utf8: item.nameBytes ? false : item.utf8 })));
 
+const openListZipBytes = makeZip([{ name: "hello.txt", content: "zip from openlist" }]);
+
 const makeEncryptedZip = async (files, password) => {
   const writer = new ZipWriter(new BlobWriter("application/zip"), { password });
   for (const file of files) await writer.add(file.name, new TextReader(file.content || ""));
@@ -187,6 +196,12 @@ globalThis.siyuan = {
       if (path === "/api/network/forwardProxy") {
         const req = JSON.parse(init.body || "{}");
         const url = new URL(req.url);
+        if (/^(127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url.hostname)) {
+          return jsonBody({
+            code: 8,
+            msg: `forward request failed: Post "${url}": dial tcp ${url.hostname}: ip address [${url.hostname}] is prohibited`,
+          });
+        }
         let body = { code: 200, message: "success", data: null };
         let contentType = "application/json";
         let headers = {};
@@ -1093,11 +1108,69 @@ globalThis.siyuan = {
             data: { user_id: 1150001 },
             state: 0,
           };
+        } else if (url.hostname === "qrcodeapi.115.com" && url.pathname.endsWith("/token")) {
+          headers = { "Set-Cookie": ["QR_TOKEN_COOKIE=token-cookie; Path=/; Domain=.115.com"] };
+          body = {
+            errno: 0,
+            state: true,
+            data: {
+              qrcode: "https://qrcodeapi.115.com/mock-qrcode-content",
+              sign: "115_QR_SIGN",
+              time: 1767225600,
+              uid: "115_QR_UID",
+            },
+          };
+        } else if (url.hostname === "qrcodeapi.115.com" && url.pathname.endsWith("/get/status/")) {
+          assert.equal(url.pathname, "/get/status/");
+          headers = { "Set-Cookie": ["QR_STATUS_COOKIE=status-cookie; Path=/; Domain=.115.com"] };
+          pan115QrStatusCalls += 1;
+          body = {
+            errno: 0,
+            state: true,
+            data: {
+              msg: pan115QrStatusCalls >= 1 ? "allowed" : "waiting",
+              status: pan115QrStatusCalls >= 1 ? 2 : 0,
+            },
+          };
+        } else if (url.hostname === "passportapi.115.com" && url.pathname.endsWith("/login/qrcode")) {
+          assert.match(url.pathname, /\/login\/qrcode$/);
+          assert.equal(req.contentType, "application/x-www-form-urlencoded");
+          assert.equal(req.payloadEncoding, "json");
+          const cookie = req.headers.find((item) => item.Cookie)?.Cookie || "";
+          assert.match(cookie, /QR_TOKEN_COOKIE=token-cookie/);
+          assert.match(cookie, /QR_STATUS_COOKIE=status-cookie/);
+          pan115QrLoginPaths.push(url.pathname);
+          assert.equal(url.pathname, "/app/1.0/web/1.0/login/qrcode");
+          assert.equal(req.payload, "account=115_QR_UID&app=web");
+          body = {
+            data: {
+              cookie: {
+                UID: "115_QR_UID",
+                CID: "115_QR_CID",
+                SEID: "115_QR_SEID",
+                KID: "115_QR_KID",
+              },
+            },
+            errno: 0,
+            state: true,
+          };
+        } else if (url.hostname === "proapi.115.com" && url.pathname === "/app/chrome/downurl") {
+          assert.equal(req.method, "POST");
+          assert.equal(req.contentType, "application/x-www-form-urlencoded");
+          assert.equal(req.payloadEncoding, "json");
+          pan115DownurlCalls += 1;
+          const form = parseForm(req.payload);
+          assert.ok(form.data);
+          assert.doesNotMatch(form.data, /\s/);
+          const cookie = req.headers.find((item) => item.Cookie)?.Cookie || "";
+          assert.match(cookie, /UID=115_UID/);
+          headers = { "Set-Cookie": ["DOWNURL_COOKIE=downurl-cookie; Path=/; Domain=.115.com"] };
+          body = { data: "", errno: 0, state: true };
         } else if (url.hostname === "webapi.115.com" && url.pathname === "/files" && req.method === "GET") {
           const cid = url.searchParams.get("cid") || "0";
           body = {
             cid,
-            count: cid === "0" ? 2 : 0,
+            count: cid === "0" ? 3 : 0,
             data: cid === "0"
               ? [
                   {
@@ -1118,10 +1191,35 @@ globalThis.siyuan = {
                     tp: "1767225600",
                     u: "https://thumb.example.test/115-doc.jpg",
                   },
+                  {
+                    cid: "0",
+                    fid: "115-file-no-pc",
+                    n: "115-no-pc.txt",
+                    pc: [],
+                    s: "15",
+                    sha: "115NOPC",
+                    t: "2026-01-01 00:00",
+                    tp: "1767225600",
+                  },
                 ]
               : [],
             errno: 0,
             offset: Number(url.searchParams.get("offset") || 0),
+            state: true,
+          };
+        } else if (url.hostname === "webapi.115.com" && url.pathname === "/files/get_info") {
+          assert.equal(url.searchParams.get("file_id"), "115-file-no-pc");
+          body = {
+            data: [{
+              file_id: "115-file-no-pc",
+              name: "115-no-pc.txt",
+              pick_code: "pick-115-no-pc",
+              size: "15",
+              sha1: "115NOPC",
+              update_time: "2026-01-01 00:00",
+              create_time: "1767225600",
+            }],
+            errno: 0,
             state: true,
           };
         } else if (url.hostname === "webapi.115.com" && url.pathname === "/files/add") {
@@ -1144,6 +1242,104 @@ globalThis.siyuan = {
             errno: 0,
             state: true,
           };
+        } else if (url.hostname === "proapi.115.com" && url.pathname === "/open/user/info") {
+          body = {
+            code: 0,
+            data: {
+              user_id: 1152001,
+              rt_space_info: {
+                all_total: { size: "2000" },
+                all_use: { size: "600" },
+              },
+            },
+          };
+        } else if (url.hostname === "proapi.115.com" && url.pathname === "/open/ufile/files") {
+          const cid = url.searchParams.get("cid") || "0";
+          body = {
+            code: 0,
+            data: cid === "0"
+              ? [
+                  {
+                    fid: "115-open-folder-1",
+                    fn: "target",
+                    fc: "0",
+                    upt: 1767225600,
+                    uppt: 1767225600,
+                  },
+                  {
+                    fid: "115-open-file-1",
+                    fn: "115-open-doc.txt",
+                    fc: "1",
+                    fs: 21,
+                    pc: "pick-115-open-doc",
+                    sha1: "115OPENSH1",
+                    upt: 1767225600,
+                    uppt: 1767225600,
+                    thumbnail: "https://thumb.example.test/115-open-doc.jpg",
+                  },
+                ]
+              : [],
+            count: cid === "0" ? 2 : 0,
+          };
+        } else if (url.hostname === "proapi.115.com" && ["/open/folder/add", "/open/ufile/move", "/open/ufile/copy", "/open/ufile/delete", "/open/ufile/update"].includes(url.pathname)) {
+          pan115OpenForms.push({ path: url.pathname, form: parseForm(req.payload) });
+          body = { code: 0, data: {} };
+        } else if (url.hostname === "proapi.115.com" && url.pathname === "/open/ufile/downurl") {
+          body = {
+            code: 0,
+            data: {
+              "115-open-file-1": {
+                file_size: 21,
+                url: { url: "https://115-open-download.example.test/115-open-doc.txt" },
+              },
+            },
+          };
+        } else if (url.hostname === "115-open-download.example.test" && req.method === "GET") {
+          contentType = "text/plain";
+          body = "115 open doc";
+        } else if (url.hostname === "115cdn.com" && url.pathname === "/webapi/share/snap") {
+          pan115ShareQueries.push(Object.fromEntries(url.searchParams.entries()));
+          const cid = url.searchParams.get("cid") || "0";
+          body = {
+            errno: 0,
+            state: true,
+            data: {
+              count: cid === "0" ? 2 : 0,
+              list: cid === "0"
+                ? [
+                    {
+                      cid: "115-share-folder-1",
+                      file_name: "share-folder",
+                      is_file: 0,
+                      update_time: "1767225600",
+                    },
+                    {
+                      file_id: "115-share-file-1",
+                      file_name: "115-share-doc.txt",
+                      is_file: 1,
+                      sha1: "115SHARESHA1",
+                      size: 23,
+                      thumb_url: "https://thumb.example.test/115-share-doc.jpg",
+                      update_time: "1767225600",
+                    },
+                  ]
+                : [],
+            },
+          };
+        } else if (url.hostname === "115cdn.com" && url.pathname === "/webapi/share/downurl") {
+          body = {
+            errno: 0,
+            state: true,
+            data: {
+              fid: "115-share-file-1",
+              fn: "115-share-doc.txt",
+              fs: 23,
+              url: { url: "https://115-share-download.example.test/115-share-doc.txt" },
+            },
+          };
+        } else if (url.hostname === "115-share-download.example.test" && req.method === "GET") {
+          contentType = "text/plain";
+          body = "115 share doc";
         } else if (url.hostname === "openlist-login.example.test" && url.pathname.endsWith("/api/auth/login")) {
           body = {
             code: 200,
@@ -1221,11 +1417,19 @@ globalThis.siyuan = {
               provider: "OpenList",
             },
           };
+        } else if (url.hostname === "example.test" && url.pathname.endsWith("/remote.zip") && req.method === "GET") {
+          contentType = "application/zip";
+          body = openListZipBytes.toString("base64");
         } else if (url.pathname.endsWith("/api/fs/get")) {
+          const getPath = req.payload?.path || "/remote.txt";
           body = {
             code: 200,
             message: "success",
-            data: { name: "remote.txt", size: 11, is_dir: false, raw_url: "https://example.test/remote.txt" },
+            data: getPath.endsWith("relative.txt")
+              ? { name: "relative.txt", size: 13, is_dir: false, raw_url: "/d/relative.txt" }
+              : getPath.endsWith("remote.zip")
+                ? { name: "remote.zip", size: openListZipBytes.byteLength, is_dir: false, raw_url: "https://example.test/remote.zip" }
+              : { name: "remote.txt", size: 11, is_dir: false, raw_url: "https://example.test/remote.txt" },
           };
         }
         return jsonBody({
@@ -1236,7 +1440,7 @@ globalThis.siyuan = {
             status,
             contentType,
             body: typeof body === "string" ? body : JSON.stringify(body),
-            bodyEncoding: url.hostname === "baidu-cdn.example.test" ? "base64" : "text",
+            bodyEncoding: url.hostname === "baidu-cdn.example.test" || url.hostname === "example.test" ? "base64" : "text",
             headers,
             elapsed: 1,
           },
@@ -1592,6 +1796,9 @@ assert.equal(apiIndex.data.capability_matrix.find((item) => item.key === "openli
 assert.equal(apiIndex.data.capability_matrix.find((item) => item.key === "openlist.fs.offline-download")?.status, "placeholder");
 assert.equal(apiIndex.data.capability_matrix.find((item) => item.key === "openlist.fs.archive.zip-decrypt")?.status, "unsupported");
 assert.equal(apiIndex.data.driver_capabilities["115 Cloud"].methods.put, "placeholder");
+assert.equal(apiIndex.data.driver_capabilities["115 Open"].methods.details, "done");
+assert.equal(apiIndex.data.driver_capabilities["115 Open"].methods.put, "placeholder");
+assert.equal(apiIndex.data.driver_capabilities["115 Share"].methods.put, "unsupported");
 assert.equal(apiIndex.data.driver_capabilities["189CloudPC"].methods.rapid_upload, "placeholder");
 assert.equal(apiIndex.data.driver_capabilities.QuarkTV.methods.put, "unsupported");
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/fs/get"));
@@ -3188,6 +3395,8 @@ assert.equal(driverNames.data.includes("QuarkTV"), true);
 assert.equal(driverNames.data.includes("UCTV"), true);
 assert.equal(driverNames.data.includes("Local"), true);
 assert.equal(driverNames.data.includes("115 Cloud"), true);
+assert.equal(driverNames.data.includes("115 Open"), true);
+assert.equal(driverNames.data.includes("115 Share"), true);
 assert.equal(driverNames.data.includes("SiYuanKernel"), false);
 assert.equal(driverNames.data.includes("SiYuanWorkspace"), true);
 assert.equal(driverNames.data.includes("GoogleDrive"), false);
@@ -3568,6 +3777,45 @@ const remoteGet = await json({
   path: "/api/fs/get",
 });
 assert.equal(remoteGet.data.provider, "OpenList");
+const openListDriverTest = await json({
+  body: {
+    addition: { token: "smoke", url: "https://openlist.example.test" },
+    driver: "OpenList",
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(openListDriverTest.code, 200);
+assert.equal(openListDriverTest.data.ok, true);
+const openListAdminUrlTest = await json({
+  body: {
+    addition: { token: "smoke", url: "https://openlist.example.test/admin" },
+    driver: "AListV3",
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(openListAdminUrlTest.code, 200);
+const openListPrivateUrlTest = await json({
+  body: {
+    addition: { token: "smoke", url: "http://192.168.1.137:5244/admin" },
+    driver: "AListV3",
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(openListPrivateUrlTest.code, 502);
+assert.match(openListPrivateUrlTest.message, /SSRF protection/);
+const remoteRelativeGet = await json({
+  body: { path: "/remote/relative.txt" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(remoteRelativeGet.data.raw_url, "https://openlist.example.test/d/relative.txt");
+const remoteRelativeRead = await call({
+  path: "/d/remote/relative.txt",
+});
+assert.equal(remoteRelativeRead.body.proxy.url, "https://openlist.example.test/d/relative.txt");
 const remoteOther = await json({
   body: {
     path: "/remote/remote.txt",
@@ -3592,16 +3840,15 @@ const remoteArchiveList = await json({
   method: "POST",
   path: "/api/fs/archive/list",
 });
-assert.equal(remoteArchiveList.code, 501);
-assert.equal(remoteArchiveList.data.operation, "list");
-assert.equal(remoteArchiveList.data.storage.driver, "OpenList");
+assert.equal(remoteArchiveList.code, 200);
+assert.equal(remoteArchiveList.data.content[0].name, "hello.txt");
 const remoteArchiveExtract = await text({
   method: "GET",
   path: "/ae/remote/remote.zip",
   query: "inner=hello.txt",
 });
-assert.equal(remoteArchiveExtract.response.statusCode, 501);
-assert.match(remoteArchiveExtract.text, /mounted driver files/);
+assert.equal(remoteArchiveExtract.response.statusCode, 200);
+assert.equal(remoteArchiveExtract.text, "zip from openlist");
 const remoteBatchRename = await json({
   body: {
     rename_objects: [{
@@ -3738,6 +3985,34 @@ const remote115Get = await json({
 });
 assert.equal(remote115Get.data.provider, "115 Cloud");
 assert.equal(remote115Get.data.name, "115-doc.txt");
+const remote115QrStart = await json({
+  body: {
+    driver: "115 Cloud",
+    addition: {
+      page_size: 1000,
+      root_folder_id: "0",
+    },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(remote115QrStart.code, 502);
+assert.equal(remote115QrStart.data.verify.type, "qrcode");
+assert.equal(remote115QrStart.data.verify.qr_text, "https://qrcodeapi.115.com/mock-qrcode-content");
+assert.equal(remote115QrStart.data.addition.qrcode_token, "115_QR_UID");
+const remote115QrDone = await json({
+  body: {
+    driver: "115 Cloud",
+    addition: remote115QrStart.data.addition,
+    verify: { type: "qrcode" },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(remote115QrDone.code, 200);
+assert.deepEqual(pan115QrLoginPaths.slice(-1), ["/app/1.0/web/1.0/login/qrcode"]);
+assert.equal(remote115QrDone.data.addition.cookie, "UID=115_QR_UID;CID=115_QR_CID;SEID=115_QR_SEID;KID=115_QR_KID");
+assert.equal(remote115QrDone.data.addition.qrcode_token, "");
 const pan115Driver = create115Driver({ client: globalThis.siyuan.client });
 const pan115Storage = {
   addition_json: {
@@ -3753,6 +4028,11 @@ await pan115Driver.rename(pan115Storage, "/115-doc.txt", "renamed-115.txt");
 await pan115Driver.move(pan115Storage, "/115-doc.txt", "/target");
 await pan115Driver.copy(pan115Storage, "/115-doc.txt", "/target");
 await pan115Driver.remove(pan115Storage, "/115-doc.txt");
+await assert.rejects(
+  () => pan115Driver.read(pan115Storage, "/115-no-pc.txt"),
+  /115 download url is empty/,
+);
+assert.equal(pan115DownurlCalls, 1);
 const pan115Details = await pan115Driver.details(pan115Storage);
 assert.deepEqual(pan115Forms.slice(pan115FormStart), [
   { path: "/files/add", form: { cname: "new-dir", pid: "0" } },
@@ -3766,6 +4046,101 @@ assert.deepEqual(pan115Details, {
   used_space: 300,
   free_space: 700,
 });
+await json({
+  body: {
+    driver: "115 Open",
+    mount_path: "/remote-115-open",
+    addition: JSON.stringify({
+      access_token: "115_OPEN_ACCESS",
+      limit_rate: 0,
+      page_size: 200,
+      refresh_token: "115_OPEN_REFRESH",
+      root_folder_id: "0",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remote115OpenList = await json({
+  body: { path: "/remote-115-open", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remote115OpenList.code, 200);
+assert.equal(remote115OpenList.data.provider, "115 Open");
+assert.equal(remote115OpenList.data.content.some((item) => item.name === "115-open-doc.txt"), true);
+const remote115OpenRead = await call({
+  method: "GET",
+  path: "/p/remote-115-open/115-open-doc.txt",
+});
+assert.equal(remote115OpenRead.statusCode, 200);
+assert.equal(remote115OpenRead.body.proxy.url, "https://115-open-download.example.test/115-open-doc.txt");
+assert.equal(remote115OpenRead.body.proxy.headers["User-Agent"][0], "Mozilla/5.0 (Macintosh; Apple macOS 26_1_0) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/142.0.0.0 OpenList/425.6.30");
+const pan115OpenDriver = create115OpenDriver({ client: globalThis.siyuan.client });
+const pan115OpenStorage = {
+  addition_json: {
+    access_token: "115_OPEN_ACCESS",
+    limit_rate: 0,
+    refresh_token: "115_OPEN_REFRESH",
+    root_folder_id: "0",
+  },
+  driver: "115 Open",
+  mount_path: "/remote-115-open",
+};
+const pan115OpenFormStart = pan115OpenForms.length;
+await pan115OpenDriver.mkdir(pan115OpenStorage, "/new-open-dir");
+await pan115OpenDriver.rename(pan115OpenStorage, "/115-open-doc.txt", "renamed-115-open.txt");
+await pan115OpenDriver.move(pan115OpenStorage, "/115-open-doc.txt", "/target");
+await pan115OpenDriver.copy(pan115OpenStorage, "/115-open-doc.txt", "/target");
+await pan115OpenDriver.remove(pan115OpenStorage, "/115-open-doc.txt");
+const pan115OpenDetails = await pan115OpenDriver.details(pan115OpenStorage);
+assert.deepEqual(pan115OpenForms.slice(pan115OpenFormStart), [
+  { path: "/open/folder/add", form: { pid: "0", file_name: "new-open-dir" } },
+  { path: "/open/ufile/update", form: { file_id: "115-open-file-1", file_name: "renamed-115-open.txt" } },
+  { path: "/open/ufile/move", form: { file_ids: "115-open-file-1", to_cid: "115-open-folder-1" } },
+  { path: "/open/ufile/copy", form: { pid: "115-open-folder-1", file_id: "115-open-file-1", no_dupli: "1" } },
+  { path: "/open/ufile/delete", form: { file_ids: "115-open-file-1" } },
+]);
+assert.deepEqual(pan115OpenDetails, {
+  total_space: 2000,
+  used_space: 600,
+  free_space: 1400,
+});
+await json({
+  body: {
+    driver: "115 Share",
+    mount_path: "/remote-115-share",
+    addition: JSON.stringify({
+      cookie: "UID=115_UID;CID=115_CID;SEID=115_SEID;KID=115_KID",
+      limit_rate: 0,
+      page_size: 1000,
+      receive_code: "abcd",
+      root_folder_id: "0",
+      share_code: "swnxxxxxxx",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remote115ShareList = await json({
+  body: { path: "/remote-115-share", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remote115ShareList.code, 200);
+assert.equal(remote115ShareList.data.provider, "115 Share");
+assert.equal(remote115ShareList.data.write, false);
+assert.equal(remote115ShareList.data.content.some((item) => item.name === "115-share-doc.txt"), true);
+const remote115ShareRead = await call({
+  method: "GET",
+  path: "/p/remote-115-share/115-share-doc.txt",
+});
+assert.equal(remote115ShareRead.statusCode, 200);
+assert.equal(remote115ShareRead.body.proxy.url, "https://115-share-download.example.test/115-share-doc.txt");
+assert.equal(remote115ShareRead.body.proxy.headers["User-Agent"][0], "Mozilla/5.0 115Browser/35.6.0.3");
+const pan115ShareDriver = create115ShareDriver({ client: globalThis.siyuan.client });
+await assert.rejects(() => pan115ShareDriver.mkdir({ addition_json: {} }, "/blocked"), /not supported/);
+assert.ok(pan115ShareQueries.some((query) => query.share_code === "swnxxxxxxx" && query.receive_code === "abcd"));
 await json({
   body: {
     driver: "Onedrive",

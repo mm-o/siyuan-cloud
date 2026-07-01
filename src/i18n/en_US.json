@@ -285,6 +285,8 @@
   "qrPolling": "Waiting for scan...",
   "qrRefreshHelp": "Refresh the QR code, scan it, then wait for login to complete.",
   "qrScanPrompt": "Scan this QR code with the mobile app.",
+  "qrScannedPrompt": "Scanned. Confirm login in the mobile app.",
+  "qrExpiredPrompt": "QR code expired. Refresh and try again.",
   "qrLoginDone": "QR login completed",
   "smsCodeRequired": "SMS verification is required.",
   "smsCodeSent": "SMS code sent",

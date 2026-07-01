@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 0.3.8
+
+### Added
+
+- Added the `115 Open` and `115 Share` runtimes and their mount guides. 115 Open covers token refresh, browse/read/link, basic management, and storage details; 115 Share follows OpenList's read-only share mount boundary.
+- Added the QR-code login entry for `115 Cloud` / `115 Share` mount forms: refresh a QR code, poll scan status, and exchange confirmed scans for `cookie` automatically.
+
+### Fixed
+
+- Fixed 115 Cloud playback/download link resolution by aligning the `downurl` request with OpenList's 115 driver: the encrypted `data` form field is now encoded with `encodeURIComponent` instead of `URLSearchParams`, avoiding `+` being interpreted as a space and causing "pickcode cannot be empty"; the same form encoding is used for 115 Share requests.
+- Fixed OpenList/AList local and LAN mounting on SiYuan v3.7.0 by adding a desktop frontend direct path for private upstreams such as `127.0.0.1:5244` and `192.168.x.x:5244`, while keeping the standard backend OpenList-compatible driver path unchanged.
+- Fixed OpenList/AList media preview for private direct mounts by lazily resolving the playable link with `/api/fs/get` when a file is opened, avoiding the old fallback to backend `/p` proxy URLs.
+- Fixed media file clicks in FileTab and Dock tree so audio/video opens the media player or an inline preview instead of showing the download-only hint.
+- Fixed copied file links so Siyuan Cloud file paths use readable `siyuan://plugins/siyuan-cloud/open?path=...` links and open back into Siyuan Cloud with the target row highlighted.
+- Fixed OpenList/AList API base normalization by stripping `/admin` and `/@manage` from configured upstream URLs.
+- Fixed OpenList/AList readable file handling by completing relative `raw_url` values and returning OpenList-style link data for `/d`, `/p`, archive, and download flows.
+- Fixed packaged docs links so `[[...]]` references inside driver guides are converted to real SiYuan document references, not only inside README.
+
+### Improved
+
+- Added Chinese and English OpenList/AList local mounting and proxy guides under packaged driver docs.
+- Documented the SiYuan v3.7.0 SSRF proxy boundary, frontend direct mode, and reverse-proxy/tunnel options such as Caddy and Cloudflare Tunnel.
+- Expanded the S3-compatible storage guide with the absolute endpoint URL requirement, Qiniu region examples, and common formats for Bitiful S4, Tencent Cloud COS, Alibaba Cloud OSS, Huawei Cloud OBS, Volcengine TOS, UPYUN, R2, MinIO, B2, and DigitalOcean Spaces.
+- Added the DogeCloud mount guide, documenting how OpenList `Doge` exchanges DogeCloud credentials for temporary S3 credentials and the current runtime boundary where Doge is still handled as generic S3.
+- Fixed 115 QR-code source selection, status handling, and save flow: `qrcode_source` stays visible, is used by the OpenList-style final QR confirmation endpoint, numeric and string confirmation states are both recognized, and clicking Add during a QR session confirms the scan and writes `cookie` before saving instead of staying on "waiting" or failing with a SiYuan v3.7.0 parameter error.
+- Unified frontend file-manager dispatch order for file operations: Local desktop path, OpenList/AList frontend direct path, then standard backend API.
+
 ## 0.3.7
 
 ### Fixed

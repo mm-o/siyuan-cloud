@@ -11,8 +11,19 @@ import {
   renameLocal,
   writeLocal,
 } from './local_fs'
+import {
+  clearOpenListDirectCache,
+  copyOpenListDirect,
+  getOpenListDirect,
+  listOpenListDirect,
+  mkdirOpenListDirect,
+  moveOpenListDirect,
+  removeOpenListDirect,
+  renameOpenListDirect,
+  writeOpenListDirect,
+} from './openlist_direct'
 
-export { clearLocalMountCache }
+export { clearLocalMountCache, clearOpenListDirectCache }
 
 export const fsGet = (
   path: string = '/',
@@ -25,6 +36,9 @@ async function fsGetLocalFirst(path: string, password = '') {
   const local = await getLocal(path)
   if (local)
     return local
+  const direct = await getOpenListDirect(path)
+  if (direct)
+    return direct
   return r.post('/fs/get', {
     path,
     password,
@@ -45,6 +59,9 @@ async function fsListLocalFirst(path: string, password = '', page = 1, per_page 
   const local = await listLocal(path, page, per_page)
   if (local)
     return local
+  const direct = await listOpenListDirect(path, page, per_page, refresh)
+  if (direct)
+    return direct
   if (path === '/') {
     const payload = await r.post('/fs/list', { path, password, page, per_page, refresh })
     const localEntries = await localMountEntries()
@@ -134,13 +151,22 @@ export const fsArchiveMeta = (
 }
 
 export const fsMkdir = (path: string): Promise<OpenListResp> => {
-  return mkdirLocal(path).then(local => local || r.post('/fs/mkdir', { path }))
+  return fsMkdirLocalFirst(path)
+}
+
+async function fsMkdirLocalFirst(path: string) {
+  return await mkdirLocal(path)
+    || await mkdirOpenListDirect(path)
+    || r.post('/fs/mkdir', { path })
 }
 
 export const fsWriteFile = async (path: string, file: File | Blob | string): Promise<OpenListResp> => {
   const local = await writeLocal(path, file)
   if (local)
     return local
+  const direct = await writeOpenListDirect(path, file)
+  if (direct)
+    return direct
   if (typeof file === 'string')
     return r.put('/fs/put', file, { headers: { 'File-Path': encodeURIComponent(path), Overwrite: 'false' } })
   const form = new FormData()
@@ -159,7 +185,13 @@ export const fsRename = (
   name: string,
   overwrite: boolean,
 ): Promise<OpenListResp> => {
-  return renameLocal(path, name).then(local => local || r.post('/fs/rename', { path, name, overwrite }))
+  return fsRenameLocalFirst(path, name, overwrite)
+}
+
+async function fsRenameLocalFirst(path: string, name: string, overwrite: boolean) {
+  return await renameLocal(path, name)
+    || await renameOpenListDirect(path, name)
+    || r.post('/fs/rename', { path, name, overwrite })
 }
 
 export const fsMove = (
@@ -169,13 +201,19 @@ export const fsMove = (
   overwrite: boolean,
   skip_existing: boolean,
 ): Promise<OpenListResp> => {
-  return moveLocal(src_dir, dst_dir, names).then(local => local || r.post('/fs/move', {
+  return fsMoveLocalFirst(src_dir, dst_dir, names, overwrite, skip_existing)
+}
+
+async function fsMoveLocalFirst(src_dir: string, dst_dir: string, names: string[], overwrite: boolean, skip_existing: boolean) {
+  return await moveLocal(src_dir, dst_dir, names)
+    || await moveOpenListDirect(src_dir, dst_dir, names)
+    || r.post('/fs/move', {
     src_dir,
     dst_dir,
     names,
     overwrite,
     skip_existing,
-  }))
+  })
 }
 
 export const fsCopy = (
@@ -186,18 +224,30 @@ export const fsCopy = (
   skip_existing: boolean,
   merge: boolean,
 ): Promise<OpenListResp> => {
-  return copyLocal(src_dir, dst_dir, names).then(local => local || r.post('/fs/copy', {
+  return fsCopyLocalFirst(src_dir, dst_dir, names, overwrite, skip_existing, merge)
+}
+
+async function fsCopyLocalFirst(src_dir: string, dst_dir: string, names: string[], overwrite: boolean, skip_existing: boolean, merge: boolean) {
+  return await copyLocal(src_dir, dst_dir, names)
+    || await copyOpenListDirect(src_dir, dst_dir, names)
+    || r.post('/fs/copy', {
     src_dir,
     dst_dir,
     names,
     overwrite,
     skip_existing,
     merge,
-  }))
+  })
 }
 
 export const fsRemove = (dir: string, names: string[]): Promise<OpenListResp> => {
-  return removeLocal(dir, names).then(local => local || r.post('/fs/remove', { dir, names }))
+  return fsRemoveLocalFirst(dir, names)
+}
+
+async function fsRemoveLocalFirst(dir: string, names: string[]) {
+  return await removeLocal(dir, names)
+    || await removeOpenListDirect(dir, names)
+    || r.post('/fs/remove', { dir, names })
 }
 
 export const fsNewFile = (
@@ -205,13 +255,19 @@ export const fsNewFile = (
   password: string,
   overwrite: boolean,
 ): Promise<OpenListResp> => {
-  return writeLocal(path, '').then(local => local || r.put('/fs/put', undefined, {
+  return fsNewFileLocalFirst(path, password, overwrite)
+}
+
+async function fsNewFileLocalFirst(path: string, password: string, overwrite: boolean) {
+  return await writeLocal(path, '')
+    || await writeOpenListDirect(path, '')
+    || r.put('/fs/put', undefined, {
     headers: {
       'File-Path': encodeURIComponent(path),
       Password: password,
       Overwrite: overwrite.toString(),
     },
-  }))
+  })
 }
 
 export const shareCreate = (body: {
@@ -273,6 +329,18 @@ export async function resolveOpenListFile(path: string, password = '') {
   const local = await getLocal(path)
   if (local?.code === 200) {
     const data = local.data || {}
+    const url = String(data.raw_url || data.url || '')
+    return {
+      ...data,
+      path,
+      raw_url: url,
+      d_url: normalizeResourceUrl(url),
+      url: normalizeResourceUrl(url),
+    }
+  }
+  const direct = await getOpenListDirect(path)
+  if (direct?.code === 200) {
+    const data = direct.data || {}
     const url = String(data.raw_url || data.url || '')
     return {
       ...data,

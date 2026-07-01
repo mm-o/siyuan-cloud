@@ -98,9 +98,10 @@
             v-for="item in sortedItems"
             :key="itemKey(item)"
             class="b3-list-item ol-file-row"
+            :data-path="itemKey(item)"
             :class="{
               'ol-file-row--selecting': selectionMode,
-              'b3-list-item--focus': focusPath === itemKey(item),
+              'ol-file-row--focus': focusPath === itemKey(item),
             }"
             @click="openFile(item)"
             @contextmenu.stop.prevent="openItemMenu($event, item)"
@@ -205,6 +206,7 @@ import {
   escapeHtml,
   formatSize,
   openLazyImageViewer,
+  openMediaPreview,
   promptText,
   showErrorMessage,
 } from '@/utils/file_ui'
@@ -477,6 +479,8 @@ async function locatePath(path = '') {
   }
   if (item)
     focusPath.value = target
+  await nextTick()
+  document.querySelector(`.siyuan-cloud-file-tab [data-path="${CSS.escape(target)}"]`)?.scrollIntoView({ block: 'center' })
 }
 
 defineExpose({ openPath: locatePath })
@@ -553,13 +557,17 @@ async function openFile(item: FsItem) {
     await openImageViewer(item)
     return
   }
+  if (kind === 'audio' || kind === 'video') {
+    await openMediaPreview(item.name, await resolveDownloadUrl(itemPath(item)), kind)
+    return
+  }
   if (kind !== 'text') {
     showMessage(tf('useDownloadAction', 'Use the toolbar or context menu to download this file.'), 3000)
     return
   }
   let content = ''
   try {
-    const url = openListAbsoluteUrl(`/plugin/private/siyuan-cloud/d${itemPath(item)}`)
+    const url = await resolveDownloadUrl(itemPath(item))
     const response = await fetch(url, { method: 'GET' })
     content = await response.text()
   } catch (error) {

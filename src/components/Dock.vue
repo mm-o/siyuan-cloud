@@ -284,6 +284,7 @@ import {
   joinOpenListPath,
   normalizeOpenListPath,
   openOpenListFileItemMenu,
+  openListDocumentLink,
   shareOpenListSelection,
 } from '@/utils/file_actions'
 import {
@@ -296,6 +297,7 @@ import {
   escapeHtml,
   formatSize as formatByteSize,
   openLazyImageViewer,
+  openMediaPreview,
   showErrorMessage,
 } from '@/utils/file_ui'
 
@@ -512,9 +514,8 @@ const currentPageActions = computed(() => {
     ]
   return sectionActions.value[pageActionMap[currentTab.value]] || []
 })
-const primaryDriverFieldNames = computed(() => new Set(verifyDriver.value === '115 Cloud' || verifyDriver.value === '115' ? ['root_folder_id', 'cookie', 'qrcode_token', 'qrcode_source'] : []))
 const driverFormRows = computed(() => {
-  const primary = driverFields.value.filter(field => field.required || primaryDriverFieldNames.value.has(field.name))
+  const primary = driverFields.value.filter(field => field.required)
   const primaryNames = new Set(primary.map(field => field.name))
   const optional = driverFields.value.filter(field => !primaryNames.has(field.name))
   return [
@@ -551,6 +552,8 @@ const loading = ref(false)
 const lastError = ref('')
 const emptyText = computed(() => lastError.value || t('rootEmpty'))
 const imageExts = new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(','))
+const audioExts = new Set('mp3,wav,aac,m4a,flac,ogg'.split(','))
+const videoExts = new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(','))
 const companionExts = new Set('mp3,wav,aac,m4a,flac,ogg,mp4,m3u8,webm,mov,m4v,mkv,avi,flv,wmv,epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
 function isSecretField(field: any) {
   return field?.type === 'password' || /(?:password|passwd|pwd|token|secret|cookie|private)/i.test(String(field?.name || ''))
@@ -624,10 +627,12 @@ function extensionOf(name: string) {
 }
 
 const isImageFile = (item: DockTreeItem) => !item.is_dir && imageExts.has(extensionOf(item.name))
+const mediaKind = (item: DockTreeItem) => audioExts.has(extensionOf(item.name)) ? 'audio' : videoExts.has(extensionOf(item.name)) ? 'video' : ''
 const isCompanionFile = (item: DockTreeItem) => !item.is_dir && companionExts.has(extensionOf(item.name))
 const isArchiveFile = (item: DockTreeItem) => !item.is_dir && isArchiveFileName(item.name)
 const itemOpenUrl = (item: DockTreeItem) => openListItemOpenUrl(item, node => node.path)
 const companionHref = (item: DockTreeItem) => isCompanionFile(item) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
+const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ imageExts, item, path, videoExts })
 
 function toTreeItem(item: any, dir: string): DockTreeItem {
   return {
@@ -680,6 +685,11 @@ async function openNode(node: DockTreeItem) {
   if (!node.is_dir) {
     if (isImageFile(node)) {
       await openImageViewer(node)
+      return
+    }
+    const kind = mediaKind(node)
+    if (kind) {
+      await openMediaPreview(node.name, await resolveDownloadUrl(node.path), kind)
       return
     }
     if (isArchiveFile(node)) {
@@ -744,7 +754,7 @@ async function browseTreeArchive(item: DockTreeItem) {
 }
 
 async function copyTreeLink(item: DockTreeItem, path: string) {
-  await copyOpenListItemLink({ item, path, t })
+  await copyOpenListItemLink({ item, link: documentLink, path, t })
 }
 
 function openTreeInFileManager() {

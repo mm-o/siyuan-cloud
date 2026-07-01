@@ -56,13 +56,21 @@ export const forwardProxy = async (client, url, {
   return data;
 };
 
-export const remoteJson = async (client, url, options) => {
+export const remoteJsonWithMeta = async (client, url, options) => {
   const data = await forwardProxy(client, url, options);
   try {
-    return JSON.parse(data.body || "{}");
+    return {
+      json: JSON.parse(data.body || "{}"),
+      meta: data,
+    };
   } catch (error) {
     throw new Error(`invalid JSON response from ${url}: ${error.message}`);
   }
+};
+
+export const remoteJson = async (client, url, options) => {
+  const { json } = await remoteJsonWithMeta(client, url, options);
+  return json;
 };
 
 export const basicAuth = (username, password) => {
