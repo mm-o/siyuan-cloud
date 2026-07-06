@@ -8,6 +8,7 @@ import {
 } from "../common.js";
 import { sha256Hex } from "../aws4.js";
 import { remoteJson } from "../http.js";
+import { clearQrKeys, runQrLogin } from "../qr.js";
 
 const UserAgent = "Mozilla/5.0 (Linux; U; Android 13; zh-cn; M2004J7AC Build/UKQ1.231108.001) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1";
 const DeviceBrand = "Xiaomi";
@@ -20,6 +21,7 @@ const DeviceGpu = "Adreno (TM) 550";
 const ActivityRect = "{}";
 const accessTokenCache = new Map();
 const cache = createStorageCache();
+const QR_KEYS = ["query_token", "qrcode_content"];
 
 const configs = {
   QuarkTV: {
@@ -159,6 +161,7 @@ const getLoginCode = async (client, storage) => {
   });
   if (resp?.query_token) {
     storage.addition_json.query_token = resp.query_token;
+    storage.addition_json.qrcode_content = resp.qr_data || "";
     await persistAddition(storage);
   }
   return resp?.qr_data || "";
@@ -177,15 +180,51 @@ const getCode = async (client, storage) => {
   return resp?.code || "";
 };
 
+const isQrPendingError = (error) => /未确认授权|not.*confirm|not.*authorize|pending|waiting/i.test(String(error?.message || error || ""));
+
+const startQrLogin = async (client, storage) => {
+  const qrData = await getLoginCode(client, storage);
+  return {
+    message: "QuarkTV QR login pending",
+    status: "waiting",
+    verify: { qr_data: qrData },
+  };
+};
+
+const pollQrLogin = async (client, storage) => {
+  try {
+    const code = await getCode(client, storage);
+    return code
+      ? { code, message: "QuarkTV QR login confirmed", status: "success" }
+      : { message: "QuarkTV QR login pending", status: "waiting" };
+  } catch (error) {
+    if (isQrPendingError(error)) {
+      return {
+        message: error.message || "QuarkTV QR login pending",
+        status: "scanned",
+      };
+    }
+    throw error;
+  }
+};
+
+const runTVQrLogin = (client, storage) => runQrLogin({
+  addition: storage.addition_json,
+  clear: () => clearQrKeys(storage.addition_json, QR_KEYS),
+  confirm: async (state) => {
+    await refreshTokenByTV(client, storage, state.code, false);
+    return ensureLogin(client, storage);
+  },
+  hasSession: (addition) => Boolean(addition.query_token),
+  pendingVerify: () => ({ qr_data: storage.addition_json.qrcode_content || "" }),
+  poll: () => pollQrLogin(client, storage),
+  start: () => startQrLogin(client, storage),
+});
+
 const ensureLogin = async (client, storage) => {
   await ensureDeviceID(storage);
   if (!storage.addition_json.refresh_token) {
-    if (!storage.addition_json.query_token) {
-      const qrData = await getLoginCode(client, storage);
-      throw new Error(`need verify: \n<body>\n        <img src="data:image/jpeg;base64,${qrData}"/>\n    </body>`);
-    }
-    const code = await getCode(client, storage);
-    await refreshTokenByTV(client, storage, code, false);
+    await runTVQrLogin(client, storage);
   }
   if (!accessTokenFor(storage)) {
     await refreshTokenByTV(client, storage, storage.addition_json.refresh_token, true);

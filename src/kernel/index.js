@@ -560,7 +560,7 @@ import { createWebDavServer } from "./server/webdav.js";
         if (data.redirect) return redirectResponse(data.redirect);
         if (data.link) {
           const link = linkFromDriverData(data);
-          if (readOptions.shareDownload && !shareDownloadShouldProxy(mount, filePath)) return redirectResponse(link.url);
+          if ((readOptions.shareDownload || readOptions.directDownload) && !shareDownloadShouldProxy(mount, filePath)) return redirectResponse(link.url);
           return proxy(null, link, { request_header: options.requestHeaders }, !!mount.storage.proxy_range);
         }
         if (String(data.bodyEncoding || "").startsWith("base64")) {

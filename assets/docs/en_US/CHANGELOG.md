@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 0.5.0
+
+### Added
+
+- Added the WPS runtime driver: ported Cookie login checks, Personal/Business mode, root/group listing, download links, shared `/p` proxy reads, basic management operations, and storage details from OpenList `drivers/wps`; upload remains an explicit placeholder, and English/Chinese WPS driver guides were added.
+- Completed WPS frontend details: the driver help shortcut now opens the WPS guide, the Cookie field uses WPS-specific guidance instead of the 115 QR-login text, and mount cards use the dedicated WPS icon.
+
+### Fixed
+
+- Aligned the 123Pan runtime with the broader upstream fix in OpenListTeam/OpenList#2678: API calls, web origin/referer headers, and download redirect Referer now use `https://yun.123pan.com` instead of the earlier #2677 `api.123278.com` / `api.123pan.cn` host split.
+- Aligned Quark/UC runtime details: `use_transcoding_address` now defaults to disabled like OpenList, and transcoding falls back to normal download links when no usable transcoded URL is returned; list requests now absorb and persist refreshed upstream `__puus` cookies, plus `__pus` in transcoding-link scenarios; storage details report total, used, and free space; QuarkTV/UCTV QR login now treats "user has not confirmed authorization" as a pending confirmation state and keeps polling; QuarkOpen refreshes `access_token` first when the online API is enabled and uses built-in public parameters when `app_id` / `sign_key` are empty without showing them by default, while upload proof generation stores and reuses `user_id` reliably.
+- Fixed Dock driver-form status text so driver notes, QR/SMS prompts, and red error messages wrap long content and can be selected/copied.
+- Fixed 189CloudPC / 189CloudTV QR login details: PC QR login now preserves upstream cookies across the login/session exchange, both PC and TV reuse the shared QR-login state helper, and TV `qrCodeRollLogin()` / `QrCodeRollLoginFail` responses are treated as pending QR states with a clean user prompt instead of leaking raw upstream text.
+- Completed 189CloudPC family-cloud integration: PC session refresh now normalizes the family-cloud root like the TV driver and auto-fills `family_id` from the family list when `type=family`; the English/Chinese 189Cloud Series guides now clarify that family cloud should use the PC/TV drivers.
+- Fixed and aligned S3-compatible reads and management: `/p` proxying keeps using plugin-side signed reads and now forwards Range requests to avoid upstream presigned 403 responses during SiYuan Reader / PDF.js previews, while `/api/fs/link` has a separate OpenList-style GET presigned link path; `force_path_style` now defaults to disabled like OpenList, list pagination/directory detection follow OpenList, directory marker objects are filtered, recursive directory copy/move/remove/rename is supported, and the default placeholder file is `.siyuan-cloud`.
+- Fixed playback for AliyundriveOpen and other non-forced-proxy mounts: `/d` now follows OpenList semantics and redirects to the direct link when proxying is not required, while `/p` remains the forced proxy entry.
+- Fixed the AliyundriveOpen URL handed to SiYuan Media Player: video clicks now prefer `/api/fs/other` `video_preview` transcoding streams and fall back to the `/d` original-file link only when preview data is unavailable.
+
+### Improved
+
+- Improved driver-form guidance with a direct help button beside each driver title. It now opens the matching driver guide when available and falls back to the driver-guide index otherwise, reducing the need to browse the docs tree manually.
+- Added branded driver icons for common cloud-drive mounts, including 115, 123Pan, 189Cloud, Aliyundrive, Baidu Netdisk, Quark, UC, and OneDrive, so mount cards are easier to scan at a glance.
+- Added a per-page compact Dock view for mounts, users, shares, tasks, tools, and status pages, with each page remembering its own view preference.
+- Reworked the Quark UC Series guide from the OpenList upstream documentation, covering Quark/UC, QuarkTV/UCTV, and QuarkOpen setup fields, cookies, root folders, QR login, link modes, device-limit handling, and known limits.
+- Completed the AliyundriveOpen guide from OpenList upstream docs and local `docs/OpenList-main` sources, covering token refresh, drive type, `alipan_type`, delete mode, rapid upload, internal upload, `.livp` format, video preview, storage details, and current runtime differences.
+- Improved AliyundriveOpen runtime parity with OpenList by adding `user/getSpaceInfo` storage details and upstream-style large-file upload part sizing.
+- Aligned default proxy file types with OpenList (`m3u8,url`), leaving `web_proxy` / `only_proxy` / `no_link_url` mounts proxied while letting high-quality direct links such as AliyundriveOpen ordinary mp4 playback reach the player faster.
+- Unified FileTab and Dock companion-plugin opening through shared helpers: file-type detection, `data-href` generation, and media playback URL resolution now live in one place; videos no longer expose a `/d` DOM link that SiYuan Media Player can intercept early and instead actively open the resolved preview stream; PDF/EPUB/books use stable `/p` links that keep Chinese filenames readable, avoiding garbled SiYuan Reader titles from signed upstream URLs or premature percent encoding.
+- Added a dedicated S3/Doge mount icon and expanded the S3-compatible guide with Bitiful S4, `custom_host`, `remove_bucket`, `add_filename_to_disposition`, and PDF/SiYuan Reader troubleshooting notes.
+
 ## 0.4.0
 
 ### Added

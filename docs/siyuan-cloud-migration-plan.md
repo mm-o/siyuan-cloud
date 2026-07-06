@@ -62,7 +62,7 @@
 | Dock 文件树 | Dock 新增文件列表树视图页，按思源文档树结构使用 `file-tree` / `sy__file` / `b3-list-item` 原生 class，复用 `/api/fs/list`、FileTab 文件图标、图片 Viewer 和 companion `data-href` 链接边界 | `pnpm build` |
 | 代理播放 | `/api/fs/get.raw_url`、`/api/fs/link.raw_url`、`/d`、`/p` 走 `fs.Link -> common.Proxy -> body.proxy` 边界；Range/header 交给思源 `body.proxy` 流式转发 | 播放器插件可直接调用 OpenList HTTP API，图片走 SiYuan Viewer |
 | FS Other 边界 | 对照 OpenList `server/handles/fsread.go`、`internal/fs/other.go`、`internal/op/fs.go`，`/api/fs/other` 已从空响应改为按挂载解析实际路径并调用 driver `other(storage, relPath, { method, data })`；`OpenList/AListV3` runtime 直接透传远端 `/api/fs/other`，`AliyundriveOpen` 已补 `video_preview`，未实现驱动保持 OpenList `not implement` 语义 | `pnpm test:kernel` 覆盖 OpenList mount 路径改写、method/data/password 透传、AliyundriveOpen video_preview 和虚拟路径 not implement |
-| 驱动首批运行时 | OpenList/AListV3、WebDav、S3/Doge、115 Cloud、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV 有 kernel runtime adapter；Local 由桌面端前端 Electron fs runtime 处理 | 通过最长 `mount_path` dispatch；Dock 只列出已接 runtime 或前端可处理的驱动 |
+| 驱动首批运行时 | OpenList/AListV3、WebDav、S3/Doge、115 Cloud、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV、WPS 有 kernel runtime adapter；Local 由桌面端前端 Electron fs runtime 处理 | 通过最长 `mount_path` dispatch；Dock 只列出已接 runtime 或前端可处理的驱动 |
 | 管理面板 | driver names/info、storage create/update/enable/disable/delete、config import/export | Dock 挂载表单可验证 |
 | 用户基线 | 默认 admin 运行时同步为当前思源账号名，保留 disabled guest；`/api/admin/user/list/get/create/update/delete/cancel_2fa` 按 OpenList 用户字段、角色限制和分页响应收口；Dock 新增紧凑用户管理页 | `pnpm test:kernel` 覆盖默认账号同步、用户 CRUD、禁止创建 admin/guest、禁止禁用 admin |
 | Request context / JWT 统一 | 对照 OpenList `server/common/auth.go` 和 `server/middlewares/auth.go`，`/api/auth/login` 与 `/api/auth/login/hash` 返回 HS256 JWT，payload 包含 `username/pwd_ts/exp/iat/nbf`；settings `token` 作为 admin token；空 Authorization 解析为 guest；密码变更更新 `pwd_ts` 并让旧 JWT 失效；`/api/admin/*`、admin meta/message/index/scan/sshkey 子路由统一走 `AuthAdmin` 等价边界；`/api/me`、SSH key、2FA 使用当前 request user。旧 `siyuan-cloud-port:<id>` token 保留为插件集成兼容入口。 | `pnpm test:kernel` 覆盖 JWT 登录、`/api/me` 当前用户、空 token guest、guest/admin/general 权限拒绝、密码变更后旧 token 401 |
@@ -74,8 +74,8 @@
 
 按 `docs/OpenList-main/server/router.go` 复审，主缺口如下：
 
-- 驱动完整性：OpenList upstream 有大量 `drivers/*` 目录，本端 kernel runtime 只接了 OpenList/AListV3、WebDav、S3/Doge、115 Cloud、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC、QuarkOpen、QuarkTV/UCTV；Local 由前端 Electron fs runtime 处理。其它驱动只保留 metadata/config 或未接入 runtime，不能出现在 Dock 可挂载列表。
-- 驱动方法完整性：已接 runtime 的驱动也不是全方法完成。189PC/TV 上传、rapid/CAS/torrent、PC 登录仍是占位；普通 189Cloud 上传已有 OpenList `uploadRequest/newUpload` 基座和 smoke 覆盖，但仍需真实账号/大文件验证；QuarkTV/UCTV 的 management/upload 保持 OpenList 上游 `NotImplement`；S3/WebDav 仍需继续补 full compatibility 细节。
+- 驱动完整性：OpenList upstream 有大量 `drivers/*` 目录，本端 kernel runtime 只接了 OpenList/AListV3、WebDav、S3/Doge、115 Cloud、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC、QuarkOpen、QuarkTV/UCTV、WPS；Local 由前端 Electron fs runtime 处理。其它驱动只保留 metadata/config 或未接入 runtime，不能出现在 Dock 可挂载列表。
+- 驱动方法完整性：已接 runtime 的驱动也不是全方法完成。189PC/TV 上传、rapid/CAS/torrent、PC 密码登录仍是占位；189CloudPC/TV 的二维码登录、session 刷新和家庭云 ID 回填已接入；普通 189Cloud 上传已有 OpenList `uploadRequest/newUpload` 基座和 smoke 覆盖，但仍需真实账号/大文件验证；QuarkTV/UCTV 的 management/upload 保持 OpenList 上游 `NotImplement`；S3/WebDav 仍需继续补 full compatibility 细节。
 - 搜索：已有本地持久 `search_nodes` 和 OpenList-style admin index/search route 初版，查询逻辑对齐 `db_non_full_text` 的 parent/keywords/scope/page 形态，构建时已按 `internal/search/build.go` 跳过 `ignore_paths` 和 storage `disable_index`；但还不是 OpenList 完整 `internal/search` 多后端体系，缺 Bleve/Meilisearch/database 后端切换、真实异步构建、停止中的取消传播和自动增量 hook。
 - 任务：`/api/task/*` 已按 OpenList `server/handles/task.go` 收口 TaskInfo 字段、done/undone 数组、单任务和批量管理返回形态，批量接口只接受 JSON 字符串数组；当前轻量持久 task record 已写入 `creator/creator_id/creator_role` 并按当前用户过滤 list/info/cancel/delete/retry/clear，管理员可见全量。但仍不等价于 OpenList `internal/task` + `tache` manager，尚未实现真实异步队列、取消传播、重试调度、实时进度和 task group coordinator。
 - 分享：`/api/share/*` 已按 OpenList `model.Sharing` 主字段收口，支持多文件 share root、密码/过期/禁用/max_accessed 校验、按 share id + client IP 去重的访问计数、`/api/fs/{list,get}` 公开读取和 `/sd/{id}` 下载；share create/update 不再要求路径存在于本地 `state.entries`，公开读取时可通过 `driverRuntime` 解析挂载云盘文件；`/sd` 下载按 storage/driver 代理策略在 plugin proxy 和 driver redirect 之间分流，已删除临时强制代理开关，密码页会保留 `download=1`；archive meta/list 已识别 OpenList `/@s` 分享 split 并真实解析单文件或子路径分享压缩包，`/sad` 已可校验分享密码后提取 archive entry。管理侧 creator/base_path/meta 权限边界已有初版；公开分享读取仍按 share 本身校验，尚未等价于 OpenList 完整 `internal/sharing`、用户请求上下文和所有协议权限模型。
@@ -101,14 +101,14 @@
 - `/api/fs/batch_rename`、`/api/fs/regex_rename`、`/api/fs/recursive_move` 和 `/api/fs/remove_empty_directory` 现在也会分发到已挂载 driver，沿用 OpenList `fs.Rename` / `fs.List` / `fs.Move` / `fs.Remove` 的批量边界，不再只作用于虚拟 FS；smoke 已覆盖 OpenList mount 的 rename/move/remove 请求体。
 - 新增 `/api/public/api` 和 `/api/public/routes` 机器可读索引，其他项目可把 `/plugin/private/siyuan-cloud` 当作 OpenList-compatible base URL，直接调用 `/api/*`、`/d/*`、`/p/*`、`/dav/*`、`/s3/*`。
 - Dock 设置页保留 OpenList 兼容 `external_previews` JSON 编辑；PotPlayer 等播放器仍然是前端 URL Scheme，不是后端进程启动 API，FileTab 不内置外部播放器菜单，播放器插件按 OpenList HTTP API 和 OpenList Frontend URL 转换规则自行实现交互。
-- 驱动实现文件架构对齐 OpenList：`openlist/driver.js`、`webdav/driver.js`、`s3/driver.js`、`onedrive/driver.js`、`baidu_netdisk/driver.js`、`aliyundrive_open/driver.js`、`189/driver.js`、`189pc/driver.js`、`189pc/session.js`、`189_tv/driver.js`、`189_tv/session.js`、`quark_uc/driver.js`、`quark_open/driver.js`、`quark_uc_tv/driver.js`、`local/driver.js` 等都放在对应驱动目录下。
+- 驱动实现文件架构对齐 OpenList：`openlist/driver.js`、`webdav/driver.js`、`s3/driver.js`、`onedrive/driver.js`、`baidu_netdisk/driver.js`、`aliyundrive_open/driver.js`、`189/driver.js`、`189pc/driver.js`、`189pc/session.js`、`189_tv/driver.js`、`189_tv/session.js`、`quark_uc/driver.js`、`quark_open/driver.js`、`quark_uc_tv/driver.js`、`wps/driver.js`、`local/driver.js` 等都放在对应驱动目录下。
 - `/api/admin/driver/names` 现在只返回已接 runtime 的挂载项；未实现驱动仍保留在 `driver/list` / `driver/info` 的 metadata 中，方便后续按 OpenList 字段继续迁移，但不会出现在 Dock 可选挂载列表。
-- 新增 AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark 的初始 list/get/read/link 和基础管理适配；189CloudPC / 189CloudTV 对照 `docs/OpenList-main/drivers/189pc` 和 `docs/OpenList-main/drivers/189_tv` 先复制 `List`、`Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename` 的签名请求边界；189CloudTV 已接 OpenList TV 二维码登录、轮询 access token、`loginFamilyMerge` session 刷新和 addition 写回；189CloudPC 密码/二维码登录、PC AES `params`、上传和 CAS/torrent 秒传仍保留结构化占位。Local 不再尝试 kernel -> loopback bridge，而是在 FileTab/Dock 前端通过 Electron `window.require('fs')` 直接实现 list/get/mkdir/upload/rename/remove/copy/move。
+- 新增 AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark 的初始 list/get/read/link 和基础管理适配；189CloudPC / 189CloudTV 对照 `docs/OpenList-main/drivers/189pc` 和 `docs/OpenList-main/drivers/189_tv` 先复制 `List`、`Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename` 的签名请求边界；189CloudPC 已接 PC 二维码登录和 `getSessionForPC.action` session 刷新，189CloudTV 已接 OpenList TV 二维码登录、轮询 access token、`loginFamilyMerge` session 刷新和 addition 写回；189CloudPC 密码登录、PC AES `params`、上传和 CAS/torrent 秒传仍保留结构化占位。Local 不再尝试 kernel -> loopback bridge，而是在 FileTab/Dock 前端通过 Electron `window.require('fs')` 直接实现 list/get/mkdir/upload/rename/remove/copy/move。
 - 115 Cloud 已暴露到挂载列表：对照 OpenList `drivers/115` 和 `github.com/SheltonZhu/115driver` v1.3.3 先迁移 cookie/二维码 token 登录、列表、详情、下载 link 编解码、基础管理和容量信息；115 Open / 115 Share 仍保持 metadata-only。
 - 重新对照 `docs/OpenList-main/drivers/*/meta.go` 和 `driver.go`：WebDav、123Pan 按 OpenList `PreferProxy` 标记；S3/Doge 补齐 custom host presign、sign expire、placeholder、remove bucket、filename disposition、direct upload host 等 addition 字段；AliyundriveOpen、Quark、Local 补齐 default root / no overwrite / no cache / no link url 等 config 差异；115 Cloud 的 `cookie`、`qrcode_token` 保持 text metadata，`LinkCacheMode=ua`，上传仍按 `no_upload=true` 保留后续批次。
 - OneDrive、123Pan、WebDav 的读取路径已从“driver 自己通过 `forwardProxy` 拉取 base64 内容”改为 OpenList 的 `Link()` 形态：driver 返回 `model.Link` 风格 URL/header，`/d` 和 `/p` 统一进入 `server/common/proxy.js -> body.proxy`。123Pan 的 `Referer` 继续按 OpenList 使用下载接口原始 URL 的 scheme/host。
 - BaiduNetdisk 默认 `download_api=crack_video` 时只让视频/音频走 `crack_video`，其它文件走 official，避免 PDF、EPUB、图片等非媒体文件误进视频 API。
-- Dock 进度状态和 `/siyuan-cloud/status.adapters` 已同步到当前 runtime 驱动：OpenList/AListV3、WebDav、S3/Doge、115 Cloud、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV。
+- Dock 进度状态和 `/siyuan-cloud/status.adapters` 已同步到当前 runtime 驱动：OpenList/AListV3、WebDav、S3/Doge、115 Cloud、OneDrive、123Pan、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV、WPS。
 
 ## 2026-05-26 流式代理补齐
 
@@ -135,7 +135,7 @@
 
 - 对照 `docs/OpenList-main/drivers/189pc/{driver.go,utils.go,help.go,meta.go}` 和 `docs/OpenList-main/drivers/189_tv/{driver.go,utils.go,help.go,meta.go}`，新增 `src/kernel/internal/driver/189pc/driver.js`、`src/kernel/internal/driver/189pc/session.js`、`src/kernel/internal/driver/189_tv/driver.js` 与 `src/kernel/internal/driver/189_tv/session.js` runtime 入口，并暴露到 `/api/admin/driver/names`。
 - 首批按 OpenList 方法边界迁移 PC/TV 的已登录 session 路径：`List`、`Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename`，下载仍返回 `model.Link` 风格数据并复用 `/d` / `/p -> common.Proxy -> body.proxy`。
-- PC/TV 的完整登录链路仍未声称完成：PC 密码/二维码登录涉及 RSA、验证码/OCR、AES-ECB `params` 和 token refresh；TV 二维码登录涉及 AppKey 签名与扫码轮询；上传、家庭云中转、rapid/CAS/torrent 仍按结构化错误保留下一步边界。
+- PC/TV 的完整登录链路仍未声称完成：PC 二维码登录和 token/session refresh 已迁移，PC 密码登录仍涉及 RSA、验证码/OCR、AES-ECB `params` 等后续边界；TV 二维码登录涉及 AppKey 签名与扫码轮询；上传、家庭云中转、rapid/CAS/torrent 仍按结构化错误保留下一步边界。
 - AliyundriveOpen 增加短期 list/path/link 缓存，贴近 OpenList `op/cache` 对 repeated `Link()` 的复用效果，减少播放器 Range 请求反复逐层 list 和取下载链接造成的首包等待。
 - 189PC/TV 的 session 签名请求实现已拆回各自 OpenList 对应目录；根级 189 专用 common 文件不再存在，后续继续按 `drivers/189pc` 与 `drivers/189_tv` 分别复制相邻源码。
 
@@ -170,7 +170,7 @@
 - 189CloudTV 对齐 OpenList `Init` 的个人/家庭云参数规范化：家庭云默认 `root_folder_id=-11` 改为空，个人云空根目录改为 `-11`；家庭云未填写 `family_id` 时调用 `getFamilyList.action` 自动写回，减少 `parentId ... file not found or invalid` 这类根目录/家庭 ID 不匹配错误。
 - 189CloudTV/189CloudPC 的 JSON 解析补齐 OpenList `types.go` 中 `String` ID 的行为：`id`、`parentId`、`familyId`、`fileId` 等 15 位以上数字字段在 `JSON.parse` 前先转成字符串，避免 JS 超过安全整数后把目录 ID 舍入，导致第三级目录用错误 `parentId` 请求并返回 `file not found or invalid`。
 - `pnpm test:kernel` 新增 189CloudTV `need verify -> temp_uuid -> access_token/sessionKey` 覆盖；`pnpm build` 和 `node --check dist/kernel.js` 已验证通过。
-- 189CloudTV 上传、rapid/CAS/torrent 和家庭云上传细节仍是结构化占位；189CloudPC 密码/二维码登录仍待单独迁移。
+- 189CloudTV 上传、rapid/CAS/torrent 和家庭云上传细节仍是结构化占位；189CloudPC 密码登录、PC AES `params`、上传和 CAS/torrent 仍待单独迁移。
 
 ## 2026-06-05 123Pan 上传链路
 
@@ -304,8 +304,8 @@
 ## 2026-06-29 123Pan API Host 切换
 
 - 真实登录验证确认：`login.123pan.com/api/user/sign_in` 仍返回 token，但旧 OpenList 常量 `https://www.123pan.com/b/api/user/info` 即使带新 token 也返回 `200 text/html` 网页兜底，导致 `invalid character '<' looking for beginning of value`。
-- 当前 123Pan 网页包生产配置使用 `postUrlPath=https://api.123278.com/b/api/`、`mainApiOrigin=https://api.123pan.cn`；`user/info` 和 `file/list/new` 已用真实请求确认 `https://api.123278.com/b/api/*` 返回 JSON。
-- 本端 `123Pan` runtime 的 `B_API` 已切到 `https://api.123278.com/b/api`，`origin/referer` 仍按网页请求保留 `https://www.123pan.com/`；smoke mock 同步改为新 host。
+- 初始修复 OpenListTeam/OpenList#2677 使用 `api.123278.com` / `api.123pan.cn`，但上游后续合并的 OpenListTeam/OpenList#2678 覆盖范围更完整：`Api`、`AApi`、`BApi`、`123 Share` 和下载跳转 referer 统一从 `www.123pan.com` 改为 `yun.123pan.com`。
+- 本端 `123Pan` runtime 已跟随 #2678，把 `API` / `B_API`、`origin/referer` 和下载跳转 Referer 统一切到 `https://yun.123pan.com`；当前尚未迁移独立 `123_share` runtime。
 
 ## 2026-06-30 默认挂载收口
 
@@ -320,6 +320,31 @@
 - 为了避免图片 503、目录 404、图片查看器打开第一张等问题继续被前端补丁掩盖，WebDAV 差异后续只在 driver/gowebdav 对齐层处理；当前明确剩余项包括 cookie jar、SharePoint `odrvcookie`、`tls_insecure_skip_verify`、Basic/Digest 401 negotiation、409 parent retry 和 no-redirect link probe。
 - FileTab 与 Dock 的文件行为收敛为一套维护点：`src/utils/file_ui.ts` 负责图片 Viewer、URL、大小、prompt、错误提示等 UI 小工具；`src/utils/file_actions.ts` 负责下载、复制链接、分享、删除、右键菜单和文档链接生成。组件只保留各自的列表渲染、选择状态和路径解析。
 - 已修复 Dock 与 FileTab 图片预览中的 `handleError is not defined`，并在 Viewer shown 后显式切到点击项，避免从第一张图片开始显示。
+
+## 2026-07-05 Quark 小差异收口
+
+- 普通 Quark/UC runtime 的请求路径改为吸收 OpenList 上游同款 `__puus` cookie，Quark 转码模式同时吸收 `__pus`，并通过 `saveDriverStorage` 写回 addition；补齐 `/member` 容量 details，能力矩阵标记 Quark/UC `details=done`。
+- QuarkOpen 上传 proof 生成前会按 OpenList `Init` 语义确保 `/open/v1/user/info` 返回 `user_id`，并保存到 addition 供 kernel runtime 后续请求复用；若拿不到 user ID，按上游语义返回明确错误，不再用空 user id 继续上传。
+- 修正 QuarkOpen driver metadata 中“multipart upload placeholder”的过期说明；实际上传链路仍是已迁移的 `upload_pre -> get_upload_urls -> OSS PUT -> upload_finish`。
+
+## 2026-07-06 WPS 云文档接入
+
+- 对照 `docs/OpenList-main/drivers/wps/{meta.go,driver.go,util.go,types.go}` 新增 `src/kernel/internal/driver/wps/driver.js`，接入 Cookie 登录校验、Personal/Business 模式、根目录路径解析、群组/文件列表、文件 `Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename` 和容量详情。
+- `WPS` 已加入 `/api/admin/driver/names`、driver metadata 和中英文 i18n；字段保持 OpenList addition key：`root_folder_path`、`cookie`、`mode`、`custom_ua`。
+- WPS 下载/播放沿用 OpenList `Link -> /p -> common proxy -> body.proxy` 边界。上传上游依赖 SHA1/SHA256、外部 PUT/POST 和 commit 步骤，当前 JS kernel runtime 暂按 `no_upload=true` 保留结构化占位。
+- 新增 `assets/docs/zh_CN/驱动说明/WPS 云文档.md` 和 `assets/docs/en_US/Drivers/WPS.md`，记录 Cookie 获取、Personal/Business 模式、字段、测试清单和当前边界。
+
+## 2026-07-07 189Cloud 家庭云收口
+
+- 对齐 OpenList `drivers/189pc` 的家庭云初始化：`189CloudPC` 刷新 PC session 后会规范化 `type=family` 的根目录，把 `root_folder_id=-11` 转为空根目录，并在 `family_id` 留空时调用 `family/manage/getFamilyList.action` 自动写回家庭 ID。
+- 普通 `189Cloud` 仍按上游网页端个人云边界处理；家庭云明确走 `189CloudPC` 或 `189CloudTV`。中英文 189Cloud 系列文档已补充家庭云选择、`family_id` 自动/手动填写和根目录规则。
+- smoke test 新增 `189CloudPC` family 模式验证，覆盖 `family_id` 回填和家庭云根目录归一；能力矩阵与 driver metadata 说明同步更新，避免继续显示“PC 二维码登录占位”的旧状态。
+
+## 2026-07-07 S3 Link/Reader 收口
+
+- 对照 OpenList `drivers/s3/driver.go` 的 `Link` 语义，`src/kernel/internal/driver/s3/driver.js` 新增独立 `link()`，供 `/api/fs/link` 返回 GET 预签名 URL；`read()` 继续保留插件内 S3 签名读取，供 `/p` 代理、`/d` 下载、思阅/伴侣插件稳定消费，避免 PDF.js Range 请求触发上游预签名 403。
+- S3/Doge GET link 补齐 `custom_host`、`enable_custom_host_presign`、`remove_bucket` 和 `response-content-disposition` 文件名参数；`force_path_style` 默认值修正为 OpenList 的关闭状态，避免缤纷云 S4 这类 virtual-host style 服务被默认拼成 path-style。
+- smoke test 新增 S3 `/api/fs/link` 和 `/p/remote-s3/object.txt` 断言，分别覆盖 GET 预签名 URL、文件名响应参数和本地 `/p` 读取不返回 403；S3 兼容存储文档补充缤纷云 S4、PDF/思阅打不开、`custom_host` 与 path-style 排查说明。
 
 ## 下一步
 

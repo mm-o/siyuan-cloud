@@ -7,7 +7,7 @@ import {
   parseTime,
   persistAddition,
 } from "../common.js";
-import { forwardProxy, remoteJson } from "../http.js";
+import { forwardProxy, remoteJsonWithMeta } from "../http.js";
 
 const configs = {
   Quark: {
@@ -33,6 +33,40 @@ const checkQuark = (payload) => {
 
 const cookieHeader = (addition) => addition.cookie || addition.Cookie || "";
 
+const headerValues = (headers = {}, name) => {
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (String(key).toLowerCase() === name.toLowerCase()) return Array.isArray(value) ? value : [value];
+  }
+  return [];
+};
+
+const setCookie = (cookie, name, value) => {
+  const parts = String(cookie || "").split(";").map((item) => item.trim()).filter(Boolean);
+  const prefix = `${name}=`;
+  const next = `${name}=${value}`;
+  const index = parts.findIndex((item) => item.startsWith(prefix));
+  if (index >= 0) parts[index] = next;
+  else parts.push(next);
+  return parts.join("; ");
+};
+
+const rememberQuarkCookies = async (storage, headers) => {
+  let cookie = cookieHeader(storage.addition_json);
+  const before = cookie;
+  for (const item of headerValues(headers, "set-cookie")) {
+    const pair = String(item || "").split(";")[0];
+    const index = pair.indexOf("=");
+    if (index <= 0) continue;
+    const name = pair.slice(0, index);
+    if (name !== "__puus" && !(storage.driver === "Quark" && boolValue(storage.addition_json.use_transcoding_address) && name === "__pus")) continue;
+    cookie = setCookie(cookie, name, pair.slice(index + 1));
+  }
+  if (cookie && cookie !== before) {
+    storage.addition_json.cookie = cookie;
+    await persistAddition(storage);
+  }
+};
+
 const confFor = (storage) => configs[storage.driver] || configs.Quark;
 const cache = createStorageCache();
 
@@ -49,7 +83,7 @@ const requestQuark = async (client, storage, pathname, {
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== "") target.searchParams.set(key, String(value));
   }
-  const resp = await remoteJson(client, target.toString(), {
+  const { json, meta } = await remoteJsonWithMeta(client, target.toString(), {
     allowErrorStatus: true,
     body,
     headers: {
@@ -60,7 +94,8 @@ const requestQuark = async (client, storage, pathname, {
     },
     method,
   });
-  return checkQuark(resp);
+  await rememberQuarkCookies(storage, meta?.headers);
+  return checkQuark(json);
 };
 
 const base64ToBytes = (value) => {
@@ -300,7 +335,6 @@ const downloadLink = async (client, storage, file) => {
         };
       }
     }
-    throw new Error("no link found");
   }
 
   const resp = await requestQuark(client, storage, "/file/download", {
@@ -326,6 +360,15 @@ const manageFile = async (client, storage, pathname, body) => {
   await requestQuark(client, storage, pathname, { body, method: "POST" });
   cache.clear(storage);
 };
+
+const memberInfo = async (client, storage) => requestQuark(client, storage, "/member", {
+  method: "GET",
+  query: {
+    fetch_subscribe: "false",
+    _ch: "home",
+    fetch_identity: "false",
+  },
+});
 
 const uploadHost = (preData) => `https://${preData.bucket}.${String(preData.upload_url || "").slice(7)}/${preData.obj_key}`;
 
@@ -537,6 +580,17 @@ export const createQuarkDriver = ({ client }) => ({
 
   async copy() {
     throw new Error("Quark copy is not supported by the OpenList driver");
+  },
+
+  async details(storage) {
+    const resp = await memberInfo(client, storage);
+    const total = Number(resp?.data?.total_capacity || resp?.data?.totalCapacity || 0);
+    const used = Number(resp?.data?.use_capacity || resp?.data?.useCapacity || 0);
+    return {
+      total_space: total,
+      used_space: used,
+      free_space: Math.max(0, total - used),
+    };
   },
 
   async put(storage, relPath, content, mime, options = {}) {

@@ -16,6 +16,7 @@ import { createQuarkUCTVDriver } from "./quark_uc_tv/driver.js";
 import { createS3Driver } from "./s3/driver.js";
 import { createSiYuanWorkspaceDriver } from "./siyuan_workspace/driver.js";
 import { createWebDavDriver } from "./webdav/driver.js";
+import { createWpsDriver } from "./wps/driver.js";
 
 const parseAddition = (storage) => {
   if (storage.addition_json) return storage.addition_json;
@@ -65,6 +66,7 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
     QuarkOpen: createQuarkOpenDriver({ client }),
     QuarkTV: createQuarkUCTVDriver({ client }),
     UCTV: createQuarkUCTVDriver({ client }),
+    WPS: createWpsDriver({ client }),
   };
 
   const runtime = {

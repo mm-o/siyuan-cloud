@@ -27,6 +27,7 @@ const ADAPTERS = [
   "quark_open",
   "quark_tv",
   "uc_tv",
+  "wps",
 ];
 
 const STAGES = [

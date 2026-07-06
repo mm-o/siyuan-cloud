@@ -38,6 +38,11 @@ interface DriverInfo {
   config?: Record<string, any>
 }
 
+interface DockSettings {
+  currentTab?: string
+  compactViews?: Record<string, boolean>
+}
+
 const DOCK_SETTINGS = 'siyuan-cloud-dock-settings.json'
 const USER_PERMISSION_KEYS = [
   'see_hides',
@@ -74,6 +79,7 @@ export function useDock(plugin: Plugin) {
     { key: 'status', labelKey: 'tabStatus', icon: '#iconInfo' },
   ]
   const currentTab = ref('files')
+  const dockCompactViews = ref<Record<string, boolean>>({})
   const status = ref<Status>('checking')
   const statusDetail = ref(t('waitingKernel'))
   const storageInfo = ref<StorageInfo>({})
@@ -112,6 +118,7 @@ export function useDock(plugin: Plugin) {
   const userFormOpen = ref(false)
   const selectedUserId = ref<number | null>(null)
   const userForm = ref<Record<string, any>>({})
+  let dockSettingsLoaded = false
   let driverVerifyTimer: ReturnType<typeof window.setInterval> | undefined
   let loadingMountEdit = false
 
@@ -129,7 +136,8 @@ export function useDock(plugin: Plugin) {
   }
 
   function fieldHelp(field: DriverField) {
-    return tFallback(`driverFieldHelp.${field.name}`, field.help || '')
+    const driver = normalizeDriverName(verifyDriver.value)
+    return tFallback(`driverFieldHelp.${driver}.${field.name}`, tFallback(`driverFieldHelp.${field.name}`, field.help || ''))
   }
 
   function normalizeDriverName(value: string) {
@@ -342,17 +350,23 @@ export function useDock(plugin: Plugin) {
 
   async function loadDockSettings() {
     try {
-      const settings = await plugin.loadData(DOCK_SETTINGS)
+      const settings = (await plugin.loadData(DOCK_SETTINGS)) as DockSettings | undefined
       const tab = settings?.currentTab
       if (tabs.some(item => item.key === tab))
         currentTab.value = tab
+      if (settings?.compactViews && typeof settings.compactViews === 'object')
+        dockCompactViews.value = Object.fromEntries(Object.entries(settings.compactViews).map(([key, value]) => [key, value === true]))
     } catch {
       currentTab.value = 'files'
+    } finally {
+      dockSettingsLoaded = true
     }
   }
 
   async function saveDockSettings() {
-    await plugin.saveData(DOCK_SETTINGS, { currentTab: currentTab.value })
+    if (!dockSettingsLoaded)
+      return
+    await plugin.saveData(DOCK_SETTINGS, { currentTab: currentTab.value, compactViews: dockCompactViews.value } satisfies DockSettings)
   }
 
   function fieldOptions(field: DriverField) {
@@ -1246,6 +1260,10 @@ export function useDock(plugin: Plugin) {
     return openPackagedDoc(t('openHelp') === '打开说明' ? '驱动说明' : 'Drivers')
   }
 
+  function openDriverHelpDoc(driver = verifyDriver.value) {
+    return window._siyuan_cloud?.openDriverDoc?.(driver) || openMountHelpDoc()
+  }
+
   async function copyRoute() {
     const route = await openListShareUrl(`${privateBase}/`)
     try {
@@ -1293,8 +1311,10 @@ export function useDock(plugin: Plugin) {
     ],
   }))
 
+  watch([currentTab, dockCompactViews], () => {
+    void saveDockSettings()
+  }, { deep: true })
   watch(currentTab, async (tab) => {
-    await saveDockSettings()
     if (tab === 'shares')
       await quietLoad(loadShareList)
     else if (tab === 'users')
@@ -1330,6 +1350,7 @@ export function useDock(plugin: Plugin) {
   return {
     configText,
     currentTab,
+    dockCompactViews,
     deleteMount,
     driverDisplayName,
     driverFields,
@@ -1358,6 +1379,7 @@ export function useDock(plugin: Plugin) {
     openApiDoc,
     openReadmeDoc,
     openPackagedDoc,
+    openDriverHelpDoc,
     openFileManager,
     openAddMount,
     openEditMount,

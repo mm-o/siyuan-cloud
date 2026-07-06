@@ -1,5 +1,6 @@
 import { Dialog, showMessage } from 'siyuan'
 import {
+  fsOther,
   openListAbsoluteUrl,
   openListStableUrl,
   siyuanWorkspacePublicUrl,
@@ -37,14 +38,44 @@ export interface OpenListUrlItem {
   url?: string
 }
 
+export const openListFileKinds = {
+  audio: new Set('mp3,wav,aac,m4a,flac,ogg'.split(',')),
+  image: new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(',')),
+  text: new Set('txt,log,md,markdown,json,xml,yml,yaml,toml,ini,conf,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,rb,rs,php,c,cpp,h'.split(',')),
+  video: new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(',')),
+}
+const openListCompanionExts = new Set('mp3,wav,aac,m4a,flac,ogg,mp4,m3u8,webm,mov,m4v,mkv,avi,flv,wmv,epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
+
 type PathInput<T> = string | ((item: T) => string)
+type MediaKind = 'audio' | 'video'
+type ResolveUrl = (path: string, preferFresh?: boolean) => Promise<string>
 
 const pathOf = <T>(item: T, path: PathInput<T>) =>
   typeof path === 'function' ? path(item) : path
 
+function extensionOfName(name: string) {
+  return String(name || '').split('.').pop()?.toLowerCase() || ''
+}
+
+export function openListFileKind(name: string, isDir = false) {
+  if (isDir)
+    return ''
+  const ext = extensionOfName(name)
+  return Object.entries(openListFileKinds).find(([, exts]) => exts.has(ext))?.[0] || ''
+}
+
 export function proxyPreviewUrl(path: string, absolute = true) {
   const toUrl = absolute ? openListAbsoluteUrl : openListStableUrl
   return toUrl(`${privateBase}/p${path}`, { escapeHash: true, escapeQuestion: true })
+}
+
+export function downloadPreviewUrl(path: string, absolute = true) {
+  const toUrl = absolute ? openListAbsoluteUrl : openListStableUrl
+  return toUrl(`${privateBase}/d${path}`, { escapeHash: true, escapeQuestion: true })
+}
+
+function readableOpenListRoute(route: 'd' | 'p', path: string) {
+  return `${privateBase}/${route}${String(path || '').replace(/#/g, '%23').replace(/\?/g, '%3F')}`
 }
 
 export function itemOpenUrl<T extends OpenListUrlItem>(item: T, path: PathInput<T>) {
@@ -58,6 +89,20 @@ export function itemStableUrl<T extends OpenListUrlItem>(item: T, path: PathInpu
   return siyuanWorkspacePublicUrl(resolvedPath) || String(item.raw_url || item.url || '') || proxyPreviewUrl(resolvedPath, false)
 }
 
+function companionHrefForKind(path: string, kind: string) {
+  if (kind === 'video')
+    return undefined
+  if (kind === 'audio')
+    return readableOpenListRoute('d', path)
+  return readableOpenListRoute('p', path)
+}
+
+export function openListCompanionHref(name: string, path: string, isDir = false) {
+  if (isDir || !openListCompanionExts.has(extensionOfName(name)))
+    return undefined
+  return companionHrefForKind(path, openListFileKind(name, isDir))
+}
+
 export function triggerDownload(url: string, filename?: string) {
   const anchor = document.createElement('a')
   anchor.href = url
@@ -68,6 +113,37 @@ export function triggerDownload(url: string, filename?: string) {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
+}
+
+const videoPreviewTemplateOrder = ['FHD', 'HD', 'SD', 'LD', 'QHD', '4K']
+
+function videoPreviewTaskUrl(data: any) {
+  const tasks = data?.video_preview_play_info?.live_transcoding_task_list
+    || data?.live_transcoding_task_list
+    || []
+  if (!Array.isArray(tasks))
+    return ''
+  const finished = tasks
+    .filter(task => task?.url && (!task?.status || String(task.status).toLowerCase() === 'finished'))
+    .sort((a, b) => {
+      const ai = videoPreviewTemplateOrder.indexOf(String(a?.template_id || '').toUpperCase())
+      const bi = videoPreviewTemplateOrder.indexOf(String(b?.template_id || '').toUpperCase())
+      return (ai < 0 ? videoPreviewTemplateOrder.length : ai) - (bi < 0 ? videoPreviewTemplateOrder.length : bi)
+    })
+  return String(finished[0]?.url || '')
+}
+
+export async function resolveVideoPreviewUrl(path: string) {
+  const payload = await fsOther({ path, method: 'video_preview' })
+  if (payload.code !== 200)
+    return ''
+  return videoPreviewTaskUrl(payload.data)
+}
+
+export async function resolveMediaPreviewUrl(path: string, kind: MediaKind, resolveUrl: ResolveUrl) {
+  if (kind !== 'video')
+    return resolveUrl(path, true)
+  return await resolveVideoPreviewUrl(path) || await resolveUrl(path, true)
 }
 
 async function tryOpenMedia(name: string, url: string) {
@@ -107,6 +183,10 @@ export async function openMediaPreview(name: string, url: string, kind: 'audio' 
     : `<video controls autoplay playsinline style="width:100%;max-height:70vh;background:#000;" src="${escapeHtml(href)}"></video>`}
 </div>`,
   })
+}
+
+export async function openOpenListMediaPreview(name: string, path: string, kind: MediaKind, resolveUrl: ResolveUrl) {
+  await openMediaPreview(name, await resolveMediaPreviewUrl(path, kind, resolveUrl), kind)
 }
 
 export function promptText(options: {

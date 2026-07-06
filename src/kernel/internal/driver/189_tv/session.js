@@ -9,10 +9,16 @@ import {
 import {
   forwardProxy,
 } from "../http.js";
+import {
+  clearQrKeys,
+  runQrLogin,
+} from "../qr.js";
 
 const API_URL = "https://api.cloud.189.cn";
 const TV_APP_KEY = "600100885";
 const TV_APP_SIGNATURE_SECRET = "fe5734c74c2f96a38157f420b32dc995";
+const TV_QR_LOGIN_URL = "https://open.e.189.cn/api/account/qrClinentLogin.do";
+const TV_QR_KEYS = ["temp_uuid", "TempUuid", "temp_qr_text"];
 
 const utf8 = (input) => unescape(encodeURIComponent(String(input)));
 const bytes = (input) => {
@@ -90,7 +96,6 @@ const hmacSha1Hex = (key, message) => {
 const pathOfUrl = (url) => new URL(url).pathname || "/";
 const httpDate = () => new Date().toUTCString();
 const timestamp = () => Date.now();
-const randomSuffix = () => `${Math.floor(Math.random() * 100000)}_${Math.floor(Math.random() * 10000000000)}`;
 const tvClientSuffix = () => ({
   clientType: "FAMILY_TV",
   version: "6.5.5",
@@ -177,14 +182,14 @@ const resolveRedirect = async (client, url) => {
   return headerValue(resp.headers, "location") || url;
 };
 
-const requestTvAppKeyJson = async (client, url, query = {}) => {
+const requestTvAppKeyRaw = async (client, url, query = {}) => {
   const target = new URL(url);
   for (const [key, value] of Object.entries({ ...tvClientSuffix(), ...query })) {
     if (value !== undefined && value !== null && value !== "") target.searchParams.set(key, String(value));
   }
   const tempTime = timestamp();
   const signText = `AppKey=${TV_APP_KEY}&Operate=GET&RequestURI=${pathOfUrl(url)}&Timestamp=${tempTime}`;
-  const resp = await remote189Json(client, target.toString(), {
+  return remote189Json(client, target.toString(), {
     allowErrorStatus: true,
     headers: {
       Accept: "application/json;charset=UTF-8",
@@ -196,33 +201,26 @@ const requestTvAppKeyJson = async (client, url, query = {}) => {
     },
     method: "GET",
   });
-  return checkResp(resp);
 };
+
+const requestTvAppKeyJson = async (client, url, query = {}) => checkResp(await requestTvAppKeyRaw(client, url, query));
 
 const jsonWithSignedQuery = async (client, url, {
   addition,
   body,
   isFamily = false,
   method = "GET",
-  mode,
   query = {},
   responseEncoding = "text",
 } = {}) => {
   const target = new URL(url);
-  const suffix = mode === "tv"
-    ? tvClientSuffix()
-    : {
-        clientType: "TELEPC",
-        version: "6.2",
-        channelId: "web_cloud.189.cn",
-        rand: randomSuffix(),
-      };
+  const suffix = tvClientSuffix();
   for (const [key, value] of Object.entries({ ...suffix, ...query })) {
     if (value !== undefined && value !== null && value !== "") target.searchParams.set(key, String(value));
   }
   const sessionKey = isFamily ? addition.familySessionKey : addition.sessionKey;
   const sessionSecret = isFamily ? addition.familySessionSecret : addition.sessionSecret;
-  if (!sessionKey || !sessionSecret) throw new Error(`${mode === "tv" ? "189CloudTV" : "189CloudPC"} requires access_token plus sessionKey/sessionSecret fields. Re-save after upstream login/session migration or import an OpenList-compatible session addition.`);
+  if (!sessionKey || !sessionSecret) throw new Error("189CloudTV requires access_token plus sessionKey/sessionSecret fields. Re-save after upstream login/session migration or import an OpenList-compatible session addition.");
   const date = httpDate();
   const signText = `SessionKey=${sessionKey}&Operate=${method}&RequestURI=${pathOfUrl(url)}&Date=${date}`;
   const headers = {
@@ -230,7 +228,7 @@ const jsonWithSignedQuery = async (client, url, {
     Date: date,
     SessionKey: sessionKey,
     Signature: hmacSha1Hex(sessionSecret, signText),
-    "User-Agent": mode === "tv" ? "EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35" : "Mozilla/5.0",
+    "User-Agent": "EcloudTV/6.5.5 (PJX110; unknown; home02) Android/35",
     "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   };
   const resp = await remote189Json(client, target.toString(), {
@@ -242,31 +240,6 @@ const jsonWithSignedQuery = async (client, url, {
     responseEncoding,
   });
   return checkResp(resp);
-};
-
-export const refreshPcSession = async (client, storage) => {
-  const addition = storage.addition_json;
-  const accessToken = addition.access_token || addition.AccessToken;
-  if (!accessToken) throw new Error("189CloudPC access_token is empty; password/qrcode login is not implemented in the SiYuan kernel port yet");
-  const url = new URL(`${API_URL}/getSessionForPC.action`);
-  url.searchParams.set("clientType", "TELEPC");
-  url.searchParams.set("version", "6.2");
-  url.searchParams.set("channelId", "web_cloud.189.cn");
-  url.searchParams.set("rand", randomSuffix());
-  url.searchParams.set("appId", "8025431004");
-  url.searchParams.set("accessToken", accessToken);
-  const resp = checkResp(await remote189Json(client, url.toString(), {
-    allowErrorStatus: true,
-    headers: { "X-Request-ID": `${Date.now()}-${Math.random().toString(16).slice(2)}` },
-    method: "GET",
-  }));
-  addition.sessionKey = resp.sessionKey;
-  addition.sessionSecret = resp.sessionSecret;
-  addition.familySessionKey = resp.familySessionKey;
-  addition.familySessionSecret = resp.familySessionSecret;
-  addition.loginName = resp.loginName;
-  await persistAddition(storage);
-  return addition;
 };
 
 export const refreshTvSession = async (client, storage) => {
@@ -287,7 +260,6 @@ export const refreshTvSession = async (client, storage) => {
     const familyResp = await jsonWithSignedQuery(client, `${API_URL}/family/manage/getFamilyList.action`, {
       addition,
       isFamily: true,
-      mode: "tv",
     });
     const families = Array.isArray(familyResp.familyInfoResp) ? familyResp.familyInfoResp : [];
     const matched = families.find((item) => addition.loginName && String(item.remarkName || "").includes(addition.loginName))
@@ -299,38 +271,96 @@ export const refreshTvSession = async (client, storage) => {
   return addition;
 };
 
+const tvQrText = (uuid) => {
+  const value = String(uuid || "");
+  if (/^https?:\/\//i.test(value)) return value;
+  const url = new URL(TV_QR_LOGIN_URL);
+  url.searchParams.set("paras", `new_uuid=${value}`);
+  return url.toString();
+};
+
+const extractTvQrText = (message, fallbackUuid) => {
+  const text = String(message || "");
+  const match = text.match(/https:\/\/open\.e\.189\.cn\/api\/account\/qrClinentLogin\.do\?paras=[^\s,"'()<>]+/i);
+  if (match?.[0]) return match[0];
+  const paras = text.match(/paras=([^\s,"'()<>]+)/i)?.[1];
+  return paras ? `${TV_QR_LOGIN_URL}?paras=${paras}` : tvQrText(fallbackUuid);
+};
+
+const startTvQrLogin = async (client, storage) => {
+  const addition = storage.addition_json;
+  const resp = await requestTvAppKeyJson(client, `${API_URL}/family/manage/getQrCodeUUID.action`);
+  if (!resp.uuid) throw new Error("uuidInfo is empty");
+  addition.temp_uuid = resp.uuid;
+  addition.temp_qr_text = tvQrText(resp.uuid);
+  await persistAddition(storage);
+  return {
+    message: "请使用天翼云盘 App 扫码登录，然后再次点击验证/保存。",
+    status: "waiting",
+    verify: { qr_text: addition.temp_qr_text },
+  };
+};
+
+const pollTvQrLogin = async (client, storage) => {
+  const addition = storage.addition_json;
+  const tempUuid = addition.temp_uuid || addition.TempUuid;
+  const resp = await requestTvAppKeyRaw(client, `${API_URL}/family/manage/qrcodeLoginResult.action`, {
+    uuid: tempUuid,
+  });
+  const accessToken = resp.accessToken || resp.e189AccessToken;
+  if (accessToken) return { accessToken, message: "189CloudTV QR login confirmed", status: "success" };
+  const message = resp.res_message || resp.resMessage || resp.errorMsg || resp.message || resp.msg || "189CloudTV QR login pending";
+  const code = String(resp.res_code || resp.resCode || resp.errorCode || resp.code || "");
+  if (/expired|expire|timeout|QrCodeExpired/i.test(`${code} ${message}`)) {
+    return { message: message || "189CloudTV QR code expired", status: "expired" };
+  }
+  if (/QrCodeRollLoginFail|qrCodeRollLogin/i.test(`${code} ${message}`)) {
+    addition.temp_qr_text = extractTvQrText(message, tempUuid);
+    await persistAddition(storage);
+    return {
+      message: "请使用天翼云盘 App 扫码登录，然后再次点击验证/保存。",
+      status: "waiting",
+    };
+  }
+  return {
+    message,
+    status: /confirm|scanned|已扫码|待确认/i.test(message) ? "scanned" : "waiting",
+  };
+};
+
+const runTvQrLogin = (client, storage) => runQrLogin({
+  addition: storage.addition_json,
+  clear: () => {
+    clearQrKeys(storage.addition_json, TV_QR_KEYS);
+    return persistAddition(storage);
+  },
+  confirm: async (state) => {
+    storage.addition_json.access_token = state.accessToken;
+    delete storage.addition_json.AccessToken;
+    await persistAddition(storage);
+    return refreshTvSession(client, storage);
+  },
+  hasSession: (addition) => Boolean(addition.temp_uuid || addition.TempUuid),
+  pendingVerify: () => ({ qr_text: storage.addition_json.temp_qr_text || tvQrText(storage.addition_json.temp_uuid || storage.addition_json.TempUuid) }),
+  poll: () => pollTvQrLogin(client, storage),
+  start: () => startTvQrLogin(client, storage),
+});
+
 const loginTvByQrCode = async (client, storage) => {
   const addition = storage.addition_json;
-  if (!addition.access_token && !addition.AccessToken) {
-    const tempUuid = addition.temp_uuid || addition.TempUuid;
-    if (!tempUuid) {
-      const resp = await requestTvAppKeyJson(client, `${API_URL}/family/manage/getQrCodeUUID.action`);
-      if (!resp.uuid) throw new Error("uuidInfo is empty");
-      addition.temp_uuid = resp.uuid;
-      await persistAddition(storage);
-      throw new Error(`need verify: \n<body>\n    <a href="${resp.uuid}">${resp.uuid}</a>\n</body>`);
-    }
-    const resp = await requestTvAppKeyJson(client, `${API_URL}/family/manage/qrcodeLoginResult.action`, {
-      uuid: tempUuid,
-    });
-    const accessToken = resp.accessToken || resp.e189AccessToken;
-    if (!accessToken) throw new Error("E189AccessToken is empty");
-    addition.access_token = accessToken;
-    delete addition.AccessToken;
-    delete addition.temp_uuid;
-    delete addition.TempUuid;
-  }
+  return addition.access_token || addition.AccessToken
+    ? refreshTvSession(client, storage)
+    : runTvQrLogin(client, storage);
+};
+
+const ensureSession = async (client, storage) => {
+  const addition = storage.addition_json;
+  if (addition.sessionKey && addition.sessionSecret) return addition;
   return refreshTvSession(client, storage);
 };
 
-const ensureSession = async (client, storage, mode) => {
-  const addition = storage.addition_json;
-  if (addition.sessionKey && addition.sessionSecret) return addition;
-  return mode === "tv" ? refreshTvSession(client, storage) : refreshPcSession(client, storage);
-};
-
 const request189Session = async (client, storage, url, opts = {}) => {
-  const addition = await ensureSession(client, storage, opts.mode);
+  const addition = await ensureSession(client, storage);
   return jsonWithSignedQuery(client, url, { ...opts, addition });
 };
 
@@ -355,12 +385,12 @@ const fileToObj = (file, relPath, storage, provider) => {
   };
 };
 
-const listByParent = async (client, storage, parentId, mode) => {
+const listByParent = async (client, storage, parentId) => {
   const addition = storage.addition_json;
   const isFamily = familyMode(addition);
   const url = `${API_URL}${isFamily ? "/family/file" : ""}/listFiles.action`;
   const result = [];
-  const pageSize = mode === "tv" ? 130 : 1000;
+  const pageSize = 130;
   for (let pageNum = 1;; pageNum += 1) {
     const query = {
       folderId: parentId,
@@ -374,7 +404,7 @@ const listByParent = async (client, storage, parentId, mode) => {
       descending: toDesc(addition.order_direction || addition.OrderDirection || "asc"),
       familyId: isFamily ? familyId(addition) : undefined,
     };
-    const resp = await request189Session(client, storage, url, { isFamily, mode, query });
+    const resp = await request189Session(client, storage, url, { isFamily, query });
     const list = resp.fileListAO || {};
     for (const folder of list.folderList || []) result.push({ ...folder, is_dir: true });
     for (const file of list.fileList || []) result.push({ ...file, is_dir: false });
@@ -383,7 +413,7 @@ const listByParent = async (client, storage, parentId, mode) => {
   return result;
 };
 
-const resolveFile = async (client, storage, relPath, mode) => {
+const resolveFile = async (client, storage, relPath) => {
   const addition = storage.addition_json;
   const isFamily = familyMode(addition);
   const clean = normalizePath(relPath || "/");
@@ -398,7 +428,7 @@ const resolveFile = async (client, storage, relPath, mode) => {
   let parentId = rootFolderId(addition, isFamily);
   let current = null;
   for (const part of clean.split("/").filter(Boolean)) {
-    const files = await listByParent(client, storage, parentId, mode);
+    const files = await listByParent(client, storage, parentId);
     current = files.find((item) => item.name === part);
     if (!current) throw new Error(`object not found: ${clean}`);
     parentId = String(current.id || "");
@@ -406,13 +436,12 @@ const resolveFile = async (client, storage, relPath, mode) => {
   return current;
 };
 
-const linkFor = async (client, storage, file, mode) => {
+const linkFor = async (client, storage, file) => {
   const addition = storage.addition_json;
   const isFamily = familyMode(addition);
   const url = `${API_URL}${isFamily ? "/family/file" : ""}/getFileDownloadUrl.action`;
   const resp = await request189Session(client, storage, url, {
     isFamily,
-    mode,
     query: {
       fileId: file.id,
       familyId: isFamily ? familyId(addition) : undefined,
@@ -433,7 +462,7 @@ const formBody = (data) => new URLSearchParams(
     .map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]),
 ).toString();
 
-const batchTask = async (client, storage, mode, type, targetFolderId, files, other = {}) => {
+const batchTask = async (client, storage, type, targetFolderId, files, other = {}) => {
   const addition = storage.addition_json;
   const isFamily = familyMode(addition);
   const taskInfos = files.map((file) => ({
@@ -451,21 +480,19 @@ const batchTask = async (client, storage, mode, type, targetFolderId, files, oth
     }),
     isFamily,
     method: "POST",
-    mode,
   });
 };
 
-export const create189SessionDriver = ({ client, mode, provider }) => ({
+export const create189SessionDriver = ({ client, provider }) => ({
   async test(storage) {
-    if (mode === "tv") await loginTvByQrCode(client, storage);
-    else await refreshPcSession(client, storage);
-    await request189Session(client, storage, `${API_URL}/getUserInfo.action`, { mode });
+    await loginTvByQrCode(client, storage);
+    await request189Session(client, storage, `${API_URL}/getUserInfo.action`);
     return { addition: storage.addition_json };
   },
 
   async list(storage, relPath) {
-    const parent = await resolveFile(client, storage, relPath, mode);
-    const content = (await listByParent(client, storage, String(parent.id || ""), mode))
+    const parent = await resolveFile(client, storage, relPath);
+    const content = (await listByParent(client, storage, String(parent.id || "")))
       .map((file) => fileToObj(file, normalizePath(relPath + "/" + file.name), storage, provider));
     return {
       content,
@@ -479,10 +506,10 @@ export const create189SessionDriver = ({ client, mode, provider }) => ({
   },
 
   async get(storage, relPath, options = {}) {
-    const file = await resolveFile(client, storage, relPath, mode);
+    const file = await resolveFile(client, storage, relPath);
     const obj = fileToObj(file, relPath, storage, provider);
     if (!obj.is_dir && !options.skipLink) {
-      const url = await linkFor(client, storage, file, mode);
+      const url = await linkFor(client, storage, file);
       obj.raw_url = url;
       obj.url = url;
     }
@@ -490,9 +517,9 @@ export const create189SessionDriver = ({ client, mode, provider }) => ({
   },
 
   async read(storage, relPath, options = {}) {
-    const file = await resolveFile(client, storage, relPath, mode);
+    const file = await resolveFile(client, storage, relPath);
     if (file.is_dir) throw new Error("not file");
-    const url = await linkFor(client, storage, file, mode);
+    const url = await linkFor(client, storage, file);
     return {
       link: {
         url,
@@ -505,11 +532,10 @@ export const create189SessionDriver = ({ client, mode, provider }) => ({
   async mkdir(storage, relPath) {
     const addition = storage.addition_json;
     const isFamily = familyMode(addition);
-    const parent = await resolveFile(client, storage, dirnameOf(relPath), mode);
+    const parent = await resolveFile(client, storage, dirnameOf(relPath));
     await request189Session(client, storage, `${API_URL}${isFamily ? "/family/file" : ""}/createFolder.action`, {
       isFamily,
       method: "POST",
-      mode,
       query: {
         familyId: isFamily ? familyId(addition) : undefined,
         parentId: isFamily ? String(parent.id || "") : undefined,
@@ -521,31 +547,30 @@ export const create189SessionDriver = ({ client, mode, provider }) => ({
   },
 
   async move(storage, relPath, dstRelPath) {
-    const file = await resolveFile(client, storage, relPath, mode);
-    const dst = await resolveFile(client, storage, dstRelPath, mode);
-    await batchTask(client, storage, mode, "MOVE", String(dst.id || ""), [file], { targetFileName: dst.name || "" });
+    const file = await resolveFile(client, storage, relPath);
+    const dst = await resolveFile(client, storage, dstRelPath);
+    await batchTask(client, storage, "MOVE", String(dst.id || ""), [file], { targetFileName: dst.name || "" });
   },
 
   async copy(storage, relPath, dstRelPath) {
-    const file = await resolveFile(client, storage, relPath, mode);
-    const dst = await resolveFile(client, storage, dstRelPath, mode);
-    await batchTask(client, storage, mode, "COPY", String(dst.id || ""), [file], { targetFileName: dst.name || "" });
+    const file = await resolveFile(client, storage, relPath);
+    const dst = await resolveFile(client, storage, dstRelPath);
+    await batchTask(client, storage, "COPY", String(dst.id || ""), [file], { targetFileName: dst.name || "" });
   },
 
   async remove(storage, relPath) {
-    const file = await resolveFile(client, storage, relPath, mode);
-    await batchTask(client, storage, mode, "DELETE", "", [file]);
+    const file = await resolveFile(client, storage, relPath);
+    await batchTask(client, storage, "DELETE", "", [file]);
   },
 
   async rename(storage, relPath, newName) {
     const addition = storage.addition_json;
     const isFamily = familyMode(addition);
-    const file = await resolveFile(client, storage, relPath, mode);
+    const file = await resolveFile(client, storage, relPath);
     const isDir = !!file.is_dir;
     await request189Session(client, storage, `${API_URL}${isFamily ? "/family/file" : ""}/${isDir ? "renameFolder" : "renameFile"}.action`, {
       isFamily,
       method: isFamily ? "GET" : "POST",
-      mode,
       query: {
         familyId: isFamily ? familyId(addition) : undefined,
         folderId: isDir ? String(file.id || "") : undefined,
@@ -557,7 +582,6 @@ export const create189SessionDriver = ({ client, mode, provider }) => ({
   },
 
   async put() {
-    const uploadType = mode === "tv" ? "old upload / rapid upload" : "stream / rapid / old upload";
-    throw new Error(`${provider} ${uploadType} is not implemented in the SiYuan kernel port yet`);
+    throw new Error(`${provider} old upload / rapid upload is not implemented in the SiYuan kernel port yet`);
   },
 });

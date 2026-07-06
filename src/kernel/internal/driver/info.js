@@ -104,7 +104,6 @@ const metadataOnlyNames = [
   "UrlTree",
   "WeiYun",
   "WoPan",
-  "WPS",
   "YandexDisk",
 ];
 
@@ -155,9 +154,9 @@ const driverNameOrder = [
   "Onedrive Sharelink",
   "PikPak",
   "Quark",
-  "UC",
   "QuarkOpen",
   "QuarkTV",
+  "UC",
   "UCTV",
   "SFTP",
   "SMB",
@@ -165,6 +164,7 @@ const driverNameOrder = [
   "URLTree",
   "USS",
   "Virtual",
+  "WPS",
 ];
 
 const buildDriverInfoMap = () => withAliases({
@@ -342,7 +342,7 @@ const buildDriverInfoMap = () => withAliases({
     bool("generate_torrent", false, "Generate torrent file with CAS extension after upload"),
   ]), {
     check_status: true,
-    note: "Initial runtime ports OpenList 189CloudPC list/get/read/link and basic management when an access_token/session is available. Password/QR login and upload remain structured placeholders.",
+    note: "Runtime ports OpenList 189CloudPC QR login, session refresh, family-cloud ID refill, list/get/read/link, and basic management. Password login and upload remain structured placeholders.",
   }),
   "189CloudTV": configPatch(supported("189CloudTV", [
     rootId("-11"),
@@ -355,7 +355,7 @@ const buildDriverInfoMap = () => withAliases({
     bool("rapid_upload", false),
   ]), {
     check_status: true,
-    note: "Runtime ports OpenList 189CloudTV QR login, session refresh, list/get/read/link, and basic management. Upload remains a structured placeholder.",
+    note: "Runtime ports OpenList 189CloudTV QR login, session refresh, family-cloud ID refill, list/get/read/link, and basic management. Upload remains a structured placeholder.",
   }),
   Aliyundrive: unsupported("Aliyundrive", [
     rootId("root"),
@@ -467,7 +467,7 @@ const buildDriverInfoMap = () => withAliases({
     rootId("0"),
     select("order_by", ["none", "file_type", "file_name", "updated_at"], "none"),
     select("order_direction", ["asc", "desc"], "asc"),
-    bool("use_transcoding_address", true),
+    bool("use_transcoding_address", false),
     bool("only_list_video_file", false),
     number("addition_version", 2),
   ]), { default_root: "0", no_overwrite_upload: true }),
@@ -492,13 +492,13 @@ const buildDriverInfoMap = () => withAliases({
     field("api_url_address", "string", "https://api.oplist.org/quarkyun/renewapi"),
     password("access_token"),
     password("refresh_token", true),
-    text("app_id", true, "Keep it empty if you don't have one"),
-    password("sign_key", true, "Keep it empty if you don't have one"),
+    text("app_id", false, "Built-in public AppID is used when empty"),
+    password("sign_key", false, "Built-in public SignKey is used when empty"),
   ]), {
     default_root: "0",
     no_overwrite_upload: true,
     only_proxy: true,
-    note: "Runtime ports OpenList QuarkOpen list/get/read/link and basic management. Multipart upload remains a structured placeholder.",
+    note: "Runtime ports OpenList QuarkOpen list/get/read/link, basic management, and multipart upload.",
   }),
   QuarkTV: configPatch(supported("QuarkTV", [
     rootId("0"),
@@ -534,6 +534,16 @@ const buildDriverInfoMap = () => withAliases({
   URLTree: unsupported("URLTree", [text("url", true)]),
   USS: unsupported("USS", [text("bucket", true), text("endpoint", true), text("operator", true), password("password", true)]),
   Virtual: unsupported("Virtual", []),
+  WPS: configPatch(supported("WPS", [
+    rootPath("/"),
+    password("cookie", true, "Get Cookie from a fresh or incognito browser session."),
+    select("mode", ["Personal", "Business"], "Personal"),
+    text("custom_ua", false, "Custom User-Agent copied with the Cookie request."),
+  ]), {
+    check_status: true,
+    no_upload: true,
+    note: "Runtime ports OpenList WPS login check, root/group listing, get/read/link, basic management, and storage details. Upload remains a structured placeholder.",
+  }),
   Local: configPatch(unsupported("Local", [
     rootPath("/"),
     bool("directory_size", false, "This might impact host performance"),
@@ -573,10 +583,11 @@ const exposedDriverNames = [
   "BaiduNetdisk",
   "Onedrive",
   "Quark",
-  "UC",
   "QuarkOpen",
   "QuarkTV",
+  "UC",
   "UCTV",
+  "WPS",
 ];
 
 export const driverNames = () => {

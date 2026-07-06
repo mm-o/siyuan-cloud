@@ -2,6 +2,7 @@ interface Window {
   _siyuan_cloud?: {
     openPanel?: () => void
     openApiDoc?: () => void
+    openDriverDoc?: (driver: string) => void
     openReadmeDoc?: () => void
     openPackagedDoc?: (key: string) => void
     openDock?: () => void

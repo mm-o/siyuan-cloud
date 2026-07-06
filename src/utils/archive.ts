@@ -133,7 +133,7 @@ export async function openArchiveBrowser(options: {
   const dialog = new Dialog({
     title: options.title,
     width: 'min(760px, 92vw)',
-    content: `<div class="b3-dialog__content ol-archive-dialog__content">
+    content: `<div class="b3-dialog__content siyuan-cloud-archive ol-archive-dialog__content">
   <div class="ol-archive-browser" data-inner-path="/"></div>
 </div>
 <div class="b3-dialog__action">

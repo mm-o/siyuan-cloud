@@ -37,6 +37,8 @@ This guide applies to `S3` and `Doge`.
 | `enable_custom_host_presign` | Use custom host for presigned URLs |
 | `force_path_style` | Path-style access, often needed for MinIO |
 | `list_object_version` | `v1` or `v2` |
+| `remove_bucket` | Remove bucket from access paths when using a custom host |
+| `add_filename_to_disposition` | Add filename information to download response headers |
 | `enable_direct_upload` | Enable direct-upload info |
 | `direct_upload_host` | Direct-upload host |
 
@@ -87,11 +89,15 @@ Avoid these values:
 ## Notes
 
 - File `raw_url` usually points to Siyuan Cloud `/d/<path>`.
+- `/api/fs/link` returns an OpenList-style GET presigned URL. `/p/<path>` keeps a stable Siyuan Cloud path and reads the object through plugin-side S3 signing, which is safer for SiYuan Reader / PDF.js preview flows that issue Range requests.
+- `/p/<path>` forwards Range requests to the upstream object storage, so PDF readers and media components can request partial content through the stable plugin path.
+- Directory detection, listing pagination, directory marker filtering, and recursive directory copy/move/remove/rename follow OpenList S3 behavior. The default directory placeholder file is `.siyuan-cloud`.
 - `enable_direct_upload` exposes direct-upload tool information.
 - `Doge` reuses the S3-compatible field set.
 - For DogeCloud-specific notes, see [[DogeCloud]].
 - Enable `force_path_style` when the object storage service requires path-style requests; MinIO, R2, and some compatible services often need it.
 - If you only want to change the public access domain, prefer `custom_host`; do not put a CDN domain in `endpoint`.
+- Bitiful S4 usually uses `endpoint=https://s3.bitiful.net`, `region=cn-east-1`, and `force_path_style=false`. Put a bound domain or CDN domain in `custom_host`, not in `endpoint`.
 
 ## Troubleshooting
 
@@ -101,3 +107,4 @@ Avoid these values:
 | List fails | Check bucket, endpoint, region, and signing behavior |
 | Upload fails | Check AK/SK permissions and bucket write policy |
 | Link cannot open | Check `custom_host`, presign expiry, and public access policy |
+| PDF downloads but SiYuan Reader cannot open it | Confirm `endpoint` is the S3 API endpoint instead of an object/CDN URL; Bitiful usually keeps `force_path_style` disabled; if using a custom public domain, put it in `custom_host` and decide whether `enable_custom_host_presign` is needed by that domain |

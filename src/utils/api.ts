@@ -116,6 +116,15 @@ export const fsSearch = (
   })
 }
 
+export const fsOther = (body: {
+  path: string
+  method: string
+  data?: Record<string, any>
+  password?: string
+}): Promise<OpenListResp> => {
+  return r.post('/fs/other', body)
+}
+
 export const fsArchiveList = (
   path: string,
   inner_path = '/',

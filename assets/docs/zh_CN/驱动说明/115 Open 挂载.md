@@ -35,7 +35,7 @@ OpenList 文档推荐通过 OpenList API 工具获取 115 Open 授权：
 
 1. 访问 <https://api.oplist.org/>。
 2. 在下拉框中选择 115 网盘验证。
-3. 如果使用 OpenList 内置密钥对，勾选“使用 OpenList 提供的参数”，`Client ID` 和 `Application Secret` 留空，然后点击“获取 Token”。
+3. **重点：如果使用 OpenList 内置密钥对，务必勾选“使用 OpenList 提供的参数”。** `Client ID` 和 `Application Secret` 留空，然后点击“获取 Token”。
 4. 如果使用自己在 115 开放平台注册的应用，不勾选“使用 OpenList 提供的参数”，填写自己的 `AppId` 和 `AppSecret`，再点击“获取 Token”。
 5. 在弹出的 115 登录授权页面中登录账号并授权。
 6. 授权成功后复制页面显示的 `Access Token` 和 `Refresh Token`。

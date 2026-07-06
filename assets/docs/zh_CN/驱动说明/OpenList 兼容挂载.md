@@ -19,6 +19,9 @@
 
 OpenList token 获取工具：<https://api.oplist.org/>。
 
+> [!IMPORTANT]
+> 使用官方在线工具获取 token 时，若页面提供“使用 OpenList 提供的参数”选项，请务必勾选；只有使用自建应用参数时才不要勾选。
+
 | 推荐项 | 值 |
 | --- | --- |
 | 驱动 | `OpenList` |

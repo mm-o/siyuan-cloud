@@ -101,17 +101,18 @@ const DRIVER_CAPABILITIES = {
   "115 Share": methodRow({ list: STATUS.DONE, get: STATUS.DONE, link: STATUS.DONE, read: STATUS.DONE, mkdir: STATUS.UNSUPPORTED, rename: STATUS.UNSUPPORTED, move: STATUS.UNSUPPORTED, copy: STATUS.UNSUPPORTED, remove: STATUS.UNSUPPORTED, put: STATUS.UNSUPPORTED }, "OpenList marks 115 Share management/upload methods as NotSupport."),
   "123Pan": methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED }, "123Pan upload path is ported; copy is not exposed by the current runtime."),
   "189Cloud": methodRow({ ...baseManage, rapid_upload: STATUS.PLACEHOLDER, torrent: STATUS.PLACEHOLDER }, "Normal login/list/upload have smoke coverage; real-account SMS and large upload validation remain pending."),
-  "189CloudPC": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, rapid_upload: STATUS.PLACEHOLDER, torrent: STATUS.PLACEHOLDER }, "PC login/upload/CAS/torrent remain structured placeholders."),
-  "189CloudTV": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, rapid_upload: STATUS.PLACEHOLDER }, "TV QR login/list/link/basic management are ported; upload remains a placeholder."),
+  "189CloudPC": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, rapid_upload: STATUS.PLACEHOLDER, torrent: STATUS.PLACEHOLDER }, "PC QR login/session refresh, family-cloud ID refill, list/link/basic management are ported; upload/CAS/torrent remain placeholders."),
+  "189CloudTV": methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, rapid_upload: STATUS.PLACEHOLDER }, "TV QR login/session refresh, family-cloud ID refill, list/link/basic management are ported; upload remains a placeholder."),
   AliyundriveOpen: methodRow({ ...baseManage, other: STATUS.DONE }, "AliyundriveOpen includes video_preview other() and upload."),
   BaiduNetdisk: methodRow({ ...baseManage, move: STATUS.UNSUPPORTED, copy: STATUS.UNSUPPORTED }, "Baidu list/link/upload/basic management are ported; move/copy are not exposed by the current runtime."),
   Onedrive: methodRow({ ...baseManage, direct_upload: STATUS.DONE, details: STATUS.DONE }, "OneDrive small/big upload and direct upload info are ported."),
   OneDrive: methodRow({ ...baseManage, direct_upload: STATUS.DONE, details: STATUS.DONE }, "Alias for Onedrive."),
-  Quark: methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED }, "Quark/UC upload and basic management are ported; copy is not implemented upstream here."),
-  UC: methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED }, "UC shares the Quark runtime boundary."),
+  Quark: methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED, details: STATUS.DONE }, "Quark/UC upload, details, and basic management are ported; copy is not implemented upstream here."),
+  UC: methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED, details: STATUS.DONE }, "UC shares the Quark runtime boundary."),
   QuarkOpen: methodRow({ ...baseManage, copy: STATUS.UNSUPPORTED }, "QuarkOpen upload and basic management are ported; copy is not exposed."),
   QuarkTV: methodRow({ list: STATUS.DONE, get: STATUS.DONE, link: STATUS.DONE, read: STATUS.DONE, mkdir: STATUS.UNSUPPORTED, rename: STATUS.UNSUPPORTED, move: STATUS.UNSUPPORTED, copy: STATUS.UNSUPPORTED, remove: STATUS.UNSUPPORTED, put: STATUS.UNSUPPORTED }, "OpenList marks QuarkTV management/upload methods as NotImplement."),
   UCTV: methodRow({ list: STATUS.DONE, get: STATUS.DONE, link: STATUS.DONE, read: STATUS.DONE, mkdir: STATUS.UNSUPPORTED, rename: STATUS.UNSUPPORTED, move: STATUS.UNSUPPORTED, copy: STATUS.UNSUPPORTED, remove: STATUS.UNSUPPORTED, put: STATUS.UNSUPPORTED }, "OpenList marks UCTV management/upload methods as NotImplement."),
+  WPS: methodRow({ ...baseManage, put: STATUS.PLACEHOLDER, details: STATUS.DONE }, "WPS login/list/link/basic management/details are ported; upload remains a structured placeholder."),
 };
 
 export const capabilityMatrix = () => CAPABILITY_ITEMS.map((item) => ({ ...item }));

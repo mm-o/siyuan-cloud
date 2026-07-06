@@ -5,7 +5,7 @@
         v-for="tab in tabs"
         :key="tab.key"
       >
-        <DockActionButton :icon="tab.icon" :label="t(tab.labelKey)" :active="currentTab === tab.key" @run="currentTab = tab.key" />
+        <DockActionButton bar :icon="tab.icon" :label="t(tab.labelKey)" :active="currentTab === tab.key" @run="currentTab = tab.key" />
         <span class="fn__space" />
       </template>
       <span class="fn__flex-1" />
@@ -29,7 +29,7 @@
 
     <main
       v-else
-      class="ol-body"
+      :class="['ol-body', { 'ol-body--compact': compactPage }]"
       @pointerdown.stop
       @click.stop
       @input.stop
@@ -99,7 +99,7 @@
       <template v-else-if="currentTab === 'mounts'">
         <div class="ol-mount-list">
           <template v-for="entry in mountEntries" :key="entry.key">
-            <DockRow v-if="entry.type === 'mount'" icon="#iconDatabase" :title="mountPath(entry.item)" :desc="storageDescription(entry.item)" :tags="storageTags(entry.item)" :actions="mountActions(entry.item)" :open="() => openMount(entry.item)" />
+            <DockRow v-if="entry.type === 'mount'" :icon="mountIcon(entry.item)" :title="mountPath(entry.item)" :desc="storageDescription(entry.item)" :tags="storageTags(entry.item)" :actions="mountActions(entry.item)" :open="() => openMount(entry.item)" />
             <DockRow v-else-if="entry.type === 'add'" icon="#iconAdd" :title="t('mountAdd')" :desc="t('verifyStorageDriver')" :open="openAddMount" />
             <div v-else class="ol-mount-form">
             <label class="ol-field">
@@ -114,18 +114,21 @@
             </label>
             <small v-if="selectedStorageId">{{ t('mountEditing') }} #{{ selectedStorageId }}</small>
             <div v-if="driverInfo" class="ol-driver-note">
-              <b>{{ driverDisplayName(driverInfo.config?.name || verifyDriver) }}</b>
-              <span>{{ driverNote(driverInfo.config?.name || verifyDriver, driverInfo.config?.note || t('driverMetadataOnly')) }}</span>
+              <span class="ol-driver-note__heading">
+                <b>{{ driverDisplayName(driverInfo.config?.name || verifyDriver) }}</b>
+                <DockActionButton icon="#iconHelp" :label="t('openHelp')" @run="openDriverHelpDoc(driverInfo.config?.name || verifyDriver)" />
+              </span>
+              <span class="ol-driver-note__text">{{ driverNote(driverInfo.config?.name || verifyDriver, driverInfo.config?.note || t('driverMetadataOnly')) }}</span>
             </div>
             <div v-if="driverQrLoginAvailable" class="ol-driver-note">
               <button class="b3-button b3-button--outline" type="button" :disabled="mountCreating || driverVerifyPolling" @click="refreshDriverQrCode">
                 {{ driverVerifyPolling ? t('qrPolling') : t('qrRefresh') }}
               </button>
-              <span>{{ driverVerifyMessage || t('qrRefreshHelp') }}</span>
+              <span class="ol-driver-note__text">{{ driverVerifyMessage || t('qrRefreshHelp') }}</span>
               <img v-if="driverVerifyQrSrc" :src="driverVerifyQrSrc" :alt="t('qrScanPrompt')">
             </div>
             <div v-if="driverVerifySmsRequired" class="ol-driver-note ol-sms-verify">
-              <span>{{ driverVerifyMessage || t('smsCodeRequired') }}</span>
+              <span class="ol-driver-note__text">{{ driverVerifyMessage || t('smsCodeRequired') }}</span>
               <div class="ol-inline-action">
                 <input v-model="driverVerifySmsCode" class="b3-text-field" type="text" inputmode="numeric" autocomplete="one-time-code" :placeholder="t('smsCodePlaceholder')">
                 <button class="b3-button" type="button" :disabled="mountCreating || !driverVerifySmsCode.trim()" @click="submitDriverSmsCode">{{ t('smsVerify') }}</button>
@@ -183,7 +186,7 @@
               <button class="b3-button b3-button--outline" type="button" @click="closeMountForm">{{ t('cancel') }}</button>
               <button class="b3-button" type="button" :disabled="mountCreating" @click="submitMount">{{ mountCreating ? t('mountCreating') : selectedStorageId ? t('mountUpdate') : t('mountAdd') }}</button>
             </div>
-            <small v-if="mountCreateResult" :class="{ 'ft__error': !mountCreateOk }">{{ mountCreateResult }}</small>
+            <small v-if="mountCreateResult" class="ol-mount-form__result" :class="{ 'ft__error': !mountCreateOk }">{{ mountCreateResult }}</small>
             </div>
           </template>
         </div>
@@ -267,7 +270,6 @@ import { showMessage } from 'siyuan'
 import { usePlugin } from '@/main'
 import {
   fsList,
-  openListAbsoluteUrl,
   resolveOpenListFile,
 } from '@/utils/api'
 import { useDock } from '@/utils/dock'
@@ -288,6 +290,7 @@ import {
   shareOpenListSelection,
 } from '@/utils/file_actions'
 import {
+  openListDriverIconHref,
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
@@ -297,7 +300,10 @@ import {
   escapeHtml,
   formatSize as formatByteSize,
   openLazyImageViewer,
-  openMediaPreview,
+  openListCompanionHref,
+  openListFileKind,
+  openListFileKinds,
+  openOpenListMediaPreview,
   showErrorMessage,
 } from '@/utils/file_ui'
 
@@ -321,9 +327,9 @@ const DockActionButton = defineComponent({
   emits: ['run'],
   props: {
     active: { type: Boolean, default: false },
+    bar: { type: Boolean, default: false },
     icon: { type: String, required: true },
     label: { type: String, required: true },
-    list: { type: Boolean, default: false },
   },
   setup(props, { emit }) {
     const run = (event: MouseEvent | KeyboardEvent) => {
@@ -331,11 +337,11 @@ const DockActionButton = defineComponent({
       emit('run', event)
     }
     return () => h('span', {
-      class: props.list
-        ? 'b3-list-item__action b3-tooltips b3-tooltips__w'
-        : ['block__icon block__icon--show ariaLabel', { 'block__icon--active': props.active }],
+      class: props.bar
+        ? ['block__icon block__icon--show fn__flex-center ariaLabel', { 'block__icon--active': props.active }]
+        : 'b3-list-item__action b3-tooltips b3-tooltips__w',
       'aria-label': props.label,
-      'data-position': props.list ? undefined : 'west',
+      'data-position': props.bar ? 'west' : undefined,
       role: 'button',
       tabindex: 0,
       onClick: run,
@@ -356,11 +362,11 @@ const DockSectionHeader = defineComponent({
     title: { type: String, required: true },
   },
   setup(props) {
-    return () => h('div', { class: 'b3-list-item' }, [
-      h('svg', { class: 'b3-list-item__graphic' }, [h('use', { 'xlink:href': props.icon })]),
-      h('span', { class: 'b3-list-item__text' }, props.title),
+    return () => h('div', { class: 'ol-section-header' }, [
+      h('svg', [h('use', { 'xlink:href': props.icon })]),
+      h('b', props.title),
       ...props.actions.map(action =>
-        h(DockActionButton, { icon: action.icon, label: action.label, list: true, onRun: action.run }),
+        h(DockActionButton, { icon: action.icon, label: action.label, onRun: action.run }),
       ),
     ])
   },
@@ -374,7 +380,7 @@ const DockRow = (props: any, { emit, slots }: any) => {
     props.open(event)
   }
   return h('div', {
-    class: 'ol-mount-row b3-list-item--hide-action',
+    class: 'ol-mount-row',
     role: props.open ? 'button' : undefined,
     style: props.style,
     tabindex: props.open ? 0 : undefined,
@@ -387,12 +393,18 @@ const DockRow = (props: any, { emit, slots }: any) => {
     },
   }, [
     h('div', { class: 'ol-mount-row__cover' }, [h('svg', [h('use', { 'xlink:href': props.icon })])]),
-    h('div', { class: 'ol-mount-row__title ariaLabel', 'aria-label': props.title }, props.title),
-    ...(props.actions || []).map((action: DockAction) => h(DockActionButton, { icon: action.icon, label: action.label, list: true, onRun: action.run })),
-    props.desc && h('div', { class: 'ol-mount-row__desc ariaLabel', 'aria-label': props.detail || props.desc }, props.desc),
-    (props.tags?.length || slots.tags) && h('div', { class: 'ol-mount-tags' }, [
-      ...props.tags?.map((tag: any) => h('span', { key: tag.key, class: ['b3-chip b3-chip--small ariaLabel', tag.className], 'aria-label': tag.text }, tag.text)) || [],
-      slots.tags?.(),
+    h('div', { class: 'ol-mount-row__main' }, [
+      h('div', { class: 'ol-mount-row__head' }, [
+        h('div', { class: 'ol-mount-row__title ariaLabel', 'aria-label': props.title }, props.title),
+        ...(props.actions || []).map((action: DockAction) =>
+          h(DockActionButton, { icon: action.icon, label: action.label, onRun: action.run }),
+        ),
+      ]),
+      props.desc && h('div', { class: 'ol-mount-row__desc ariaLabel', 'aria-label': props.detail || props.desc }, props.desc),
+      (props.tags?.length || slots.tags) && h('div', { class: 'ol-mount-tags' }, [
+        ...props.tags?.map((tag: any) => h('span', { key: tag.key, class: ['b3-chip b3-chip--small ariaLabel', tag.className], 'aria-label': tag.text }, tag.text)) || [],
+        slots.tags?.(),
+      ]),
     ]),
   ])
 }
@@ -408,6 +420,7 @@ const {
   currentTab,
   deleteMount,
   deleteUser,
+  dockCompactViews,
   driverDisplayName,
   driverFields,
   driverForm,
@@ -437,6 +450,7 @@ const {
   openReadmeDoc,
   docItems,
   openPackagedDoc,
+  openDriverHelpDoc,
   openFileManager,
   openEditMount,
   openEditShare,
@@ -504,15 +518,32 @@ const pageActionMap: Record<string, keyof typeof sectionActions.value> = {
   tasks: 'tasks',
   users: 'users',
 }
+const compactTabs = new Set(['mounts', 'users', 'shares', 'tasks', 'tools', 'status'])
 
 const currentPage = computed(() => tabs.find(tab => tab.key === currentTab.value) || tabs[0])
+const compactView = computed({
+  get: () => !!dockCompactViews.value[currentTab.value],
+  set: value => {
+    dockCompactViews.value = { ...dockCompactViews.value, [currentTab.value]: value }
+  },
+})
+const compactPage = computed(() => compactView.value && compactTabs.has(currentTab.value))
+const compactViewAction = computed<DockAction>(() => ({
+  key: 'view',
+  icon: '#iconList',
+  label: t(compactView.value ? 'comfortView' : 'compactView'),
+  run: () => {
+    compactView.value = !compactView.value
+  },
+}))
 const currentPageActions = computed(() => {
   if (currentTab.value === 'files')
     return [
       { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: refreshTree },
       { key: 'open', icon: '#iconFolder', label: t('openFileManager'), run: openFileManager },
     ]
-  return sectionActions.value[pageActionMap[currentTab.value]] || []
+  const actions = sectionActions.value[pageActionMap[currentTab.value]] || []
+  return compactTabs.has(currentTab.value) ? [compactViewAction.value, ...actions] : actions
 })
 const driverFormRows = computed(() => {
   const primary = driverFields.value.filter(field => field.required)
@@ -526,6 +557,7 @@ const driverFormRows = computed(() => {
 })
 
 const mountPath = (item: any) => normalizePath(item?.mount_path || item?.path || '/')
+const mountIcon = (item: any) => openListDriverIconHref(String(item?.driver || item?.type || ''))
 const mountEntries = computed(() => [
   ...verifyStorages.value.flatMap(item => [{ type: 'mount', key: item.id || item.mount_path, item }, ...(mountFormOpen.value && Number(item.id) === selectedStorageId.value ? [{ type: 'form', key: 'form' }] : [])]),
   mountFormOpen.value && !selectedStorageId.value ? { type: 'form', key: 'form' } : { type: 'add', key: 'add' },
@@ -551,10 +583,6 @@ const secretVisible = ref<Record<string, boolean>>({})
 const loading = ref(false)
 const lastError = ref('')
 const emptyText = computed(() => lastError.value || t('rootEmpty'))
-const imageExts = new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(','))
-const audioExts = new Set('mp3,wav,aac,m4a,flac,ogg'.split(','))
-const videoExts = new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(','))
-const companionExts = new Set('mp3,wav,aac,m4a,flac,ogg,mp4,m3u8,webm,mov,m4v,mkv,avi,flv,wmv,epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
 function isSecretField(field: any) {
   return field?.type === 'password' || /(?:password|passwd|pwd|token|secret|cookie|private)/i.test(String(field?.name || ''))
 }
@@ -622,17 +650,16 @@ function joinPath(dir: string, name: string) {
   return joinOpenListPath(dir, name)
 }
 
-function extensionOf(name: string) {
-  return name.split('.').pop()?.toLowerCase() || ''
+const isImageFile = (item: DockTreeItem) => openListFileKind(item.name, item.is_dir) === 'image'
+const mediaKind = (item: DockTreeItem) => {
+  const kind = openListFileKind(item.name, item.is_dir)
+  return kind === 'audio' || kind === 'video' ? kind : ''
 }
-
-const isImageFile = (item: DockTreeItem) => !item.is_dir && imageExts.has(extensionOf(item.name))
-const mediaKind = (item: DockTreeItem) => audioExts.has(extensionOf(item.name)) ? 'audio' : videoExts.has(extensionOf(item.name)) ? 'video' : ''
-const isCompanionFile = (item: DockTreeItem) => !item.is_dir && companionExts.has(extensionOf(item.name))
+const isCompanionFile = (item: DockTreeItem) => !!openListCompanionHref(item.name, item.path, item.is_dir)
 const isArchiveFile = (item: DockTreeItem) => !item.is_dir && isArchiveFileName(item.name)
 const itemOpenUrl = (item: DockTreeItem) => openListItemOpenUrl(item, node => node.path)
-const companionHref = (item: DockTreeItem) => isCompanionFile(item) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
-const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ imageExts, item, path, videoExts })
+const companionHref = (item: DockTreeItem) => openListCompanionHref(item.name, item.path, item.is_dir)
+const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ imageExts: openListFileKinds.image, item, path, videoExts: openListFileKinds.video })
 
 function toTreeItem(item: any, dir: string): DockTreeItem {
   return {
@@ -689,7 +716,7 @@ async function openNode(node: DockTreeItem) {
     }
     const kind = mediaKind(node)
     if (kind) {
-      await openMediaPreview(node.name, await resolveDownloadUrl(node.path), kind)
+      await openOpenListMediaPreview(node.name, node.path, kind, resolveDownloadUrl)
       return
     }
     if (isArchiveFile(node)) {
@@ -802,9 +829,9 @@ function onTreeContextMenu(event: MouseEvent) {
   })
 }
 
-async function resolveDownloadUrl(path: string) {
+async function resolveDownloadUrl(path: string, preferFresh = false) {
   const local = visibleNodes.value.find(item => item.path === path)
-  if (local?.raw_url || local?.url)
+  if (!preferFresh && (local?.raw_url || local?.url))
     return itemOpenUrl(local)
   return (await resolveOpenListFile(path)).url
 }

@@ -15,6 +15,8 @@ import {
 
 const API = "https://open-api-drive.quark.cn";
 const UA = "go-resty/3.0.0-beta.1 (https://resty.dev)";
+const DEFAULT_APP_ID = "93b14d40cbef4e5d91945ec93d26fe8f";
+const DEFAULT_SIGN_KEY = "6d27122d2d7b41598a1dbb9b5f605e00";
 const cache = createStorageCache();
 
 const randomHex = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0");
@@ -57,6 +59,16 @@ const refreshTokenOnline = async (client, storage) => {
   await persistAddition(storage);
 };
 
+const ensureAccessToken = async (client, storage) => {
+  if (!storage.addition_json.access_token) await refreshTokenOnline(client, storage);
+};
+
+const ensurePublicParams = (storage) => {
+  if (!(storage.addition_json.app_id || DEFAULT_APP_ID) || !(storage.addition_json.sign_key || DEFAULT_SIGN_KEY)) {
+    throw new Error("QuarkOpen public parameters are missing: app_id and sign_key are required unless the online API returns them");
+  }
+};
+
 const requestQuarkOpen = async (client, storage, pathname, {
   body,
   manualSign,
@@ -64,7 +76,11 @@ const requestQuarkOpen = async (client, storage, pathname, {
   retry = true,
 } = {}) => {
   const addition = storage.addition_json;
-  const sign = manualSign || generateReqSign(method, pathname, addition.sign_key);
+  if (!addition.access_token && retry) await ensureAccessToken(client, storage);
+  ensurePublicParams(storage);
+  const appId = addition.app_id || DEFAULT_APP_ID;
+  const signKey = addition.sign_key || DEFAULT_SIGN_KEY;
+  const sign = manualSign || generateReqSign(method, pathname, signKey);
   const target = new URL(`${API}${pathname}`);
   target.searchParams.set("req_id", sign.req_id);
   target.searchParams.set("access_token", addition.access_token || "");
@@ -74,7 +90,7 @@ const requestQuarkOpen = async (client, storage, pathname, {
     headers: {
       Accept: "application/json, text/plain, */*",
       "User-Agent": UA,
-      "x-pan-client-id": addition.app_id || "",
+      "x-pan-client-id": appId,
       "x-pan-tm": sign.tm,
       "x-pan-token": sign.token,
     },
@@ -87,6 +103,23 @@ const requestQuarkOpen = async (client, storage, pathname, {
     return requestQuarkOpen(client, storage, pathname, { body, method, retry: false });
   }
   return checkQuarkOpen(resp);
+};
+
+const rememberUserId = async (storage, user = {}) => {
+  const userId = user.user_id || user.userId || user.UserID || user.userid || "";
+  if (userId && storage.addition_json.user_id !== userId) {
+    storage.addition_json.user_id = userId;
+    await persistAddition(storage);
+  }
+  return storage.addition_json.user_id || userId;
+};
+
+const ensureUserId = async (client, storage) => {
+  if (storage.addition_json.user_id) return storage.addition_json.user_id;
+  const resp = await requestQuarkOpen(client, storage, "/open/v1/user/info", { method: "GET" });
+  const userId = await rememberUserId(storage, resp?.data || {});
+  if (!userId) throw new Error("failed to get user ID");
+  return userId;
 };
 
 const base64ToBytes = (value) => {
@@ -310,7 +343,7 @@ const downloadLink = async (client, storage, file) => {
   if (!url) throw new Error("get download url failed");
   return {
     header: {
-      Cookie: `x_pan_client_id=${storage.addition_json.app_id || ""}; x_pan_access_token=${storage.addition_json.access_token || ""}`,
+      Cookie: `x_pan_client_id=${storage.addition_json.app_id || DEFAULT_APP_ID}; x_pan_access_token=${storage.addition_json.access_token || ""}`,
     },
     url,
     content_length: Number(file.size || 0),
@@ -326,6 +359,8 @@ const manageFile = async (client, storage, pathname, body) => {
 export const createQuarkOpenDriver = ({ client }) => ({
   async test(storage) {
     const resp = await requestQuarkOpen(client, storage, "/open/v1/user/info", { method: "GET" });
+    const userId = await rememberUserId(storage, resp?.data || {});
+    if (!userId) throw new Error("failed to get user ID");
     return { user: resp?.data || {}, addition: storage.addition_json };
   },
 
@@ -418,8 +453,8 @@ export const createQuarkOpenDriver = ({ client }) => ({
     const parent = await resolveFile(client, storage, dirnameOf(relPath));
     const bytes = uploadBytes(content, options);
     const prePath = "/open/v1/file/upload_pre";
-    const preSign = generateReqSign("POST", prePath, storage.addition_json.sign_key);
-    const proofSeed1 = md5Hex(`${storage.addition_json.user_id || ""}${preSign.token}`);
+    const preSign = generateReqSign("POST", prePath, storage.addition_json.sign_key || DEFAULT_SIGN_KEY);
+    const proofSeed1 = md5Hex(`${await ensureUserId(client, storage)}${preSign.token}`);
     const proofSeed2 = md5Hex(String(bytes.length));
     const pre = await requestQuarkOpen(client, storage, prePath, {
       body: {

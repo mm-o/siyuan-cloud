@@ -90,5 +90,5 @@ export const proxyReadOptions = (request) => {
 export const shouldProxy = (storage, config = {}, filename = "") => {
   if (config.only_proxy || config.no_link_url || storage?.web_proxy) return true;
   const ext = String(basename(filename || "")).split(".").pop().toLowerCase();
-  return ["mp4", "mkv", "mov", "avi", "webm", "m4v", "mp3", "flac", "wav", "ogg", "m4a"].includes(ext);
+  return ["m3u8", "url"].includes(ext);
 };

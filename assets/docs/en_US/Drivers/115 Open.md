@@ -35,7 +35,7 @@ OpenList recommends using the OpenList API helper for 115 Open authorization:
 
 1. Open <https://api.oplist.org/>.
 2. Select 115 Cloud verification from the drop-down list.
-3. If you use the OpenList-provided key pair, enable "Use OpenList-provided parameters", leave `Client ID` and `Application Secret` empty, then click "Get Token".
+3. **Important: if you use the OpenList-provided key pair, enable "Use OpenList-provided parameters".** Leave `Client ID` and `Application Secret` empty, then click "Get Token".
 4. If you use your own 115 Open Platform app, disable "Use OpenList-provided parameters", fill your own `AppId` and `AppSecret`, then click "Get Token".
 5. Log in and authorize on the 115 authorization page.
 6. Copy the returned `Access Token` and `Refresh Token`.

@@ -174,7 +174,6 @@ import {
   fsRename,
   fsSearch,
   fsWriteFile,
-  openListAbsoluteUrl,
   resolveOpenListFile,
 } from '@/utils/api'
 import { handleResp, handleRespWithNotifySuccess } from '@/utils/handle_resp'
@@ -206,7 +205,10 @@ import {
   escapeHtml,
   formatSize,
   openLazyImageViewer,
-  openMediaPreview,
+  openListCompanionHref,
+  openListFileKind,
+  openListFileKinds,
+  openOpenListMediaPreview,
   promptText,
   showErrorMessage,
 } from '@/utils/file_ui'
@@ -273,14 +275,6 @@ const toolbarActions = computed(() => [
   { key: 'delete', icon: 'iconTrashcan', label: t('deleteFile'), disabled: !selectedItems.value.length, run: deleteSelection },
   { key: 'settings', icon: 'iconSettings', label: t('openSettings'), run: openSettings },
 ])
-
-const fileKinds = {
-  audio: new Set('mp3,wav,aac,m4a,flac,ogg'.split(',')),
-  image: new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(',')),
-  text: new Set('txt,log,md,markdown,json,xml,yml,yaml,toml,ini,conf,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,rb,rs,php,c,cpp,h'.split(',')),
-  video: new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(',')),
-}
-const companionExts = new Set('mp3,wav,aac,m4a,flac,ogg,mp4,m3u8,webm,mov,m4v,mkv,avi,flv,wmv,epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
 
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -359,27 +353,20 @@ function formatModified(value?: string) {
   return date.toLocaleString()
 }
 
-function extensionOf(name: string) {
-  return name.split('.').pop()?.toLowerCase() || ''
-}
-
 function fileKind(item: FsItem) {
-  if (item.is_dir)
-    return ''
-  const ext = extensionOf(item.name)
-  return Object.entries(fileKinds).find(([, exts]) => exts.has(ext))?.[0] || ''
+  return openListFileKind(item.name, item.is_dir)
 }
 
 const isImageFile = (item: FsItem) => fileKind(item) === 'image'
 const isArchiveFile = (item: FsItem) => !item.is_dir && isArchiveFileName(item.name)
 
-const companionHref = (item: FsItem) => !item.is_dir && companionExts.has(extensionOf(item.name)) ? openListAbsoluteUrl(itemOpenUrl(item)) : undefined
 const itemOpenUrl = (item: FsItem) => openListItemOpenUrl(item, itemPath)
-const documentLink = (item: FsItem, path: string) => openListDocumentLink({ imageExts: fileKinds.image, item, path, videoExts: fileKinds.video })
+const companionHref = (item: FsItem) => openListCompanionHref(item.name, itemPath(item), item.is_dir)
+const documentLink = (item: FsItem, path: string) => openListDocumentLink({ imageExts: openListFileKinds.image, item, path, videoExts: openListFileKinds.video })
 
-async function resolveDownloadUrl(path: string) {
+async function resolveDownloadUrl(path: string, preferFresh = false) {
   const local = items.value.find(item => itemPath(item) === path)
-  if (local?.raw_url || local?.url)
+  if (!preferFresh && (local?.raw_url || local?.url))
     return itemOpenUrl(local)
   return (await resolveOpenListFile(path)).url
 }
@@ -558,7 +545,7 @@ async function openFile(item: FsItem) {
     return
   }
   if (kind === 'audio' || kind === 'video') {
-    await openMediaPreview(item.name, await resolveDownloadUrl(itemPath(item)), kind)
+    await openOpenListMediaPreview(item.name, itemPath(item), kind, resolveDownloadUrl)
     return
   }
   if (kind !== 'text') {

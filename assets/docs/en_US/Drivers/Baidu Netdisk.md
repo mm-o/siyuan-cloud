@@ -28,6 +28,9 @@ OpenList documents several ways to obtain the token. Siyuan Cloud only needs the
 2. OpenList Baidu driver documentation: <https://doc.oplist.org/guide/drivers/baidu>
 3. Your own Baidu OAuth app: fill your own `client_id` and `client_secret`, then disable or bypass the online renewal API.
 
+> [!IMPORTANT]
+> When using the official online helper, enable "Use OpenList-provided parameters". With this enabled, usually leave `client_id` / `client_secret` empty; only fill your own values when using your own Baidu OAuth app.
+
 When using the online helper, keep the default `api_url_address`:
 
 ```text

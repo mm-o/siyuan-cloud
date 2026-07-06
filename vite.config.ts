@@ -50,6 +50,7 @@ export default defineConfig(({
   console.log('mode=>', mode)
   const env = loadEnv(mode, process.cwd())
   const {
+    VITE_ENABLE_LIVERELOAD,
     VITE_SIYUAN_WORKSPACE_PATH,
   } = env
   console.log('env=>', env)
@@ -67,6 +68,7 @@ export default defineConfig(({
 
   const args = minimist(process.argv.slice(2))
   const isWatch = args.watch || args.w || false
+  const enableLiveReload = VITE_ENABLE_LIVERELOAD === "true"
   const distDir = isWatch ? devDistDir : "./dist"
 
   console.log()
@@ -147,7 +149,7 @@ export default defineConfig(({
           ...(isWatch
             ? [
                 buildKernelPlugin(distDir),
-                livereload(devDistDir),
+                ...(enableLiveReload ? [livereload(devDistDir)] : []),
                 {
                   // 监听静态资源文�?
                   name: "watch-external",

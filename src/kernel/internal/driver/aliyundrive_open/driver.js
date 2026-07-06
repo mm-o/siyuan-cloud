@@ -15,7 +15,11 @@ import {
 const API_URL = "https://openapi.alipan.com";
 const DEFAULT_RENEW_API = "https://api.oplist.org/alicloud/renewapi";
 const CACHE_TTL = 55 * 1000;
-const UPLOAD_PART_SIZE = 20 * 1024 * 1024;
+const KB = 1024;
+const MB = 1024 * KB;
+const GB = 1024 * MB;
+const TB = 1024 * GB;
+const DEFAULT_UPLOAD_PART_SIZE = 20 * MB;
 const listCache = new Map();
 const fileCache = new Map();
 const linkCache = new Map();
@@ -260,6 +264,16 @@ const proofCode = (accessToken, bytes) => {
 };
 
 const makePartInfos = (count) => Array.from({ length: count }, (_, index) => ({ part_number: index + 1 }));
+const uploadPartSize = (fileSize) => {
+  if (fileSize <= DEFAULT_UPLOAD_PART_SIZE) return DEFAULT_UPLOAD_PART_SIZE;
+  if (fileSize > TB) return 5 * GB;
+  if (fileSize > 768 * GB) return 109951163;
+  if (fileSize > 512 * GB) return 82463373;
+  if (fileSize > 384 * GB) return 54975582;
+  if (fileSize > 256 * GB) return 41231687;
+  if (fileSize > 128 * GB) return 27487791;
+  return DEFAULT_UPLOAD_PART_SIZE;
+};
 const uploadTime = () => new Date().toISOString().replace(/\.\d{3}Z$/, ".000Z");
 
 const uploadUrlOf = (storage, url) => boolValue(storage.addition_json.internal_upload ?? storage.addition_json.InternalUpload, false)
@@ -495,7 +509,9 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
     const driveId = await initDrive(client, storage);
     const parent = await resolveFile(client, storage, dirnameOf(relPath));
     const bytes = uploadBytes(content, options);
-    const count = Math.ceil(Number(options.size ?? bytes.length) / UPLOAD_PART_SIZE);
+    const size = Number(options.size ?? bytes.length);
+    const partSize = uploadPartSize(size);
+    const count = Math.ceil(size / partSize);
     const createdAt = uploadTime();
     const rapidUpload = !options.forceStreamUpload
       && bytes.length > 100 * 1024
@@ -531,8 +547,8 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
     }
     if (!createResp.rapid_upload) {
       for (let index = 0; index < (createResp.part_info_list || []).length; index += 1) {
-        const offset = index * UPLOAD_PART_SIZE;
-        const chunk = bytes.slice(offset, Math.min(offset + UPLOAD_PART_SIZE, bytes.length));
+        const offset = index * partSize;
+        const chunk = bytes.slice(offset, Math.min(offset + partSize, bytes.length));
         const resp = await forwardProxy(client, uploadUrlOf(storage, createResp.part_info_list[index]?.upload_url), {
           allowErrorStatus: true,
           body: bytesToBase64(chunk),
@@ -553,5 +569,16 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
       },
     });
     clearStorageCache(storage);
+  },
+
+  async details(storage) {
+    const resp = await requestAli(client, storage, "/adrive/v1.0/user/getSpaceInfo");
+    const total = Number(resp.personal_space_info?.total_size || 0);
+    const used = Number(resp.personal_space_info?.used_size || 0);
+    return {
+      total_space: total,
+      used_space: used,
+      free_space: Math.max(0, total - used),
+    };
   },
 });

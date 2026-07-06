@@ -109,6 +109,7 @@ onMounted(async () => {
   window._siyuan_cloud = {
     openPanel: openDock,
     openApiDoc: docs.openApiDoc,
+    openDriverDoc: docs.openDriverDoc,
     openReadmeDoc: docs.openReadmeDoc,
     openPackagedDoc: docs.openPackagedDoc,
     openDock,

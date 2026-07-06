@@ -19,6 +19,9 @@ This guide applies to `OpenList`, `AListV3`, and `AList V3`.
 
 OpenList token helper: <https://api.oplist.org/>.
 
+> [!IMPORTANT]
+> When using the official online helper to get a token, enable "Use OpenList-provided parameters" if that option appears. Disable it only when you are using your own app parameters.
+
 | Recommended field | Value |
 | --- | --- |
 | Driver | `OpenList` |

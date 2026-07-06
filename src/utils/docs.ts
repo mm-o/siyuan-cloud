@@ -1,9 +1,44 @@
 import { fetchSyncPost, openTab } from 'siyuan'
 import { fetchOpenListJson } from '@/utils/request'
 
+const DRIVER_DOC_GROUPS = [
+  { drivers: ['OpenList', 'AListV3', 'AList V3'], en: 'OpenList Compatible', zh: 'OpenList 兼容挂载' },
+  { drivers: ['S3'], en: 'S3 Compatible', zh: 'S3 兼容存储' },
+  { drivers: ['Doge'], en: 'DogeCloud', zh: 'DogeCloud 挂载' },
+  { drivers: ['115 Cloud'], en: '115 Cloud', zh: '115 Cloud 挂载' },
+  { drivers: ['115 Open'], en: '115 Open', zh: '115 Open 挂载' },
+  { drivers: ['115 Share'], en: '115 Share', zh: '115 Share 挂载' },
+  { drivers: ['123Pan'], en: '123Pan', zh: '123Pan 挂载' },
+  { drivers: ['189Cloud', '189CloudPC', '189CloudTV'], en: '189Cloud Series', zh: '189Cloud 系列' },
+  { drivers: ['AliyundriveOpen'], en: 'Aliyundrive Open', zh: '阿里云盘开放平台' },
+  { drivers: ['BaiduNetdisk'], en: 'Baidu Netdisk', zh: '百度网盘挂载' },
+  { drivers: ['Onedrive', 'OneDrive'], en: 'OneDrive', zh: 'OneDrive 挂载' },
+  { drivers: ['Quark', 'UC', 'QuarkOpen', 'QuarkTV', 'UCTV'], en: 'Quark UC Series', zh: 'Quark UC 系列' },
+  { drivers: ['WPS'], en: 'WPS', zh: 'WPS 云文档' },
+  { drivers: ['Local'], en: 'Local Storage', zh: 'Local 本地存储' },
+  { drivers: ['SiYuanWorkspace'], en: 'SiYuan Workspace', zh: '思源工作空间' },
+  { drivers: ['WebDav'], en: 'WebDAV', zh: 'WebDAV 挂载' },
+]
+
+const DRIVER_DOCS = Object.fromEntries(
+  DRIVER_DOC_GROUPS.flatMap(group => group.drivers.map(driver => [normalizeDriverName(driver), group])),
+)
+
+function normalizeDriverName(value: string) {
+  const driver = String(value || '').trim()
+  if (/^alist\s*v3$/i.test(driver))
+    return 'AListV3'
+  if (/^onedrive$/i.test(driver))
+    return 'OneDrive'
+  if (/^webdav$/i.test(driver))
+    return 'WebDav'
+  return driver
+}
+
 export function createDocs(plugin: any, t: (key: string) => string) {
   const lang = () => t('openHelp') === '打开说明' ? 'zh_CN' : 'en_US'
   const notebookName = () => lang() === 'zh_CN' ? '思盘文档' : 'Siyuan Cloud Docs'
+  const driverDocRoot = () => lang() === 'zh_CN' ? '驱动说明' : 'Drivers'
   const asset = (path: string) => `/plugins/${plugin.name}/${path.replace(/^\/+/, '')}`
   const docPath = (file: string) => `/${file.replace(`${lang()}/`, '').replace(/\.md$/, '')}`
   const docTitle = (path: string) => path.split('/').pop() || ''
@@ -150,5 +185,16 @@ export function createDocs(plugin: any, t: (key: string) => string) {
     await writeDoc(path, replaceDocRefs(await fetchText(asset(`assets/docs/${file}`), `# ${docTitle(path)}\n`), refs), true)
   }
 
-  return { loadDocList, openApiDoc, openReadmeDoc, openPackagedDoc }
+  async function openDriverDoc(driver: string) {
+    const doc = DRIVER_DOCS[normalizeDriverName(driver)]
+    const root = driverDocRoot()
+    if (!doc) {
+      await openPackagedDoc(root)
+      return
+    }
+    const title = lang() === 'zh_CN' ? doc.zh : doc.en
+    await openPackagedDoc(`/${root}/${title}`)
+  }
+
+  return { loadDocList, openApiDoc, openDriverDoc, openReadmeDoc, openPackagedDoc }
 }

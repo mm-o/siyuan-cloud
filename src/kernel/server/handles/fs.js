@@ -1214,9 +1214,11 @@ export const createFsHandlers = ({
         return jsonResponse(success({ url: "/plugin/private/siyuan-cloud/d" + path }));
       }
       const mount = driverRuntime.resolve(state.storages, path);
-      if (mount && mount.driver.read) {
+      if (mount && (mount.driver.link || mount.driver.read)) {
         try {
-          const data = await mount.driver.read(mount.storage, mount.relPath, {});
+          const data = mount.driver.link
+            ? await mount.driver.link(mount.storage, mount.relPath, {})
+            : await mount.driver.read(mount.storage, mount.relPath, {});
           const link = linkFromDriverData(data);
           return jsonResponse(success({
             url: link.url,

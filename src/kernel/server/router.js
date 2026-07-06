@@ -146,7 +146,7 @@ export const createRouter = ({
       return queryValue(request, "download") ? readFileResponse(info.targetPath, request, { shareDownload: true }) : sharePreviewPage({ info, path, pwd, text });
     }
     if (path.startsWith("/d/") || path.startsWith("/p/")) {
-      return readFileResponse(normalizePath(path.replace(/^\/[dp]/, "")), request);
+      return readFileResponse(normalizePath(path.replace(/^\/[dp]/, "")), request, { directDownload: path.startsWith("/d/") });
     }
     if (path === "/sad" || path.startsWith("/sad/")) {
       const sharePath = normalizePath(path.replace(/^\/sad/, ""));

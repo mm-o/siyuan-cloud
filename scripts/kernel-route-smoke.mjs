@@ -13,6 +13,7 @@ import {
 import { create115Driver } from "../src/kernel/internal/driver/115/driver.js";
 import { create115OpenDriver } from "../src/kernel/internal/driver/115_open/driver.js";
 import { create115ShareDriver } from "../src/kernel/internal/driver/115_share/driver.js";
+import { createAliyundriveOpenDriver } from "../src/kernel/internal/driver/aliyundrive_open/driver.js";
 import { createOneDriveDriver } from "../src/kernel/internal/driver/onedrive/driver.js";
 import { staticPasswordHash } from "../src/kernel/internal/auth/token.js";
 import { signAwsV4 } from "../src/kernel/internal/driver/aws4.js";
@@ -22,6 +23,7 @@ configureZipJs({ useWebWorkers: false });
 const storageData = new Map();
 const rpcHandlers = new Map();
 let quarkSortRequests = 0;
+const quarkSortCookies = [];
 let quarkDownloadRequests = 0;
 let quarkUploadPreBody = null;
 let quarkUploadHashBody = null;
@@ -64,6 +66,7 @@ const cloud189UploadRequests = [];
 let cloud189UploadedBody = "";
 let cloud189LoginSubmitBody = null;
 let cloud189ListCookie = "";
+let cloud189PcQrStateBody = null;
 let cloud189RefreshCookieMode = false;
 let cloud189SmsMode = false;
 let cloud189SmsSentBody = null;
@@ -73,6 +76,7 @@ let openListOtherBody = null;
 const openListRenameBodies = [];
 const openListMoveBodies = [];
 const openListRemoveBodies = [];
+const s3ReadRanges = [];
 
 const cloud189RsaKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 1024 });
 const cloud189RsaPubKey = cloud189RsaKeyPair.publicKey.export({ format: "der", type: "spki" }).toString("base64");
@@ -206,6 +210,9 @@ globalThis.siyuan = {
         let contentType = "application/json";
         let headers = {};
         let status = 200;
+        const forwardedHeader = (name) => (req.headers || [])
+          .map((item) => Object.entries(item)[0])
+          .find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || "";
         if (url.hostname === "s3.example.test" && req.method === "GET" && url.searchParams.get("delimiter") === "/") {
           contentType = "application/xml";
           body = `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Contents><Key>remote-s3/object.txt</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><Size>9</Size></Contents></ListBucketResult>`;
@@ -214,7 +221,20 @@ globalThis.siyuan = {
           headers = { "Content-Length": "9", "Last-Modified": "Thu, 01 Jan 2026 00:00:00 GMT" };
         } else if (url.hostname === "s3.example.test" && req.method === "GET") {
           contentType = "text/plain";
-          body = "s3 object";
+          const range = forwardedHeader("Range");
+          s3ReadRanges.push(range);
+          if (range === "bytes=0-2") {
+            status = 206;
+            headers = {
+              "Accept-Ranges": "bytes",
+              "Content-Length": "3",
+              "Content-Range": "bytes 0-2/9",
+            };
+            body = "s3";
+          } else {
+            headers = { "Accept-Ranges": "bytes", "Content-Length": "9" };
+            body = "s3 object";
+          }
         } else if (url.hostname === "webdav.example.test" && req.method === "PROPFIND") {
           contentType = "application/xml";
           const depth = (req.headers || []).map((item) => Object.entries(item)[0]).find(([key]) => key.toLowerCase() === "depth")?.[1] || "";
@@ -320,7 +340,14 @@ globalThis.siyuan = {
             access_token: "OD_ACCESS_REFRESHED",
             refresh_token: "OD_REFRESH_REFRESHED",
           };
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/list/new")) {
+        } else if (url.hostname === "login.123pan.com" && url.pathname.endsWith("/api/user/sign_in")) {
+          if (req.payload?.passport === "needverify") {
+            body = {
+              code: 403,
+              message: "请进行验证",
+            };
+          }
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/list/new")) {
           body = {
             code: 0,
             message: "success",
@@ -338,7 +365,7 @@ globalThis.siyuan = {
               }],
             },
           };
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/download_info")) {
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/download_info")) {
           body = {
             code: 0,
             message: "success",
@@ -346,7 +373,7 @@ globalThis.siyuan = {
               DownloadUrl: "https://download123.example.test/pan123.txt",
             },
           };
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
           pan123UploadRequestBody = req.payload;
           body = {
             code: 0,
@@ -360,7 +387,7 @@ globalThis.siyuan = {
               UploadId: "pan123-upload-id",
             },
           };
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/s3_upload_object/auth")) {
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/s3_upload_object/auth")) {
           pan123S3AuthBody = req.payload;
           body = {
             code: 0,
@@ -375,14 +402,14 @@ globalThis.siyuan = {
           assert.equal(req.payloadEncoding, "base64");
           pan123UploadedBody = Buffer.from(req.payload || "", "base64").toString("utf8");
           body = "";
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_complete/v2")) {
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/upload_complete/v2")) {
           pan123UploadCompleteBody = req.payload;
           body = {
             code: 0,
             message: "success",
             data: null,
           };
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/user/info")) {
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/user/info")) {
           body = {
             code: 0,
             message: "success",
@@ -404,6 +431,13 @@ globalThis.siyuan = {
             default_drive_id: "ali-open-drive",
             resource_drive_id: "ali-open-drive",
           };
+        } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/user/getSpaceInfo")) {
+          body = {
+            personal_space_info: {
+              total_size: 5000,
+              used_size: 1250,
+            },
+          };
         } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/openFile/list")) {
           body = {
             items: req.payload?.parent_file_id === "root"
@@ -417,6 +451,12 @@ globalThis.siyuan = {
                 }]
               : [],
             next_marker: "",
+          };
+        } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/openFile/getDownloadUrl")) {
+          assert.equal(req.payload?.drive_id, "ali-open-drive");
+          assert.equal(req.payload?.file_id, "ali-open-video-file");
+          body = {
+            url: "https://ali-download.example.test/ali-video.mp4",
           };
         } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/openFile/getVideoPreviewPlayInfo")) {
           aliOpenPreviewBody = req.payload;
@@ -474,7 +514,9 @@ globalThis.siyuan = {
           };
         } else if (url.hostname === "drive.quark.cn" && url.pathname.endsWith("/1/clouddrive/file/sort")) {
           quarkSortRequests += 1;
+          quarkSortCookies.push(req.headers.find((item) => item.Cookie)?.Cookie || "");
           const parent = url.searchParams.get("pdir_fid");
+          if (parent === "0") headers = { "Set-Cookie": ["__puus=QUARK_REFRESHED_PUUS; Path=/"] };
           body = {
             status: 0,
             code: 0,
@@ -749,6 +791,18 @@ globalThis.siyuan = {
               download_url: "https://quark-tv-download.example.test/quark-tv.txt",
             },
           };
+        } else if (url.hostname === "cloud.189.cn" && url.pathname.endsWith("/api/portal/unifyLoginForPC.action")) {
+          assert.equal(url.searchParams.get("appId"), "8025431004");
+          assert.equal(url.searchParams.get("clientType"), "10020");
+          headers = { "Set-Cookie": ["cloud189_pc_login=1; Path=/; HttpOnly"] };
+          body = `
+            <input type='hidden' name='captchaToken' value='CLOUD189_PC_CAPTCHA'>
+            <script>
+              var lt = "CLOUD189_PC_LT";
+              var paramId = "CLOUD189_PC_PARAM";
+              var reqId = "CLOUD189_PC_REQ";
+            </script>
+          `;
         } else if (url.hostname === "cloud.189.cn" && url.pathname.endsWith("/api/portal/loginUrl.action")) {
           status = 302;
           headers = { "Set-Cookie": ["cloud189_pre=1; Path=/; HttpOnly"] };
@@ -815,6 +869,29 @@ globalThis.siyuan = {
           body = {
             result: 0,
             toUrl: "https://cloud.189.cn/web/main",
+          };
+        } else if (url.hostname === "open.e.189.cn" && url.pathname.endsWith("/api/logbox/oauth2/getUUID.do")) {
+          const form = parseForm(req.payload);
+          assert.equal(form.appId, "8025431004");
+          assert.equal(req.headers.some((item) => item.Cookie === "cloud189_pc_login=1"), true);
+          headers = { "Set-Cookie": ["cloud189_pc_uuid=1; Path=/; HttpOnly"] };
+          body = {
+            uuid: "CLOUD189_PC_UUID",
+            encodeuuid: "CLOUD189_PC_ENCODE_UUID",
+            encryuuid: "CLOUD189_PC_ENCRY_UUID",
+          };
+        } else if (url.hostname === "open.e.189.cn" && url.pathname.endsWith("/api/logbox/oauth2/qrcodeLoginState.do")) {
+          cloud189PcQrStateBody = parseForm(req.payload);
+          assert.equal(cloud189PcQrStateBody.appId, "8025431004");
+          assert.equal(cloud189PcQrStateBody.clientType, "10020");
+          assert.equal(cloud189PcQrStateBody.uuid, "CLOUD189_PC_UUID");
+          assert.equal(cloud189PcQrStateBody.encryuuid, "CLOUD189_PC_ENCRY_UUID");
+          assert.equal(req.headers.some((item) => item.Reqid === "CLOUD189_PC_REQ"), true);
+          assert.equal(req.headers.some((item) => item.lt === "CLOUD189_PC_LT"), true);
+          assert.equal(req.headers.some((item) => item.Cookie === "cloud189_pc_login=1; cloud189_pc_uuid=1"), true);
+          body = {
+            status: 0,
+            redirectUrl: "https://cloud.189.cn/web/main?pc=1",
           };
         } else if (url.hostname === "cloud.189.cn" && url.pathname.endsWith("/web/main")) {
           headers = {
@@ -925,16 +1002,50 @@ globalThis.siyuan = {
             uri: "/person/commitMultiUploadFile",
           });
           body = { code: "SUCCESS" };
+        } else if (url.hostname === "api.cloud.189.cn" && url.pathname.endsWith("/getSessionForPC.action")) {
+          if (url.searchParams.has("redirectURL")) {
+            assert.equal(url.searchParams.get("redirectURL"), "https://cloud.189.cn/web/main?pc=1");
+            assert.equal(url.searchParams.get("appId"), "8025431004");
+            assert.equal(req.headers.some((item) => item.Cookie === "cloud189_pc_login=1; cloud189_pc_uuid=1"), true);
+            body = {
+              res_code: 0,
+              accessToken: "CLOUD189_PC_ACCESS_BY_QR",
+              refreshToken: "CLOUD189_PC_REFRESH_BY_QR",
+              sessionKey: "CLOUD189_PC_SESSION",
+              sessionSecret: "CLOUD189_PC_SECRET",
+              familySessionKey: "CLOUD189_PC_FAMILY_SESSION",
+              familySessionSecret: "CLOUD189_PC_FAMILY_SECRET",
+              loginName: "cloud189-pc",
+            };
+          } else {
+            assert.equal(url.searchParams.get("accessToken"), "CLOUD189_PC_ACCESS_BY_QR");
+            body = {
+              res_code: 0,
+              sessionKey: "CLOUD189_PC_SESSION",
+              sessionSecret: "CLOUD189_PC_SECRET",
+              familySessionKey: "CLOUD189_PC_FAMILY_SESSION",
+              familySessionSecret: "CLOUD189_PC_FAMILY_SECRET",
+              loginName: "cloud189-pc",
+            };
+          }
         } else if (url.hostname === "api.cloud.189.cn" && url.pathname.endsWith("/family/manage/getQrCodeUUID.action")) {
           assert.equal(req.headers.some((item) => item.Accept === "application/json;charset=UTF-8"), true);
           body = {
             uuid: "CLOUD189_TV_UUID",
           };
         } else if (url.hostname === "api.cloud.189.cn" && url.pathname.endsWith("/family/manage/qrcodeLoginResult.action")) {
-          assert.equal(url.searchParams.get("uuid"), "CLOUD189_TV_UUID");
-          body = {
-            accessToken: "CLOUD189_TV_ACCESS_BY_QR",
-          };
+          const uuid = url.searchParams.get("uuid");
+          if (uuid === "CLOUD189_TV_PENDING_UUID") {
+            body = {
+              res_code: "QrCodeRollLoginFail",
+              res_message: "qrCodeRollLogin() - appKey=600100885,timeStamp=178326299,uuid=https://open.e.189.cn/api/account/qrClinentLogin.do?paras=new_uuid%3DCLOUD189_TV_PENDING_UUID%7C8013418323,QrCodeRollLoginFail",
+            };
+          } else {
+            assert.equal(uuid, "CLOUD189_TV_UUID");
+            body = {
+              accessToken: "CLOUD189_TV_ACCESS_BY_QR",
+            };
+          }
         } else if (url.hostname === "api.cloud.189.cn" && url.pathname.endsWith("/family/manage/loginFamilyMerge.action")) {
           assert.equal(url.searchParams.get("e189AccessToken"), "CLOUD189_TV_ACCESS_BY_QR");
           body = {
@@ -1432,6 +1543,9 @@ globalThis.siyuan = {
               : { name: "remote.txt", size: 11, is_dir: false, raw_url: "https://example.test/remote.txt" },
           };
         }
+        const responseBody = typeof body === "string" && url.hostname === "s3.example.test" && req.responseEncoding === "base64"
+          ? Buffer.from(body).toString("base64")
+          : typeof body === "string" ? body : JSON.stringify(body);
         return jsonBody({
           code: 0,
           msg: "ok",
@@ -1439,8 +1553,8 @@ globalThis.siyuan = {
             url: req.url,
             status,
             contentType,
-            body: typeof body === "string" ? body : JSON.stringify(body),
-            bodyEncoding: url.hostname === "baidu-cdn.example.test" || url.hostname === "example.test" ? "base64" : "text",
+            body: responseBody,
+            bodyEncoding: url.hostname === "baidu-cdn.example.test" || url.hostname === "example.test" || (url.hostname === "s3.example.test" && req.responseEncoding === "base64") ? "base64" : "text",
             headers,
             elapsed: 1,
           },
@@ -1606,8 +1720,11 @@ assert.ok(status.data.routes.includes("POST /api/fs/torrent/parse"));
 assert.ok(status.data.stages.some((item) => item.key === "torrent" && item.status === "active"));
 assert.ok(status.data.stages.some((item) => item.key === "archive" && item.status === "active"));
 assert.ok(status.data.adapters.includes("115_cloud"));
+assert.ok(status.data.adapters.includes("wps"));
 assert.ok(status.data.capability_summary.partial > 0);
 assert.equal(status.data.driver_capabilities["189CloudPC"].methods.put, "placeholder");
+assert.equal(status.data.driver_capabilities.WPS.methods.put, "placeholder");
+assert.equal(status.data.driver_capabilities.WPS.methods.details, "done");
 assert.ok(status.data.routes.includes("GET /api/authn/webauthn_begin_login"));
 
 const me = await json({ path: "/api/me" });
@@ -1801,6 +1918,8 @@ assert.equal(apiIndex.data.driver_capabilities["115 Open"].methods.put, "placeho
 assert.equal(apiIndex.data.driver_capabilities["115 Share"].methods.put, "unsupported");
 assert.equal(apiIndex.data.driver_capabilities["189CloudPC"].methods.rapid_upload, "placeholder");
 assert.equal(apiIndex.data.driver_capabilities.QuarkTV.methods.put, "unsupported");
+assert.equal(apiIndex.data.driver_capabilities.WPS.methods.put, "placeholder");
+assert.equal(apiIndex.data.driver_capabilities.WPS.methods.details, "done");
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/fs/get"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "ANY" && item.path === "/api/public/api"));
 assert.ok(apiIndex.data.routes.some((item) => item.method === "POST" && item.path === "/api/fs/torrent/generate"));
@@ -3397,6 +3516,7 @@ assert.equal(driverNames.data.includes("Local"), true);
 assert.equal(driverNames.data.includes("115 Cloud"), true);
 assert.equal(driverNames.data.includes("115 Open"), true);
 assert.equal(driverNames.data.includes("115 Share"), true);
+assert.equal(driverNames.data.includes("WPS"), true);
 assert.equal(driverNames.data.includes("SiYuanKernel"), false);
 assert.equal(driverNames.data.includes("SiYuanWorkspace"), true);
 assert.equal(driverNames.data.includes("GoogleDrive"), false);
@@ -3406,7 +3526,7 @@ const quarkInfo = await json({
   query: "driver=Quark",
 });
 assert.equal(quarkInfo.data.config.prefer_proxy, false);
-assert.equal(quarkInfo.data.additional.find((item) => item.name === "use_transcoding_address")?.default, "true");
+assert.equal(quarkInfo.data.additional.find((item) => item.name === "use_transcoding_address")?.default, "false");
 const baiduInfo = await json({
   method: "GET",
   path: "/api/admin/driver/info",
@@ -3428,6 +3548,51 @@ const cloud189PcInfo = await json({
 });
 assert.equal(cloud189PcInfo.data.additional.some((item) => item.name === "login_type" && item.type === "select"), true);
 assert.equal(cloud189PcInfo.data.additional.some((item) => item.name === "generate_torrent"), true);
+const cloud189PcQrStart = await json({
+  body: {
+    driver: "189CloudPC",
+    addition: {
+      login_type: "qrcode",
+      root_folder_id: "-11",
+    },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(cloud189PcQrStart.code, 502);
+assert.equal(cloud189PcQrStart.data.verify.type, "qrcode");
+assert.equal(cloud189PcQrStart.data.verify.qr_text, "CLOUD189_PC_UUID");
+assert.equal(cloud189PcQrStart.data.addition.qrcode_uuid, "CLOUD189_PC_UUID");
+assert.equal(cloud189PcQrStart.data.addition.qrcode_reqid, "CLOUD189_PC_REQ");
+const cloud189PcQrDone = await json({
+  body: {
+    driver: "189CloudPC",
+    addition: cloud189PcQrStart.data.addition,
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(cloud189PcQrDone.code, 200);
+assert.equal(cloud189PcQrDone.data.addition.access_token, "CLOUD189_PC_ACCESS_BY_QR");
+assert.equal(cloud189PcQrDone.data.addition.refresh_token, "CLOUD189_PC_REFRESH_BY_QR");
+assert.equal(cloud189PcQrDone.data.addition.sessionKey, "CLOUD189_PC_SESSION");
+assert.equal(cloud189PcQrDone.data.addition.qrcode_uuid, undefined);
+assert.equal(cloud189PcQrStateBody.paramId, "CLOUD189_PC_PARAM");
+const cloud189PcFamilyDone = await json({
+  body: {
+    driver: "189CloudPC",
+    addition: {
+      access_token: "CLOUD189_PC_ACCESS_BY_QR",
+      root_folder_id: "-11",
+      type: "family",
+    },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(cloud189PcFamilyDone.code, 200);
+assert.equal(cloud189PcFamilyDone.data.addition.root_folder_id, "");
+assert.equal(cloud189PcFamilyDone.data.addition.family_id, "189001");
 const cloud189TvInfo = await json({
   method: "GET",
   path: "/api/admin/driver/info",
@@ -3448,8 +3613,22 @@ const cloud189TvQrStart = await json({
 });
 assert.equal(cloud189TvQrStart.code, 502);
 assert.equal(cloud189TvQrStart.data.addition.temp_uuid, "CLOUD189_TV_UUID");
-assert.equal(cloud189TvQrStart.data.verify.qr_text, "CLOUD189_TV_UUID");
+assert.equal(cloud189TvQrStart.data.verify.qr_text, "https://open.e.189.cn/api/account/qrClinentLogin.do?paras=new_uuid%3DCLOUD189_TV_UUID");
 globalThis.TextEncoder = nativeTextEncoder;
+const cloud189TvQrPending = await json({
+  body: {
+    driver: "189CloudTV",
+    addition: {
+      temp_uuid: "CLOUD189_TV_PENDING_UUID",
+    },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(cloud189TvQrPending.code, 502);
+assert.equal(cloud189TvQrPending.data.verify.type, "qrcode");
+assert.equal(cloud189TvQrPending.data.verify.qr_text, "https://open.e.189.cn/api/account/qrClinentLogin.do?paras=new_uuid%3DCLOUD189_TV_PENDING_UUID%7C8013418323");
+assert.equal(cloud189TvQrPending.data.verify.message, "请使用天翼云盘 App 扫码登录，然后再次点击验证/保存。");
 const cloud189TvQrDone = await json({
   body: {
     driver: "189CloudTV",
@@ -3675,7 +3854,7 @@ const quarkOpenInfo = await json({
   path: "/api/admin/driver/info",
   query: "driver=QuarkOpen",
 });
-assert.equal(quarkOpenInfo.data.additional.some((item) => item.name === "app_id" && item.required), true);
+assert.equal(quarkOpenInfo.data.additional.some((item) => item.name === "app_id" && item.required), false);
 assert.equal(quarkOpenInfo.data.config.only_proxy, true);
 const quarkTvInfo = await json({
   method: "GET",
@@ -3815,7 +3994,12 @@ assert.equal(remoteRelativeGet.data.raw_url, "https://openlist.example.test/d/re
 const remoteRelativeRead = await call({
   path: "/d/remote/relative.txt",
 });
-assert.equal(remoteRelativeRead.body.proxy.url, "https://openlist.example.test/d/relative.txt");
+assert.equal(remoteRelativeRead.statusCode, 302);
+assert.equal(remoteRelativeRead.headers.Location[0], "https://openlist.example.test/d/relative.txt");
+const remoteRelativeProxyRead = await call({
+  path: "/p/remote/relative.txt",
+});
+assert.equal(remoteRelativeProxyRead.body.proxy.url, "https://openlist.example.test/d/relative.txt");
 const remoteOther = await json({
   body: {
     path: "/remote/remote.txt",
@@ -3942,6 +4126,32 @@ const remoteS3Get = await json({
   path: "/api/fs/get",
 });
 assert.equal(remoteS3Get.data.provider, "S3");
+const remoteS3Link = await json({
+  body: { path: "/remote-s3/object.txt" },
+  method: "POST",
+  path: "/api/fs/link",
+});
+assert.equal(remoteS3Link.code, 200);
+const remoteS3LinkUrl = new URL(remoteS3Link.data.url);
+assert.equal(remoteS3LinkUrl.hostname, "s3.example.test");
+assert.equal(remoteS3LinkUrl.pathname, "/bucket/object.txt");
+assert.equal(remoteS3LinkUrl.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
+assert.equal(remoteS3LinkUrl.searchParams.get("response-content-disposition"), "attachment; filename*=UTF-8''object.txt");
+const remoteS3ProxyRead = await text({
+  method: "GET",
+  path: "/p/remote-s3/object.txt",
+});
+assert.equal(remoteS3ProxyRead.response.statusCode, 200);
+assert.equal(remoteS3ProxyRead.text, "s3 object");
+const remoteS3ProxyRangeRead = await text({
+  headers: { Range: ["bytes=0-2"] },
+  method: "GET",
+  path: "/p/remote-s3/object.txt",
+});
+assert.equal(remoteS3ProxyRangeRead.response.statusCode, 206);
+assert.equal(remoteS3ProxyRangeRead.response.headers["Content-Range"][0], "bytes 0-2/9");
+assert.equal(remoteS3ProxyRangeRead.text, "s3");
+assert.equal(s3ReadRanges.includes("bytes=0-2"), true);
 const remoteS3DirectInfo = await json({
   body: { path: "/remote-s3/direct-upload.txt" },
   method: "POST",
@@ -4200,8 +4410,14 @@ const remoteOneDriveRead = await call({
   method: "GET",
   path: "/d/remote-onedrive/remote-doc.txt",
 });
-assert.equal(remoteOneDriveRead.body.proxy.url, "https://download.example.test/remote-doc.txt");
-assert.equal(remoteOneDriveRead.body.proxy.method, "GET");
+assert.equal(remoteOneDriveRead.statusCode, 302);
+assert.equal(remoteOneDriveRead.headers.Location[0], "https://download.example.test/remote-doc.txt");
+const remoteOneDriveProxyRead = await call({
+  method: "GET",
+  path: "/p/remote-onedrive/remote-doc.txt",
+});
+assert.equal(remoteOneDriveProxyRead.body.proxy.url, "https://download.example.test/remote-doc.txt");
+assert.equal(remoteOneDriveProxyRead.body.proxy.method, "GET");
 const remoteOneDriveLink = await json({
   body: { path: "/remote-onedrive/remote-doc.txt" },
   method: "POST",
@@ -4354,6 +4570,28 @@ assert.deepEqual(aliOpenPreviewBody, {
   category: "live_transcoding",
   url_expire_sec: 14400,
 });
+const aliOpenGet = await json({
+  body: { path: "/remote-ali-open/ali-video.mp4" },
+  method: "POST",
+  path: "/api/fs/get",
+});
+assert.equal(aliOpenGet.code, 200);
+assert.equal(aliOpenGet.data.raw_url, "https://ali-download.example.test/ali-video.mp4");
+const aliOpenDirectRead = await call({
+  headers: { Range: ["bytes=0-"] },
+  method: "GET",
+  path: "/d/remote-ali-open/ali-video.mp4",
+});
+assert.equal(aliOpenDirectRead.statusCode, 302);
+assert.equal(aliOpenDirectRead.headers.Location[0], "https://ali-download.example.test/ali-video.mp4");
+const aliOpenProxyRead = await call({
+  headers: { Range: ["bytes=0-"] },
+  method: "GET",
+  path: "/p/remote-ali-open/ali-video.mp4",
+});
+assert.equal(aliOpenProxyRead.statusCode, 200);
+assert.equal(aliOpenProxyRead.body.proxy.url, "https://ali-download.example.test/ali-video.mp4");
+assert.equal(aliOpenProxyRead.body.proxy.headers.Range[0], "bytes=0-");
 const aliOpenOtherUnsupported = await json({
   body: {
     path: "/remote-ali-open/ali-video.mp4",
@@ -4416,6 +4654,20 @@ assert.deepEqual(aliOpenCompleteBodies.at(-1), {
   drive_id: "ali-open-drive",
   file_id: "ali-open-rapid-file",
   upload_id: "ali-open-rapid-upload-id",
+});
+const aliOpenDriver = createAliyundriveOpenDriver({ client: globalThis.siyuan.client });
+const aliOpenDetails = await aliOpenDriver.details({
+  addition_json: {
+    access_token: "ALI_OPEN_ACCESS",
+    drive_id: "ali-open-drive",
+  },
+  driver: "AliyundriveOpen",
+  mount_path: "/remote-ali-open",
+});
+assert.deepEqual(aliOpenDetails, {
+  total_space: 5000,
+  used_space: 1250,
+  free_space: 3750,
 });
 const remote123Create = await json({
   body: {
@@ -4553,6 +4805,21 @@ const remote123Test = await json({
 });
 assert.equal(remote123Test.code, 200);
 assert.equal(remote123Test.data.user.nickname, "pan123-user");
+const remote123VerifyTest = await json({
+  body: {
+    driver: "123Pan",
+    addition: {
+      password: "pass",
+      platform: "web",
+      root_folder_id: "0",
+      username: "need-verify",
+    },
+  },
+  method: "POST",
+  path: "/api/admin/driver/test",
+});
+assert.equal(remote123VerifyTest.code, 502);
+assert.equal(remote123VerifyTest.message, "请先在浏览器网页登录 123Pan 完成验证后，再回到插件登录");
 
 await json({
   body: {
@@ -4596,6 +4863,8 @@ const remoteQuarkChildList = await json({
 });
 assert.equal(remoteQuarkChildList.data.content[0].name, "quark-child.txt");
 assert.equal(Object.hasOwn(remoteQuarkChildList.data.content[0], "path"), false);
+assert.equal(quarkSortCookies[0], "QUARK_COOKIE");
+assert.match(quarkSortCookies[1], /__puus=QUARK_REFRESHED_PUUS/);
 const remoteQuarkGet = await json({
   body: { path: "/remote-quark/quark-folder /quark-child.txt" },
   method: "POST",

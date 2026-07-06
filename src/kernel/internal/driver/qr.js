@@ -48,12 +48,12 @@ export const runQrLogin = async ({
   const state = await poll();
   if (state.status === "success") {
     const result = await confirm(state);
-    clear?.();
+    await clear?.();
     return result;
   }
 
   if (state.status === "expired" || state.status === "canceled") {
-    clear?.();
+    await clear?.();
     throw qrVerifyError(state.message || "QR code expired", addition, qrVerify({
       message: state.message || "",
       status: state.status,
