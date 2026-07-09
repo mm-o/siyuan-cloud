@@ -386,6 +386,6 @@ export const createWpsDriver = ({ client }) => ({
   },
 
   async put() {
-    throw new Error("WPS upload is not implemented in the SiYuan kernel JavaScript port yet");
+    throw new Error("WPS upload is disabled in the SiYuan kernel JavaScript runtime to avoid blocking SiYuan");
   },
 });

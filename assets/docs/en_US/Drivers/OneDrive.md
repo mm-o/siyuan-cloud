@@ -58,6 +58,7 @@ If the default online app hits rate limits because of heavy shared use, or if yo
 
 - Runtime supports token refresh, list, get, read, link, management, and upload.
 - Small files upload directly; large files use upload sessions.
+- `enable_direct_upload` exposes OpenList `HttpDirect` direct-upload tool information.
 - `disable_disk_usage` can reduce local disk usage.
 
 ## Troubleshooting

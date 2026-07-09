@@ -92,7 +92,7 @@ Avoid these values:
 - `/api/fs/link` returns an OpenList-style GET presigned URL. `/p/<path>` keeps a stable Siyuan Cloud path and reads the object through plugin-side S3 signing, which is safer for SiYuan Reader / PDF.js preview flows that issue Range requests.
 - `/p/<path>` forwards Range requests to the upstream object storage, so PDF readers and media components can request partial content through the stable plugin path.
 - Directory detection, listing pagination, directory marker filtering, and recursive directory copy/move/remove/rename follow OpenList S3 behavior. The default directory placeholder file is `.siyuan-cloud`.
-- `enable_direct_upload` exposes direct-upload tool information.
+- `enable_direct_upload` exposes OpenList `HttpDirect` direct-upload tool information, so clients upload objects directly with a presigned PUT request.
 - `Doge` reuses the S3-compatible field set.
 - For DogeCloud-specific notes, see [[DogeCloud]].
 - Enable `force_path_style` when the object storage service requires path-style requests; MinIO, R2, and some compatible services often need it.

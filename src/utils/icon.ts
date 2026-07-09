@@ -120,6 +120,12 @@ const OPENLIST_ICONS = `
     <path d="M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707v5.586l-2.73-2.73a1 1 0 0 0-1.52.127l-1.889 2.644-1.769-1.062a1 1 0 0 0-1.222.15L2 12.292V2a2 2 0 0 1 2-2zm5.5 1.5v2a1 1 0 0 0 1 1h2l-3-3zm-1.498 4a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0z"/>
     <path d="M10.564 8.27 14 11.708V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-.293l3.578-3.577 2.56 1.536 2.426-3.395z"/>
   </symbol>
+  <symbol id="iconOpenListGrid" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <rect x="4" y="4" width="6" height="6" rx="1.5"/>
+    <rect x="14" y="4" width="6" height="6" rx="1.5"/>
+    <rect x="4" y="14" width="6" height="6" rx="1.5"/>
+    <rect x="14" y="14" width="6" height="6" rx="1.5"/>
+  </symbol>
   <symbol id="iconOpenListMinus" fill="currentColor" viewBox="0 0 16 16">
     <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM6 8.5h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1z"/>
   </symbol>

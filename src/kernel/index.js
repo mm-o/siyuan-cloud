@@ -572,8 +572,7 @@ import { createWebDavServer } from "./server/webdav.js";
     if (mount && mount.driver.read) {
       try {
         const options = proxyReadOptions(request, filePath);
-        const signedProxyDownload = ["S3", "Doge"].includes(String(mount.storage?.driver || ""));
-        if (asDownload && mount.driver.link && !signedProxyDownload && !shareDownloadShouldProxy(mount, filePath)) {
+        if (asDownload && mount.driver.link && !shareDownloadShouldProxy(mount, filePath)) {
           const data = await mount.driver.link(mount.storage, mount.relPath, options);
           return redirectResponse(linkFromDriverData(data).url);
         }

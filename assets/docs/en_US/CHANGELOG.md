@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 0.5.2
+
+### Added
+
+- Added an image masonry view to the file manager, with list/image switching and compact filename plus size display.
+- Added Ctrl/Shift multi-select and keyboard shortcuts such as Ctrl+A, Esc, Delete, and Enter in the file manager.
+- Added batch download and batch handoff to Motrix Next for selected files.
+- Added dragging files from the file manager and Dock file tree into documents to insert the same link snippet as Copy Link.
+
+### Fixed
+
+- Fixed S3-compatible presigned-link SigV4 query ordering by using AWS byte-order sorting and preserving RFC 3986 encoded output, avoiding `SignatureDoesNotMatch` 403 errors for Chinese filenames with `response-content-disposition`.
+- Fixed S3-compatible uploads creating 0-byte files: uploads now prefer OpenList `HttpDirect` presigned PUT, and the fallback path uses an explicit base64 body to avoid multipart file content being lost in the SiYuan JavaScript kernel.
+- Fixed audio files inserted by drag-and-drop failing to play: audio now inserts as a playable `<audio>` control instead of an unhandled plugin-protocol link.
+- Fixed WPS upload freezing SiYuan by keeping WPS upload disabled in the JavaScript kernel runtime, avoiding base64 decoding, hashing, and proxy upload on the SiYuan runtime path.
+
 ## 0.5.1
 
 ### Added

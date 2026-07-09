@@ -7,6 +7,7 @@ import { fsRemove, resolveOpenListFile } from '@/utils/api'
 import {
   escapeHtml,
   itemStableUrl,
+  openListFileKinds,
   promptText,
   requireModule,
   selectSavePath,
@@ -415,22 +416,34 @@ export const fallbackTranslator = (t: (key: string) => string): TranslateFallbac
 
 const extensionOf = (name: string) => name.split('.').pop()?.toLowerCase() || ''
 const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
-const escapeMdDest = (url: string) => url.replace(/([\\()])/g, '\\$1')
 
 export function openListDocumentLink<T extends OpenListUrlItem & { name: string; is_dir?: boolean }>(options: {
   item: T
   path: string
-  imageExts?: Set<string>
-  videoExts?: Set<string>
 }) {
-  const url = itemStableUrl(options.item, options.path)
-  const ext = extensionOf(options.item.name)
-  if (!options.item.is_dir && options.videoExts?.has(ext))
-    return `<video controls src="${escapeHtml(formatResourceUrlForMarkdown(url))}"></video>`
-  const isImage = !options.item.is_dir && options.imageExts?.has(ext)
-  if (isImage)
-    return `![${escapeMdText(options.item.name)}](${escapeMdDest(formatResourceUrlForMarkdown(url))})`
-  return `[${escapeMdText(options.item.name)}](siyuan://plugins/siyuan-cloud/open?path=${normalizeOpenListPath(options.path)})`
+  const name = escapeMdText(options.item.name)
+  if (!options.item.is_dir) {
+    const ext = extensionOf(options.item.name)
+    const tag = openListFileKinds.audio.has(ext) ? 'audio' : openListFileKinds.video.has(ext) ? 'video' : ''
+    if (tag) {
+      const url = escapeHtml(formatResourceUrlForMarkdown(itemStableUrl(options.item, options.path)))
+      return `<${tag} controls src="${url}"></${tag}>`
+    }
+    if (openListFileKinds.image.has(ext)) {
+      const url = formatResourceUrlForMarkdown(itemStableUrl(options.item, options.path))
+      return `![${name}](${url})`
+    }
+  }
+  return `[${name}](siyuan://plugins/siyuan-cloud/open?path=${normalizeOpenListPath(options.path)})`
+}
+
+export function openListDragHtml(markdown: string) {
+  const link = /^(!?)\[(.*)]\((.*)\)$/.exec(markdown)
+  if (!link)
+    return markdown
+  return link[1]
+    ? `<img alt="${escapeHtml(link[2])}" src="${escapeHtml(link[3])}">`
+    : `<a href="${escapeHtml(link[3])}">${escapeHtml(link[2])}</a>`
 }
 
 export function openOpenListFileItemMenu(options: {
@@ -441,6 +454,7 @@ export function openOpenListFileItemMenu(options: {
   openFile: (item: OpenListFileItem) => void | Promise<void>
   browseArchive?: (item: OpenListFileItem) => void | Promise<void>
   downloadItem: (item: OpenListFileItem) => void | Promise<void>
+  sendToMotrixNext?: (item: OpenListFileItem) => void | Promise<void>
   copyLink: (item: OpenListFileItem, path: string) => void | Promise<void>
   renameSelection: () => void | Promise<void>
   copySelection: () => void | Promise<void>
@@ -478,7 +492,7 @@ export function openOpenListFileItemMenu(options: {
       label: options.tf('sendToMotrixNext', 'Send to Motrix Next'),
       click: async () => {
         try {
-          await sendOpenListItemToMotrixNext({ item: options.item, itemPath: options.itemPath, tf: options.tf })
+          await (options.sendToMotrixNext?.(options.item) ?? sendOpenListItemToMotrixNext({ item: options.item, itemPath: options.itemPath, tf: options.tf }))
         } catch (error) {
           showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
         }

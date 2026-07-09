@@ -78,6 +78,7 @@ Therefore:
 
 - `Doge` is intended to match OpenList's DogeCloud-specific S3 variant.
 - In the current version, treat it as "fields aligned, runtime still handled as generic S3" until DogeCloud temporary-credential refresh is ported.
+- `enable_direct_upload` exposes OpenList `HttpDirect` direct-upload tool information through the generic S3 path.
 - Do not put a DogeCloud CDN domain, public object URL, or web console URL in `endpoint`.
 - If `endpoint` does not include `https://` or `http://`, you may see `URL is not absolute`.
 - For normal S3-compatible services, see [[S3 Compatible]].

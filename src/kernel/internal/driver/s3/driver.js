@@ -13,7 +13,7 @@ const boolValue = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
   return value === true || value === "true" || value === 1 || value === "1";
 };
-const defaultRegion = "openlist";
+const regionOf = (addition) => String(addition.region ?? addition.Region ?? "");
 const signExpireSeconds = (addition) => String(Number(addition.sign_url_expire || 4) * 3600);
 const placeholderName = (addition) => addition.placeholder || ".siyuan-cloud";
 const headerValue = (headers = {}, name) => {
@@ -81,12 +81,17 @@ const directUploadUrl = (addition, key = "") => {
 
 const amzDate = (date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
 const dateStamp = (date) => amzDate(date).slice(0, 8);
+const canonicalQuery = (params) => Object.entries(params)
+  .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+  .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
+  .join("&");
+const withQuery = (url, query) => `${url.origin}${url.pathname}${query ? `?${query}` : ""}`;
 
 const presignPutObject = (addition, key) => {
   const now = new Date();
   const amz = amzDate(now);
   const date = dateStamp(now);
-  const region = addition.region || defaultRegion;
+  const region = regionOf(addition);
   const scope = `${date}/${region}/s3/aws4_request`;
   const url = new URL(directUploadUrl(addition, key));
   const params = {
@@ -97,11 +102,7 @@ const presignPutObject = (addition, key) => {
     "X-Amz-SignedHeaders": "host",
   };
   if (addition.session_token) params["X-Amz-Security-Token"] = addition.session_token;
-  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-  const query = [...url.searchParams.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
-    .join("&");
+  const query = canonicalQuery(params);
   const canonicalRequest = [
     "PUT",
     url.pathname || "/",
@@ -120,15 +121,14 @@ const presignPutObject = (addition, key) => {
   const kRegion = hmacSha256(kDate, region);
   const kService = hmacSha256(kRegion, "s3");
   const kSigning = hmacSha256(kService, "aws4_request");
-  url.searchParams.set("X-Amz-Signature", hex(hmacSha256(kSigning, stringToSign)));
-  return url.toString();
+  return withQuery(url, `${query}&X-Amz-Signature=${hex(hmacSha256(kSigning, stringToSign))}`);
 };
 
 const presignGetObject = (addition, key, { customHost = "", disposition = "" } = {}) => {
   const now = new Date();
   const amz = amzDate(now);
   const date = dateStamp(now);
-  const region = addition.region || defaultRegion;
+  const region = regionOf(addition);
   const scope = `${date}/${region}/s3/aws4_request`;
   const url = rewriteHost(s3Url(addition, key), customHost);
   const params = {
@@ -140,11 +140,7 @@ const presignGetObject = (addition, key, { customHost = "", disposition = "" } =
   };
   if (addition.session_token) params["X-Amz-Security-Token"] = addition.session_token;
   if (disposition) params["response-content-disposition"] = disposition;
-  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-  const query = [...url.searchParams.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
-    .join("&");
+  const query = canonicalQuery(params);
   const canonicalRequest = [
     "GET",
     url.pathname || "/",
@@ -163,8 +159,8 @@ const presignGetObject = (addition, key, { customHost = "", disposition = "" } =
   const kRegion = hmacSha256(kDate, region);
   const kService = hmacSha256(kRegion, "s3");
   const kSigning = hmacSha256(kService, "aws4_request");
-  url.searchParams.set("X-Amz-Signature", hex(hmacSha256(kSigning, stringToSign)));
-  return removeBucketFromPath(url, addition);
+  const signed = new URL(withQuery(url, `${query}&X-Amz-Signature=${hex(hmacSha256(kSigning, stringToSign))}`));
+  return removeBucketFromPath(signed, addition);
 };
 
 const contentDisposition = (addition, fileName) => {
@@ -194,7 +190,7 @@ const signedRequest = (client, addition, method, key, {
       ...extraHeaders,
     },
     method,
-    region: addition.region || defaultRegion,
+    region: regionOf(addition),
     secretAccessKey: addition.secret_access_key,
     sessionToken: addition.session_token || "",
     url,
@@ -234,7 +230,7 @@ const signedProxyGetLink = (addition, key, extraHeaders = {}) => {
       body: "",
       headers: extraHeaders,
       method: "GET",
-      region: addition.region || defaultRegion,
+      region: regionOf(addition),
       secretAccessKey: addition.secret_access_key,
       sessionToken: addition.session_token || "",
       url,
@@ -242,7 +238,6 @@ const signedProxyGetLink = (addition, key, extraHeaders = {}) => {
     method: "GET",
   };
 };
-
 
 const listQuery = ({ continuationToken = "", marker = "", prefix, startAfter = "", version }) => {
   const params = new URLSearchParams();

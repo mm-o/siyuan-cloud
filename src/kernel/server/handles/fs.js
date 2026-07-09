@@ -201,12 +201,13 @@ export const createFsHandlers = ({
       };
     }
     const content = req.content ?? req.data ?? "";
+    const bodyEncoding = String(req.body_encoding || req.bodyEncoding || "").toLowerCase() === "base64" ? "base64" : "text";
     return {
       body: String(content),
-      bodyEncoding: "text",
+      bodyEncoding,
       mime,
       path,
-      size: String(content).length,
+      size: Number(req.size || 0) || (bodyEncoding === "base64" ? Math.floor(String(content).length * 3 / 4) : String(content).length),
     };
   };
   const uploadFromFormRequest = async (request, req) => {
@@ -228,6 +229,7 @@ export const createFsHandlers = ({
         size: bytes.byteLength,
       };
     }
+    if (Number(file?.size || file?.Size || 0) > 0) throw new Error("upload file body is empty");
     return {
       body: "",
       bodyEncoding: "text",

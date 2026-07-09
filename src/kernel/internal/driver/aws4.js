@@ -89,6 +89,7 @@ export const signAwsV4 = ({ accessKeyId, body = "", headers = {}, method, region
   const now = new Date();
   const amz = amzDate(now);
   const date = dateStamp(now);
+  const signingRegion = String(region ?? "");
   const payloadHash = sha256Hex(body || "");
   const normalizedHeaders = {
     host: parsed.host,
@@ -100,7 +101,7 @@ export const signAwsV4 = ({ accessKeyId, body = "", headers = {}, method, region
   const signedHeaders = Object.keys(normalizedHeaders).sort();
   const canonicalHeaders = signedHeaders.map((key) => `${key}:${normalizedHeaders[key]}\n`).join("");
   const query = [...parsed.searchParams.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
     .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
     .join("&");
   const canonicalRequest = [
@@ -111,7 +112,7 @@ export const signAwsV4 = ({ accessKeyId, body = "", headers = {}, method, region
     signedHeaders.join(";"),
     payloadHash,
   ].join("\n");
-  const scope = `${date}/${region || "us-east-1"}/${service}/aws4_request`;
+  const scope = `${date}/${signingRegion}/${service}/aws4_request`;
   const stringToSign = [
     "AWS4-HMAC-SHA256",
     amz,
@@ -119,7 +120,7 @@ export const signAwsV4 = ({ accessKeyId, body = "", headers = {}, method, region
     sha256Hex(canonicalRequest),
   ].join("\n");
   const kDate = hmacSha256(`AWS4${secretAccessKey}`, date);
-  const kRegion = hmacSha256(kDate, region || "us-east-1");
+  const kRegion = hmacSha256(kDate, signingRegion);
   const kService = hmacSha256(kRegion, service);
   const kSigning = hmacSha256(kService, "aws4_request");
   const signature = hex(hmacSha256(kSigning, stringToSign));

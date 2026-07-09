@@ -78,6 +78,7 @@ OpenList 的 `Doge` 与普通 `S3` 的主要差异在初始化阶段：
 
 - `Doge` 的目标是完全对齐 OpenList 的多吉云专用 S3 变体。
 - 当前版本请把它理解为“字段已对齐、运行时仍按通用 S3 处理”的过渡状态。
+- 开启 `enable_direct_upload` 后会按通用 S3 暴露 OpenList `HttpDirect` 直传工具信息。
 - 不要把多吉云 CDN 域名、对象外链域名或网页控制台地址填到 `endpoint`。
 - `endpoint` 缺少 `https://` 或 `http://` 时会报 `URL is not absolute`。
 - 普通 S3 兼容服务请优先看 [[S3 兼容存储]]。

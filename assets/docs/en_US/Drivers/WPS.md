@@ -57,7 +57,7 @@ Use a fresh browser profile or an incognito window to obtain Cookie, so it does 
 
 - Login check, root/group listing, file metadata, download links, proxy reads, mkdir, move, copy, rename, remove, and storage details are wired.
 - Download/playback uses the shared `driver read -> /p -> common proxy -> body.proxy` path.
-- Upload is still a structured placeholder. Upstream WPS upload requires SHA1/SHA256, external PUT/POST upload, and a commit step.
+- OpenList handles WPS upload through a streaming Go backend. The current SiYuan JavaScript kernel path would block the SiYuan runtime with base64 decoding, hashing, and proxy upload, so WPS upload is disabled for now.
 
 ## Test Checklist
 
@@ -78,4 +78,4 @@ Use a fresh browser profile or an incognito window to obtain Cookie, so it does 
 | Business mode reports empty company id | Confirm the account is a WPS 365 business/enterprise/education account, then log in from `365.kdocs.cn` and copy Cookie again. |
 | Root directory is empty | Check whether `mode` matches the account type, and whether `root_folder_path` points to an existing group/directory. |
 | File cannot be downloaded | WPS may deny download permission; business spaces can also be limited by file ACLs. |
-| Upload fails | WPS upload is not enabled in the current Siyuan Cloud adapter yet. |
+| Upload fails | WPS upload is disabled in the current SiYuan JavaScript kernel runtime to avoid blocking SiYuan with base64 decoding, hashing, and proxy upload. |

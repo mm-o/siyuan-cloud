@@ -22,6 +22,7 @@
       <div
         class="fn__flex-1 fn__hidescrollbar"
         @click="onTreeClick"
+        @dragstart="onTreeDragStart"
         @mouseover.stop
         v-html="treeHtml"
       />
@@ -285,6 +286,7 @@ import {
   itemOpenListPath,
   joinOpenListPath,
   normalizeOpenListPath,
+  openListDragHtml,
   openOpenListFileItemMenu,
   openListDocumentLink,
   shareOpenListSelection,
@@ -302,7 +304,6 @@ import {
   openLazyImageViewer,
   openListCompanionHref,
   openListFileKind,
-  openListFileKinds,
   openOpenListMediaPreview,
   showErrorMessage,
 } from '@/utils/file_ui'
@@ -632,7 +633,7 @@ function renderNode(node: DockTreeItem, level: number): string {
   const children = node.is_dir && expandedPaths.value.includes(node.path)
     ? childrenByPath.value[node.path] || []
     : []
-  return `<li class="b3-list-item b3-list-item--hide-action" data-type="${level === 0 ? 'navigation-root' : 'navigation-file'}" data-path="${escapeAttr(node.path)}" style="--file-toggle-width:${paddingLeft + 18}px">
+  return `<li class="b3-list-item b3-list-item--hide-action" data-type="${level === 0 ? 'navigation-root' : 'navigation-file'}" data-path="${escapeAttr(node.path)}" draggable="true" style="--file-toggle-width:${paddingLeft + 18}px">
   <span style="padding-left:${paddingLeft}px" class="b3-list-item__toggle b3-list-item__toggle--hl${node.is_dir ? '' : ' fn__hidden'}">
     <svg class="b3-list-item__arrow${expandedPaths.value.includes(node.path) ? ' b3-list-item__arrow--open' : ''}"><use xlink:href="#iconRight"></use></svg>
   </span>
@@ -659,7 +660,7 @@ const isCompanionFile = (item: DockTreeItem) => !!openListCompanionHref(item.nam
 const isArchiveFile = (item: DockTreeItem) => !item.is_dir && isArchiveFileName(item.name)
 const itemOpenUrl = (item: DockTreeItem) => openListItemOpenUrl(item, node => node.path)
 const companionHref = (item: DockTreeItem) => openListCompanionHref(item.name, item.path, item.is_dir)
-const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ imageExts: openListFileKinds.image, item, path, videoExts: openListFileKinds.video })
+const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ item, path })
 
 function toTreeItem(item: any, dir: string): DockTreeItem {
   return {
@@ -742,6 +743,16 @@ function onTreeClick(event: MouseEvent) {
     return
   event.stopPropagation()
   openNode(node)
+}
+
+function onTreeDragStart(event: DragEvent) {
+  const li = (event.target as HTMLElement).closest('li[data-path]') as HTMLElement | null
+  const node = li ? visibleNodeMap.value.get(li.dataset.path || '') : null
+  if (!node || !event.dataTransfer)
+    return
+  const nodes = isTreeSelected(node) ? selectedTreeItems.value : [node]
+  event.dataTransfer.setData('text/html', nodes.map(item => openListDragHtml(documentLink(item, treeItemPath(item)))).join('<br>'))
+  event.dataTransfer.effectAllowed = 'copy'
 }
 
 function treeItemPath(item: DockTreeItem) {

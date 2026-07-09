@@ -184,33 +184,83 @@ export const fsUploadFile = async (
     onProgress?.(100)
     return direct
   }
-  const form = new FormData()
-  form.append('file', file, file.name)
-  return new Promise((resolve) => {
+  const directUpload = await tryDirectUpload(path, file, onProgress)
+  if (directUpload)
+    return directUpload
+  const blocked = await uploadBlockedByProvider(path)
+  if (blocked)
+    return blocked
+  const content = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
+  onProgress?.(40)
+  const payload = await r.put('/fs/put', {
+    body_encoding: 'base64',
+    content,
+    mime: file.type || 'application/octet-stream',
+    path,
+    size: file.size,
+  }, {
+    headers: { Overwrite: 'false' },
+  })
+  if (payload.code === 200)
+    onProgress?.(100)
+  return payload
+}
+
+async function uploadBlockedByProvider(path: string): Promise<OpenListResp | null> {
+  const parent = path.replace(/\/[^/]*$/, '') || '/'
+  const payload = await r.post('/fs/list', { path: parent, page: 1, per_page: 1 })
+  if (payload.code === 200 && payload.data?.provider === 'WPS')
+    return { code: 501, message: 'WPS upload is disabled in the SiYuan kernel JavaScript runtime to avoid blocking SiYuan', data: null }
+  return null
+}
+
+async function tryDirectUpload(path: string, file: File, onProgress?: (progress: number) => void): Promise<OpenListResp | null> {
+  const info = await r.post<{
+    upload_url?: string
+    uploadUrl?: string
+    method?: string
+    headers?: Record<string, string>
+  }>('/fs/get_direct_upload_info', {
+    file_name: file.name,
+    file_size: file.size,
+    path,
+    tool: 'HttpDirect',
+  }, {
+    headers: { Overwrite: 'false' },
+  })
+  const upload = info.code === 200 ? info.data : null
+  const url = upload?.upload_url || upload?.uploadUrl
+  if (!url)
+    return null
+  return await new Promise((resolve) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', `${privateBase}/api/fs/form`)
-    const headers = withOpenListHeaders({ 'File-Path': encodeURIComponent(path), Overwrite: 'false' })
-    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, String(value)))
+    xhr.open(upload.method || 'PUT', url)
+    Object.entries(upload.headers || {}).forEach(([key, value]) => xhr.setRequestHeader(key, String(value)))
+    if (file.type && !Object.keys(upload.headers || {}).some(key => key.toLowerCase() === 'content-type'))
+      xhr.setRequestHeader('Content-Type', file.type)
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total)
         onProgress?.(Math.min(95, Math.round((event.loaded / event.total) * 95)))
     }
     xhr.onload = () => {
-      let payload: OpenListResp | null = null
-      try {
-        payload = xhr.responseText ? JSON.parse(xhr.responseText) : null
-      } catch (_) {}
-      if (xhr.status >= 200 && xhr.status < 300 && payload) {
+      if (xhr.status >= 200 && xhr.status < 300) {
         onProgress?.(100)
-        resolve(payload)
+        resolve({ code: 200, message: 'success', data: null })
       } else {
-        resolve({ code: xhr.status || -1, message: payload?.message || xhr.responseText || `HTTP ${xhr.status}`, data: null })
+        resolve(null)
       }
     }
-    xhr.onerror = () => resolve({ code: -1, message: 'upload failed', data: null })
+    xhr.onerror = () => resolve(null)
     xhr.onabort = () => resolve({ code: -1, message: 'upload canceled', data: null })
-    xhr.send(form)
+    xhr.send(file)
   })
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
+  return btoa(binary)
 }
 
 export const fsRename = (

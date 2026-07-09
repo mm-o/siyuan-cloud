@@ -9,32 +9,31 @@
     >
 
     <div class="fn__flex-1 fn__flex-column ol-file-tab__main">
-      <div class="protyle-breadcrumb">
-        <div class="protyle-breadcrumb__bar protyle-breadcrumb__bar--nowrap fn__flex-1">
+      <div class="block__icons">
+        <div class="fn__flex-1 fn__flex ol-file-tab__crumbs">
           <button
-            class="protyle-breadcrumb__item ariaLabel"
+            class="block__icon block__icon--show ariaLabel"
             type="button"
             :aria-label="tf('parentFolder', 'Parent Folder')"
-            @click="goParent"
+            @click="goPath(parentPath(currentPath))"
           >
-            <svg class="popover__block"><use xlink:href="#iconLeft" /></svg>
+            <svg><use xlink:href="#iconLeft" /></svg>
           </button>
           <template
             v-for="(crumb, index) in crumbs"
             :key="crumb.path"
           >
             <span
-              class="protyle-breadcrumb__item"
-              :class="{ 'protyle-breadcrumb__item--active': index === crumbs.length - 1 }"
+              class="b3-list-item__text ariaLabel"
               :title="crumb.label"
               @click="goPath(crumb.path)"
             >
-              <span class="protyle-breadcrumb__text">{{ crumb.label }}</span>
+              {{ crumb.label }}
             </span>
-            <svg
+            <span
               v-if="index < crumbs.length - 1"
-              class="protyle-breadcrumb__arrow"
-            ><use xlink:href="#iconRight" /></svg>
+              class="ft__on-surface"
+            >/</span>
           </template>
         </div>
         <div
@@ -53,9 +52,9 @@
           >
         </div>
         <button
-          v-for="action in toolbarActions"
+          v-for="action in primaryToolbarActions"
           :key="action.key"
-          class="block__icon fn__flex-center ariaLabel"
+          class="block__icon block__icon--show ariaLabel"
           type="button"
           :disabled="action.disabled"
           :aria-label="action.label"
@@ -63,11 +62,22 @@
         >
           <svg><use :xlink:href="`#${action.icon}`" /></svg>
         </button>
+        <button
+          class="block__icon block__icon--show ariaLabel"
+          type="button"
+          :aria-label="tf('more', 'More')"
+          @click.stop="openToolbarMoreMenu"
+        >
+          <svg><use xlink:href="#iconMore" /></svg>
+        </button>
       </div>
 
       <div
+        ref="contentRef"
         class="fn__flex-1 ol-file-tab__content"
+        @click="onContentClick"
         @contextmenu.prevent="openBackgroundMenu"
+        @mousedown="shortcutSelecting = hasModifier($event)"
       >
         <div
           v-if="loading"
@@ -76,7 +86,7 @@
           <div class="fn__loading" />
         </div>
         <ul
-          v-else-if="sortedItems.length"
+          v-else-if="sortedItems.length && viewMode === 'list'"
           class="b3-list b3-list--background"
         >
           <li
@@ -89,6 +99,7 @@
               :checked="allItemsSelected"
               :aria-label="tf('selectAll', 'Select all')"
               @change="changeAllSelection"
+              @click.stop
             >
             <span class="b3-list-item__text ft__on-surface">{{ selectedSummary }}</span>
             <span class="b3-list-item__meta ft__on-surface">{{ tf('size', 'Size') }}</span>
@@ -96,28 +107,29 @@
           </li>
           <li
             v-for="item in sortedItems"
-            :key="itemKey(item)"
+            :key="itemPath(item)"
             class="b3-list-item ol-file-row"
-            :data-path="itemKey(item)"
+            :data-path="itemPath(item)"
+            draggable="true"
             :class="{
               'ol-file-row--selecting': selectionMode,
-              'ol-file-row--focus': focusPath === itemKey(item),
+              'ol-file-row--focus': focusPath === itemPath(item) || isSelected(item),
             }"
-            @click="openFile(item)"
+            @click="onItemClick($event, item)"
             @contextmenu.stop.prevent="openItemMenu($event, item)"
+            @dragstart="onItemDragStart($event, item)"
           >
             <input
               v-if="selectionMode"
               type="checkbox"
               :checked="isSelected(item)"
               :aria-label="item.name"
-              @change="changeSelection(item, $event)"
-              @click.stop
+              @click.stop="changeSelection(item, $event)"
             >
             <span
               class="b3-list-item__text"
               :title="item.name"
-              :data-href="companionHref(item)"
+              :data-href="companionDataHref(item)"
             >
               <svg
                 class="ol-file-row__icon"
@@ -125,6 +137,7 @@
               >
                 <use :xlink:href="openListFileIconHref(item.name, item.is_dir)" />
               </svg>
+              <span class="fn__space" />
               <span class="ol-file-row__label">
                 <span class="ol-file-row__name">{{ item.name }}</span>
                 <span
@@ -137,6 +150,63 @@
             <span class="b3-list-item__meta">{{ formatModified(item.modified) }}</span>
           </li>
         </ul>
+        <div
+          v-else-if="sortedItems.length"
+          class="ol-file-grid"
+        >
+          <div
+            v-for="(column, columnIndex) in masonryColumns"
+            :key="columnIndex"
+            class="ol-file-grid__column"
+          >
+            <div
+              v-for="item in column"
+              :key="itemPath(item)"
+              class="ol-file-card"
+              :class="{ 'ol-file-row--focus': focusPath === itemPath(item) || isSelected(item) }"
+              :data-path="itemPath(item)"
+              draggable="true"
+              @click="onItemClick($event, item)"
+              @contextmenu.stop.prevent="openItemMenu($event, item)"
+              @dragstart="onItemDragStart($event, item)"
+            >
+              <input
+                v-if="selectionMode"
+                type="checkbox"
+                :checked="isSelected(item)"
+                :aria-label="item.name"
+                @click.stop="changeSelection(item, $event)"
+              >
+              <div
+                class="ol-file-card__thumb"
+                :style="imageThumbStyle(item)"
+                :data-href="companionDataHref(item)"
+              >
+                <svg
+                  class="ol-file-row__icon"
+                  :class="`ol-file-row__icon--${openListFileIconName(item.name, item.is_dir)}`"
+                >
+                  <use :xlink:href="openListFileIconHref(item.name, item.is_dir)" />
+                </svg>
+                <img
+                  v-if="isImageFile(item)"
+                  :src="imagePreviewUrl(item)"
+                  :alt="item.name"
+                  decoding="async"
+                  loading="lazy"
+                  @load="cacheImageRatio(item, $event)"
+                >
+                <span
+                  class="ol-file-card__meta"
+                  :title="item.name"
+                >
+                  <span>{{ item.name }}</span>
+                  <small>{{ item.is_dir ? tf('dir', 'DIR') : formatSize(item.size) }}</small>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
         <div
           v-else
           class="ol-file-tab__empty"
@@ -181,9 +251,9 @@
           class="ol-file-transfer__item"
           :class="`ol-file-transfer__item--${item.status}`"
         >
-          <div class="ol-file-transfer__line">
-            <span>{{ item.name }}</span>
-            <em>{{ item.message }}</em>
+          <div class="b3-list-item b3-list-item--hide-action">
+            <span class="b3-list-item__text">{{ item.name }}</span>
+            <span class="b3-list-item__meta">{{ item.message }}</span>
           </div>
           <div class="ol-file-transfer__bar">
             <i :style="{ width: item.progress === null ? undefined : `${item.progress}%` }" />
@@ -226,18 +296,18 @@ import {
   openArchiveBrowser,
 } from '@/utils/archive'
 import {
-  baseOpenListName,
   copyOpenListItemLink,
   deleteOpenListSelection,
   downloadOpenListItem,
-  fallbackTranslator,
   itemOpenListPath,
-  joinOpenListPath,
-  normalizeOpenListPath,
+  joinOpenListPath as joinPath,
+  normalizeOpenListPath as normalizePath,
+  openListDragHtml,
   openListDocumentLink,
   openOpenListFileItemMenu,
-  parentOpenListPath,
+  parentOpenListPath as parentPath,
   selectedOpenListGroups,
+  sendOpenListItemToMotrixNext,
   shareOpenListSelection,
 } from '@/utils/file_actions'
 import {
@@ -246,12 +316,10 @@ import {
 } from '@/utils/icon'
 import {
   itemOpenUrl as openListItemOpenUrl,
-  escapeHtml,
   formatSize,
   openLazyImageViewer,
   openListCompanionHref,
   openListFileKind,
-  openListFileKinds,
   openOpenListMediaPreview,
   promptText,
   selectSavePath,
@@ -266,6 +334,7 @@ interface FsItem {
   parent?: string
   modified?: string
   raw_url?: string
+  thumb?: string
   url?: string
 }
 
@@ -285,18 +354,37 @@ const searchActive = ref(false)
 const searchInputOpen = ref(false)
 const items = ref<FsItem[]>([])
 const loading = ref(false)
+const contentRef = ref<HTMLElement>()
 const searchInputRef = ref<HTMLInputElement>()
 const uploadInputRef = ref<HTMLInputElement>()
 const selectedPaths = ref<string[]>([])
 const selectionMode = ref(false)
+const shortcutSelecting = ref(false)
 const focusPath = ref('')
 const transferDragging = ref(false)
 const transferItems = ref<TransferItem[]>([])
+const VIEW_MODE_KEY = 'siyuan-cloud-file-view-mode'
+const IMAGE_RATIO_KEY = 'siyuan-cloud-file-image-ratios'
+const IMAGE_COLUMN_WIDTH = 180
+const viewMode = ref(localStorage.getItem(VIEW_MODE_KEY) === 'image' ? 'image' : 'list')
+const imageRatios = ref<Record<string, string>>(storedJson(IMAGE_RATIO_KEY, {}))
+const gridColumnCount = ref(1)
 let refreshSeq = 0
 let transferSeq = 0
+let gridResizeObserver: ResizeObserver | undefined
 const sortedItems = computed(() =>
   [...items.value].sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name)),
 )
+const masonryColumns = computed(() => {
+  const columns = Array.from({ length: Math.min(gridColumnCount.value, sortedItems.value.length || 1) }, () => [] as FsItem[])
+  const heights = columns.map(() => 0)
+  sortedItems.value.forEach((item) => {
+    const index = heights.indexOf(Math.min(...heights))
+    columns[index].push(item)
+    heights[index] += itemHeight(item)
+  })
+  return columns
+})
 const crumbs = computed(() => {
   const parts = currentPath.value.split('/').filter(Boolean)
   const list = [{ label: t('rootFolder'), path: '/' }]
@@ -306,7 +394,7 @@ const crumbs = computed(() => {
   return list
 })
 const selectedItems = computed(() =>
-  items.value.filter(item => selectedPaths.value.includes(itemKey(item))),
+  sortedItems.value.filter(item => selectedPaths.value.includes(itemPath(item))),
 )
 const primarySelectedItem = computed(() => selectedItems.value[0] || null)
 const downloadableSelection = computed(() => selectedItems.value.filter(item => !item.is_dir))
@@ -327,13 +415,17 @@ const transferTitle = computed(() =>
     ? tf('transferRunning', '{count} running').replace('{count}', String(runningTransferCount.value))
     : tf('transferPanel', 'Transfers'),
 )
-const toolbarActions = computed(() => [
+const primaryToolbarActions = computed(() => [
   { key: 'refresh', icon: 'iconRefresh', label: tf('refresh', 'Refresh'), run: refresh },
-  { key: 'search', icon: 'iconSearch', label: tf('search', 'Search'), run: openSearchInput },
-  { key: 'clearSearch', icon: 'iconClose', label: tf('clearSearch', 'Clear Search'), disabled: !searchActive.value, run: clearSearch },
+  searchActive.value
+    ? { key: 'clearSearch', icon: 'iconClose', label: tf('clearSearch', 'Clear Search'), run: clearSearch }
+    : { key: 'search', icon: 'iconSearch', label: tf('search', 'Search'), run: openSearchInput },
+  { key: 'view', icon: viewMode.value === 'image' ? 'iconList' : 'iconOpenListGrid', label: viewMode.value === 'image' ? tf('listView', 'List View') : tf('imageView', 'Image View'), run: toggleViewMode },
   { key: 'upload', icon: 'iconUpload', label: tf('upload', 'Upload'), run: openUpload },
   { key: 'selection', icon: selectionMode.value ? 'iconCheck' : 'iconUncheck', label: tf('toggleCheckbox', 'Toggle selection'), run: toggleSelectionMode },
   { key: 'download', icon: 'iconDownload', label: tf('download', 'Download'), disabled: !downloadableSelection.value.length, run: downloadSelection },
+])
+const moreToolbarActions = computed(() => [
   { key: 'createFolder', icon: 'iconFolder', label: t('createFolder'), run: createFolder },
   { key: 'createFile', icon: 'iconFile', label: t('createFile'), run: createFile },
   { key: 'rename', icon: 'iconEdit', label: tf('rename', 'Rename'), disabled: selectedItems.value.length !== 1, run: renameSelection },
@@ -343,6 +435,7 @@ const toolbarActions = computed(() => [
   { key: 'delete', icon: 'iconTrashcan', label: t('deleteFile'), disabled: !selectedItems.value.length, run: deleteSelection },
   { key: 'settings', icon: 'iconSettings', label: t('openSettings'), run: openSettings },
 ])
+const moreToolbarSeparators = new Set(['rename', 'share', 'settings'])
 
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -353,63 +446,139 @@ function tf(key: string, fallback: string) {
   return value === undefined ? fallback : String(value)
 }
 
-function normalizePath(path: string) {
-  return normalizeOpenListPath(path)
-}
-
-function joinPath(dir: string, name: string) {
-  return joinOpenListPath(dir, name)
-}
-
-function parentPath(path: string) {
-  return parentOpenListPath(path)
-}
-
-function baseName(path: string) {
-  return baseOpenListName(path)
+function storedJson<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) || '') || fallback
+  } catch {
+    return fallback
+  }
 }
 
 function itemPath(item: FsItem) {
   return itemOpenListPath(item, currentPath.value)
 }
 
-function itemKey(item: FsItem) {
-  return itemPath(item)
-}
-
 function isSelected(item: FsItem) {
-  return selectedPaths.value.includes(itemKey(item))
+  return selectedPaths.value.includes(itemPath(item))
 }
 
 function clearSelection() {
   selectedPaths.value = []
 }
 
+function clearSelectionMode() {
+  selectionMode.value = false
+  clearSelection()
+}
+
 function selectOnly(item: FsItem) {
-  selectedPaths.value = [itemKey(item)]
+  selectedPaths.value = [itemPath(item)]
 }
 
 function setSelected(item: FsItem, checked: boolean) {
-  const key = itemKey(item)
+  const key = itemPath(item)
   selectedPaths.value = checked
     ? Array.from(new Set([...selectedPaths.value, key]))
     : selectedPaths.value.filter(path => path !== key)
 }
 
-function changeSelection(item: FsItem, event: Event) {
-  setSelected(item, (event.target as HTMLInputElement).checked)
+function selectRange(item: FsItem, additive = false) {
+  const paths = sortedItems.value.map(itemPath)
+  const start = paths.indexOf(selectedPaths.value[selectedPaths.value.length - 1])
+  const end = paths.indexOf(itemPath(item))
+  if (start < 0 || end < 0) {
+    selectOnly(item)
+    return
+  }
+  const range = paths.slice(Math.min(start, end), Math.max(start, end) + 1)
+  selectedPaths.value = additive ? Array.from(new Set([...selectedPaths.value, ...range])) : range
+}
+
+function selectByMouse(event: MouseEvent, item: FsItem, checked = !isSelected(item)) {
+  if (hasModifier(event)) {
+    selectionMode.value = true
+    if (event.shiftKey)
+      selectRange(item, event.ctrlKey || event.metaKey)
+    else
+      setSelected(item, checked)
+    return
+  }
+  setSelected(item, checked)
+}
+
+function onItemClick(event: MouseEvent, item: FsItem) {
+  if (hasModifier(event)) {
+    event.preventDefault()
+    selectByMouse(event, item)
+    return
+  }
+  if ((event.target as HTMLElement).closest('[data-href]'))
+    return
+  if (!(event.target as HTMLElement).closest('.b3-list-item__text, .ol-file-card__thumb')) {
+    clearSelectionMode()
+    return
+  }
+  openFile(item)
+}
+
+function changeSelection(item: FsItem, event: MouseEvent) {
+  selectByMouse(event, item, (event.target as HTMLInputElement).checked)
 }
 
 function changeAllSelection(event: Event) {
-  selectedPaths.value = (event.target as HTMLInputElement).checked
-    ? sortedItems.value.map(itemKey)
-    : []
+  if ((event.target as HTMLInputElement).checked)
+    selectAllItems()
+  else
+    clearSelection()
 }
 
 function toggleSelectionMode() {
   selectionMode.value = !selectionMode.value
   if (!selectionMode.value)
     clearSelection()
+}
+
+function selectAllItems() {
+  const paths = sortedItems.value.map(itemPath)
+  selectedPaths.value = paths
+  selectionMode.value = Boolean(paths.length)
+}
+
+function hasModifier(event: MouseEvent) {
+  return event.shiftKey || event.ctrlKey || event.metaKey
+}
+
+function onWindowKeydown(event: KeyboardEvent) {
+  if (!contentRef.value?.matches(':hover'))
+    return
+  const target = event.target as HTMLElement
+  if (target.closest('input, textarea, select, [contenteditable="true"]'))
+    return
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+    event.preventDefault()
+    selectAllItems()
+    return
+  }
+  if (event.key === 'Escape' && selectionMode.value) {
+    event.preventDefault()
+    clearSelectionMode()
+    return
+  }
+  if (event.key === 'Delete' && selectedItems.value.length) {
+    event.preventDefault()
+    deleteSelection()
+    return
+  }
+  if (event.key === 'Enter' && selectedItems.value.length === 1) {
+    event.preventDefault()
+    openFile(selectedItems.value[0])
+  }
+}
+
+function onContentClick(event: MouseEvent) {
+  if ((event.target as HTMLElement).closest('[data-path], input'))
+    return
+  clearSelectionMode()
 }
 
 function formatModified(value?: string) {
@@ -430,7 +599,8 @@ const isArchiveFile = (item: FsItem) => !item.is_dir && isArchiveFileName(item.n
 
 const itemOpenUrl = (item: FsItem) => openListItemOpenUrl(item, itemPath)
 const companionHref = (item: FsItem) => openListCompanionHref(item.name, itemPath(item), item.is_dir)
-const documentLink = (item: FsItem, path: string) => openListDocumentLink({ imageExts: openListFileKinds.image, item, path, videoExts: openListFileKinds.video })
+const companionDataHref = (item: FsItem) => shortcutSelecting.value ? undefined : companionHref(item)
+const documentLink = (item: FsItem, path: string) => openListDocumentLink({ item, path })
 
 async function resolveDownloadUrl(path: string, preferFresh = false) {
   const local = items.value.find(item => itemPath(item) === path)
@@ -441,8 +611,43 @@ async function resolveDownloadUrl(path: string, preferFresh = false) {
 
 const copyLink = (item: FsItem, path: string) => copyOpenListItemLink({ item, link: documentLink, path, t })
 
-async function imageUrlFor(item: FsItem) {
-  return resolveDownloadUrl(itemPath(item))
+function onItemDragStart(event: DragEvent, item: FsItem) {
+  if (!event.dataTransfer)
+    return
+  const items = isSelected(item) ? selectedItems.value : [item]
+  event.dataTransfer.setData('text/html', items.map(item => openListDragHtml(documentLink(item, itemPath(item)))).join('<br>'))
+  event.dataTransfer.effectAllowed = 'copy'
+}
+
+function toggleViewMode() {
+  viewMode.value = viewMode.value === 'image' ? 'list' : 'image'
+  localStorage.setItem(VIEW_MODE_KEY, viewMode.value)
+}
+
+function imagePreviewUrl(item: FsItem) {
+  return item.thumb || itemOpenUrl(item)
+}
+
+function imageThumbStyle(item: FsItem) {
+  return isImageFile(item) ? { aspectRatio: imageRatios.value[itemPath(item)] || '1 / 1' } : undefined
+}
+
+function itemHeight(item: FsItem) {
+  const ratio = imageRatios.value[itemPath(item)]?.split('/').map(Number)
+  return isImageFile(item) && ratio?.[0] && ratio?.[1] ? ratio[1] / ratio[0] : 1
+}
+
+function cacheImageRatio(item: FsItem, event: Event) {
+  const img = event.target as HTMLImageElement
+  if (!img.naturalWidth || !img.naturalHeight)
+    return
+  const key = itemPath(item)
+  const ratio = `${img.naturalWidth} / ${img.naturalHeight}`
+  if (imageRatios.value[key] === ratio)
+    return
+  imageRatios.value = { ...imageRatios.value, [key]: ratio }
+  // ponytail: local ratios; backend width/height would remove first-load square placeholders.
+  localStorage.setItem(IMAGE_RATIO_KEY, JSON.stringify(imageRatios.value))
 }
 
 async function openImageViewer(item: FsItem) {
@@ -451,7 +656,7 @@ async function openImageViewer(item: FsItem) {
     items: items.value.filter(isImageFile),
     keyOf: itemPath,
     onError: showErrorMessage,
-    urlOf: imageUrlFor,
+    urlOf: item => resolveDownloadUrl(itemPath(item)),
   })
 }
 
@@ -475,7 +680,7 @@ async function refresh() {
     return
   handleResp(payload, (data: any) => {
     items.value = data?.content || []
-    selectedPaths.value = selectedPaths.value.filter(path => items.value.some(item => itemKey(item) === path))
+    selectedPaths.value = selectedPaths.value.filter(path => items.value.some(item => itemPath(item) === path))
   })
   loading.value = false
 }
@@ -502,6 +707,7 @@ async function runSearch() {
         size: Number(entry.size || 0),
         is_dir: !!entry.is_dir,
         modified: entry.modified,
+        thumb: entry.thumb,
       }
     })
     searchActive.value = true
@@ -568,10 +774,6 @@ async function openSearchInput() {
 
 function closeSearchInput() {
   searchInputOpen.value = false
-}
-
-async function goParent() {
-  await goPath(parentPath(currentPath.value))
 }
 
 async function createFolder() {
@@ -650,10 +852,6 @@ function showTextPreview(name: string, content: string) {
   })
 }
 
-function selectedGroups() {
-  return selectedOpenListGroups(selectedItems.value, currentPath.value)
-}
-
 async function deleteSelection() {
   await deleteOpenListSelection({
     clearSelection,
@@ -694,7 +892,7 @@ async function runTransferAction(type: 'copy' | 'move') {
   const dstDir = normalizePath(String(value || ''))
   if (!dstDir)
     return
-  for (const group of selectedGroups()) {
+  for (const group of selectedOpenListGroups(selectedItems.value, currentPath.value)) {
     if (type === 'move' && group.dir === dstDir)
       continue
     const resp = type === 'copy'
@@ -845,8 +1043,28 @@ async function downloadSelection() {
     await downloadItem(item)
 }
 
+async function sendSelectionToMotrixNext() {
+  for (const item of downloadableSelection.value)
+    await sendOpenListItemToMotrixNext({ item, itemPath, tf })
+}
+
 function openSettings() {
   window._siyuan_cloud?.openDock?.()
+}
+
+function openToolbarMoreMenu(event: MouseEvent) {
+  const menu = new Menu('siyuan-cloud-file-toolbar')
+  moreToolbarActions.value.forEach((action) => {
+    if (moreToolbarSeparators.has(action.key))
+      menu.addSeparator({ id: `toolbar_${action.key}` })
+    menu.addItem({
+      icon: action.icon,
+      label: action.label,
+      disabled: action.disabled,
+      click: () => action.run(),
+    })
+  })
+  menu.open({ x: event.clientX, y: event.clientY })
 }
 
 function notifyChanged() {
@@ -887,7 +1105,7 @@ function openItemMenu(event: MouseEvent, item: FsItem) {
     copyLink,
     copySelection,
     deleteSelection,
-    downloadItem,
+    downloadItem: (target: FsItem) => isSelected(target) && downloadableSelection.value.length > 1 ? downloadSelection() : downloadItem(target),
     event,
     isSelected,
     item,
@@ -896,6 +1114,7 @@ function openItemMenu(event: MouseEvent, item: FsItem) {
     openFile,
     renameSelection,
     selectOnly,
+    sendToMotrixNext: (target: FsItem) => isSelected(target) && downloadableSelection.value.length > 1 ? sendSelectionToMotrixNext() : sendOpenListItemToMotrixNext({ item: target, itemPath, tf }),
     shareSelection,
     t,
     tf,
@@ -904,9 +1123,17 @@ function openItemMenu(event: MouseEvent, item: FsItem) {
 
 onMounted(() => {
   window.addEventListener('siyuan-cloud:changed', refresh)
+  window.addEventListener('keydown', onWindowKeydown)
+  gridResizeObserver = new ResizeObserver(([entry]) => {
+    gridColumnCount.value = Math.max(1, Math.floor(entry.contentRect.width / IMAGE_COLUMN_WIDTH))
+  })
+  if (contentRef.value)
+    gridResizeObserver.observe(contentRef.value)
   locatePath('/')
 })
 onBeforeUnmount(() => {
   window.removeEventListener('siyuan-cloud:changed', refresh)
+  window.removeEventListener('keydown', onWindowKeydown)
+  gridResizeObserver?.disconnect()
 })
 </script>

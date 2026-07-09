@@ -544,7 +544,7 @@ const buildDriverInfoMap = () => withAliases({
   ]), {
     check_status: true,
     no_upload: true,
-    note: "Runtime ports OpenList WPS login check, root/group listing, get/read/link, basic management, and storage details. Upload remains a structured placeholder.",
+    note: "Runtime ports OpenList WPS login check, root/group listing, get/read/link, basic management, and storage details. Upload remains disabled in the SiYuan kernel JavaScript runtime to avoid blocking the UI thread.",
   }),
   Local: configPatch(unsupported("Local", [
     rootPath("/"),

@@ -58,6 +58,7 @@ OpenList 上游 OneDrive 文档推荐优先使用在线 API 的默认应用获�
 
 - 当前运行时支持 token 刷新、列表、详情、读取、链接、管理和上传。
 - 小文件直接上传，大文件使用 upload session。
+- 开启 `enable_direct_upload` 后会暴露 OpenList `HttpDirect` 直传工具信息。
 - `disable_disk_usage` 可减少本地磁盘使用。
 
 ## 排查

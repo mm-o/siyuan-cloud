@@ -76,7 +76,6 @@ let openListOtherBody = null;
 const openListRenameBodies = [];
 const openListMoveBodies = [];
 const openListRemoveBodies = [];
-const s3ReadRanges = [];
 const s3PutUrls = [];
 
 const cloud189RsaKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 1024 });
@@ -226,20 +225,8 @@ globalThis.siyuan = {
           headers = { "Content-Length": "9", "Last-Modified": "Thu, 01 Jan 2026 00:00:00 GMT" };
         } else if (url.hostname === "s3.example.test" && req.method === "GET") {
           contentType = "text/plain";
-          const range = forwardedHeader("Range");
-          s3ReadRanges.push(range);
-          if (range === "bytes=0-2") {
-            status = 206;
-            headers = {
-              "Accept-Ranges": "bytes",
-              "Content-Length": "3",
-              "Content-Range": "bytes 0-2/9",
-            };
-            body = "s3";
-          } else {
-            headers = { "Accept-Ranges": "bytes", "Content-Length": "9" };
-            body = "s3 object";
-          }
+          headers = { "Accept-Ranges": "bytes", "Content-Length": "9" };
+          body = "s3 object";
         } else if (url.hostname === "webdav.example.test" && req.method === "PROPFIND") {
           contentType = "application/xml";
           const depth = (req.headers || []).map((item) => Object.entries(item)[0]).find(([key]) => key.toLowerCase() === "depth")?.[1] || "";
@@ -4141,21 +4128,24 @@ assert.equal(remoteS3LinkUrl.hostname, "s3.example.test");
 assert.equal(remoteS3LinkUrl.pathname, "/bucket/object.txt");
 assert.equal(remoteS3LinkUrl.searchParams.get("X-Amz-Algorithm"), "AWS4-HMAC-SHA256");
 assert.equal(remoteS3LinkUrl.searchParams.get("response-content-disposition"), "attachment; filename*=UTF-8''object.txt");
-const remoteS3ProxyRead = await text({
+assert.ok(remoteS3Link.data.url.indexOf("X-Amz-Algorithm=") < remoteS3Link.data.url.indexOf("response-content-disposition="));
+const remoteS3ProxyRead = await call({
   method: "GET",
   path: "/p/remote-s3/object.txt",
 });
-assert.equal(remoteS3ProxyRead.response.statusCode, 200);
-assert.equal(remoteS3ProxyRead.text, "s3 object");
-const remoteS3ProxyRangeRead = await text({
+assert.equal(remoteS3ProxyRead.statusCode, 200);
+assert.equal(remoteS3ProxyRead.body.proxy.url, "https://s3.example.test/bucket/object.txt");
+assert.match(remoteS3ProxyRead.body.proxy.headers.Authorization[0], /AWS4-HMAC-SHA256/);
+const remoteS3ProxyRangeRead = await call({
   headers: { Range: ["bytes=0-2"] },
   method: "GET",
   path: "/p/remote-s3/object.txt",
 });
-assert.equal(remoteS3ProxyRangeRead.response.statusCode, 206);
-assert.equal(remoteS3ProxyRangeRead.response.headers["Content-Range"][0], "bytes 0-2/9");
-assert.equal(remoteS3ProxyRangeRead.text, "s3");
-assert.equal(s3ReadRanges.includes("bytes=0-2"), true);
+assert.equal(remoteS3ProxyRangeRead.statusCode, 200);
+assert.equal(
+  Object.entries(remoteS3ProxyRangeRead.body.proxy.headers).find(([key]) => key.toLowerCase() === "range")?.[1][0],
+  "bytes=0-2",
+);
 const remoteS3DirectInfo = await json({
   body: { path: "/remote-s3/direct-upload.txt" },
   method: "POST",
