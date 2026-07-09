@@ -34,6 +34,21 @@ export const rawDownloadUrl = (storage, relPath, proxy = false) => {
   return `/plugin/private/siyuan-cloud${prefix}${normalizePath(storage.mount_path + "/" + relPath)}`;
 };
 
+export const headerValue = (headers = {}, name) => {
+  const target = String(name || "").toLowerCase();
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (String(key).toLowerCase() !== target) continue;
+    return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+  }
+  return "";
+};
+
+export const userAgentFromOptions = (options = {}, fallback = "") =>
+  options.userAgent
+  || headerValue(options.requestHeaders, "User-Agent")
+  || headerValue(options.headers, "User-Agent")
+  || fallback;
+
 export const persistAddition = async (storage) => {
   if (storage?.saveDriverStorage) await storage.saveDriverStorage(storage.addition_json);
 };

@@ -440,5 +440,22 @@
   "compactView": "Compact view",
   "comfortView": "Comfort view",
   "pluginHelp": "Siyuan Cloud docs",
-  "docEditWarning": "You are editing Siyuan Cloud docs. Please do not edit here, because changes made here will not be saved. Please take notes in a notebook you created yourself"
+  "docEditWarning": "You are editing Siyuan Cloud docs. Please do not edit here, because changes made here will not be saved. Please take notes in a notebook you created yourself",
+  "transferPanel": "Transfers",
+  "transferRunning": "{count} running",
+  "dropFilesHere": "Drop files here",
+  "uploading": "Uploading",
+  "downloading": "Downloading",
+  "downloadStarting": "Starting",
+  "processing": "Processing",
+  "saveAs": "Save as",
+  "clear": "Clear",
+  "done": "Done",
+  "sendToMotrixNext": "Send to Motrix Next",
+  "motrixNextStarted": "Sent to Motrix Next",
+  "motrixNextApiUrl": "Motrix Next API URL",
+  "motrixNextPublicBaseUrl": "Siyuan Cloud external URL",
+  "motrixNextApiSecret": "Motrix Next API secret",
+  "motrixNextApiSecretPlaceholder": "Paste Extension API secret",
+  "motrixNextUnavailable": "Motrix Next is unavailable"
 }

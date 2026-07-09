@@ -265,6 +265,7 @@ const buildDriverInfoMap = () => withAliases({
   ]), {
     link_cache_mode: "ua",
     no_upload: true,
+    prefer_proxy: true,
     note: "Runtime ports OpenList 115 Cloud cookie/QR-token login, list/get/read/link, basic management, and storage details. Upload/offline download remain structured placeholders.",
   }),
   "115 Open": configPatch(supported("115 Open", [
@@ -279,6 +280,7 @@ const buildDriverInfoMap = () => withAliases({
     default_root: "0",
     link_cache_mode: "ua",
     no_upload: true,
+    prefer_proxy: true,
     note: "Runtime ports OpenList 115 Open token refresh, list/get/read/link, basic management, details, and offline add. Upload remains a structured placeholder.",
   }),
   "115 Share": configPatch(supported("115 Share", [

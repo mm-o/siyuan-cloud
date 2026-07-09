@@ -46,7 +46,7 @@ This guide applies to `115 Cloud`.
 - After selecting `115 Cloud` in the mount form, click "Refresh QR code" to generate a QR code. After scan confirmation, Siyuan Cloud exchanges it for `cookie` and clears the temporary QR fields.
 - `qrcode_source` is used by the final QR confirmation endpoint `/app/1.0/{source}/1.0/login/qrcode`. The `linux` login app is no longer available on 115's side, so the form defaults to `web`; choose `android`, `ios`, or `tv` only when you need a specific client.
 - Upload and offline download remain structured placeholders.
-- Link cache is User-Agent aware.
+- Download links are User-Agent aware. Siyuan Cloud now passes the player/browser request `User-Agent` into the 115 `downurl` request and forwards the same `User-Agent` through `/d` and `/p`, matching OpenList's `LinkArgs.Header` flow.
 
 ## Troubleshooting
 
@@ -55,4 +55,5 @@ This guide applies to `115 Cloud`.
 | Missing account | Fill a valid `cookie`, or click "Refresh QR code" and scan again |
 | List fails | Check whether `root_folder_id` exists |
 | Playback or link resolution reports "pickcode cannot be empty" | Upgrade to the fixed runtime. The 115 `downurl` request must send the encrypted `data` field as URL-encoded form data so `+` is preserved as `%2B`. |
+| Playback returns upstream 403 from `115cdn.net` | Use `/p` or enable proxy for the mount, then retry after refreshing the page/player. 115 download URLs are bound to the request `User-Agent`; old direct URLs copied from a previous player session may expire or fail. |
 | Upload fails | 115 Cloud upload is not ported yet |

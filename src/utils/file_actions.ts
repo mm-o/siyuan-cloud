@@ -3,15 +3,18 @@ import {
   confirm,
   showMessage,
 } from 'siyuan'
-import { fsRemove } from '@/utils/api'
+import { fsRemove, resolveOpenListFile } from '@/utils/api'
 import {
+  escapeHtml,
   itemStableUrl,
-  triggerDownload,
+  promptText,
+  requireModule,
+  selectSavePath,
   type OpenListUrlItem,
 } from '@/utils/file_ui'
-import { escapeHtml } from '@/utils/file_ui'
 import { handleResp } from '@/utils/handle_resp'
-import { formatResourceUrlForMarkdown } from '@/utils/request'
+import { usePlugin } from '@/main'
+import { formatResourceUrlForMarkdown, openListJson, withOpenListAuthQuery, withOpenListHeaders } from '@/utils/request'
 import { createShareForPaths } from '@/utils/share'
 
 export interface OpenListFileItem {
@@ -26,6 +29,12 @@ export interface OpenListFileItem {
 }
 
 type TranslateFallback = (key: string, fallback: string) => string
+const MAX_DOWNLOADS = 2
+const MOTRIX_NEXT_PORT = 29110
+const MOTRIX_NEXT_DEFAULT_API = `http://127.0.0.1:${MOTRIX_NEXT_PORT}`
+const MOTRIX_NEXT_SETTINGS = 'siyuan-cloud-motrix-next.json'
+let activeDownloads = 0
+const queuedDownloads: Array<() => void> = []
 
 export const normalizeOpenListPath = (path: string) => {
   const input = path === undefined || path === null || path === '' ? '/' : String(path)
@@ -98,11 +107,283 @@ export async function deleteOpenListSelection(options: {
 export async function downloadOpenListItem<T extends OpenListFileItem>(options: {
   item: T
   itemPath: (item: T) => string
-  resolveUrl: (path: string) => Promise<string>
+  targetPath?: string
+  tf?: TranslateFallback
+  onProgress?: (progress: number) => void
+}) {
+  if (options.item.is_dir)
+    return 'cancelled'
+  const path = options.itemPath(options.item)
+  const targetPath = options.targetPath ?? await selectSavePath(options.item.name, {
+    cancel: options.tf?.('cancel', 'Cancel'),
+    confirm: options.tf?.('download', 'Download'),
+    title: options.tf?.('saveAs', 'Save as'),
+  })
+  if (!targetPath)
+    return 'cancelled'
+  await enqueueDownload(async () => {
+    const file = await resolveOpenListFile(path)
+    await streamDownloadToFile(file.d_url || file.url, targetPath, options.onProgress, Number(file.size || options.item.size || 0))
+  })
+  return 'saved'
+}
+
+function enqueueDownload(task: () => Promise<void>) {
+  return new Promise<void>((resolve, reject) => {
+    const run = async () => {
+      activeDownloads += 1
+      try {
+        await task()
+        resolve()
+      } catch (error) {
+        reject(error)
+      } finally {
+        activeDownloads -= 1
+        queuedDownloads.shift()?.()
+      }
+    }
+    activeDownloads < MAX_DOWNLOADS ? run() : queuedDownloads.push(run)
+  })
+}
+
+async function streamDownloadToFile(url: string, targetPath: string, onProgress?: (progress: number) => void, totalHint = 0) {
+  const fs = requireModule('fs')
+  const path = requireModule('path')
+  if (!fs?.createWriteStream || !fs?.promises || !path?.dirname)
+    throw new Error('local filesystem is unavailable')
+  const copied = await copyFileUrl(url, targetPath, fs, path, onProgress)
+  if (copied)
+    return
+  const response = await fetch(url, { headers: downloadHeaders(url) })
+  if (!response.ok)
+    throw new Error(`HTTP ${response.status}`)
+  if (!response.body?.getReader)
+    throw new Error('streaming download is unavailable')
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+  const tempPath = `${targetPath}.siyuan-cloud-download`
+  const stream = fs.createWriteStream(tempPath)
+  const write = (chunk: Uint8Array) => new Promise<void>((resolve, reject) => {
+    stream.write(chunk, (error: Error | null | undefined) => error ? reject(error) : resolve())
+  })
+  const reader = response.body.getReader()
+  const total = Number(response.headers.get('content-length') || totalHint || 0)
+  let loaded = 0
+  let completed = false
+  let lastProgress = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        completed = true
+        break
+      }
+      loaded += value.byteLength
+      await write(value)
+      if (total) {
+        const progress = Math.min(99, Math.round((loaded / total) * 100))
+        if (progress !== lastProgress) {
+          lastProgress = progress
+          onProgress?.(progress)
+        }
+      }
+      if (total && loaded >= total)
+        break
+    }
+    if (!completed)
+      await reader.cancel().catch(() => undefined)
+    await new Promise<void>((resolve, reject) => stream.end((error: Error | null | undefined) => error ? reject(error) : resolve()))
+    await fs.promises.rename(tempPath, targetPath)
+    onProgress?.(100)
+  } catch (error) {
+    stream.destroy()
+    await fs.promises.rm(tempPath, { force: true }).catch(() => undefined)
+    throw error
+  }
+}
+
+async function copyFileUrl(url: string, targetPath: string, fs: any, path: any, onProgress?: (progress: number) => void) {
+  if (!String(url || '').toLowerCase().startsWith('file://'))
+    return false
+  const fileURLToPath = requireModule('url')?.fileURLToPath
+  if (!fileURLToPath)
+    return false
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+  await fs.promises.copyFile(fileURLToPath(url), targetPath)
+  onProgress?.(100)
+  return true
+}
+
+function downloadHeaders(url: string) {
+  const target = new URL(url, location.href)
+  return target.origin === location.origin ? withOpenListHeaders() : {}
+}
+
+function isPluginPrivateRoute(url: string) {
+  const target = new URL(url, location.href)
+  return target.origin === location.origin && target.pathname.startsWith('/plugin/private/siyuan-cloud/')
+}
+
+export async function sendOpenListItemToMotrixNext<T extends OpenListFileItem>(options: {
+  item: T
+  itemPath: (item: T) => string
+  tf: TranslateFallback
 }) {
   if (options.item.is_dir)
     return
-  triggerDownload(await options.resolveUrl(options.itemPath(options.item)), options.item.name)
+  const file = await resolveOpenListFile(options.itemPath(options.item))
+  const settings = await loadMotrixNextSettings()
+  let url = withOpenListAuthQuery(new URL(file.d_url || file.url, location.href).href)
+  url = await prepareMotrixNextDownloadUrl(url, settings, options.tf) || url
+  const payload = {
+    url,
+    finalUrl: url,
+    filename: options.item.name,
+    userAgent: navigator.userAgent,
+  }
+  let response = await postMotrixNextAdd(payload, settings)
+  if (response.status === 401) {
+    settings.apiSecret = await promptText({
+      title: options.tf('motrixNextApiSecret', 'Motrix Next API secret'),
+      value: settings.apiSecret,
+      placeholder: options.tf('motrixNextApiSecretPlaceholder', 'Paste Extension API secret'),
+      cancelText: options.tf('cancel', 'Cancel'),
+      confirmText: options.tf('confirm', 'Confirm'),
+    }) || ''
+    if (!settings.apiSecret)
+      return
+    response = await postMotrixNextAdd(payload, settings)
+  }
+  if (!response.ok && response.status !== 401) {
+    const apiUrl = await promptText({
+      title: options.tf('motrixNextApiUrl', 'Motrix Next API URL'),
+      value: settings.apiUrl,
+      placeholder: MOTRIX_NEXT_DEFAULT_API,
+      cancelText: options.tf('cancel', 'Cancel'),
+      confirmText: options.tf('confirm', 'Confirm'),
+    }) || ''
+    if (apiUrl) {
+      settings.apiUrl = normalizeMotrixNextApiUrl(apiUrl)
+      response = await postMotrixNextAdd(payload, settings)
+    }
+  }
+  if (response.ok) {
+    await saveMotrixNextSettings(settings)
+    showMessage(options.tf('motrixNextStarted', 'Sent to Motrix Next'), 2000)
+    return
+  }
+  if (!isPluginPrivateRoute(url)) {
+    openMotrixNextProtocol(url, options.item.name)
+    return
+  }
+  throw new Error(response.message || options.tf('motrixNextUnavailable', 'Motrix Next is unavailable'))
+}
+
+async function postMotrixNextAdd(payload: unknown, settings: MotrixNextSettings) {
+  const apiUrl = normalizeMotrixNextApiUrl(settings.apiUrl)
+  const secret = settings.apiSecret
+  const response = await postMotrixNextKernel(apiUrl, payload, secret)
+  if (response.ok || response.status === 401)
+    return response
+  if (apiUrl !== MOTRIX_NEXT_DEFAULT_API)
+    return response
+  return await postMotrixNextBrowser(apiUrl, payload, secret)
+}
+
+async function postMotrixNextKernel(apiUrl: string, payload: unknown, secret: string) {
+  try {
+    const response = await openListJson('/api/fs/motrix_next/add', { api_url: apiUrl, api_secret: secret, payload })
+    return { ok: true, status: 200, message: response.message || '' }
+  } catch (error) {
+    return motrixNextErrorResponse(error)
+  }
+}
+
+async function postMotrixNextBrowser(apiUrl: string, payload: unknown, secret: string) {
+  try {
+    const response = await fetch(`${apiUrl}/add`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    })
+    return {
+      ok: response.ok,
+      status: response.status,
+      message: response.ok ? '' : await response.text().catch(() => `HTTP ${response.status}`),
+    }
+  } catch (error) {
+    return { ok: false, status: 0, message: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function motrixNextErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  const status = Number(message.match(/(?:HTTP|code)\s+(\d{3})/i)?.[1] || 0)
+  return { ok: false, status, message }
+}
+
+function openMotrixNextProtocol(url: string, filename: string) {
+  location.href = `motrixnext://new?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`
+}
+
+type MotrixNextSettings = {
+  apiUrl: string
+  apiSecret: string
+  publicBaseUrl: string
+}
+
+function normalizeMotrixNextApiUrl(value = '') {
+  return String(value || MOTRIX_NEXT_DEFAULT_API).trim().replace(/\/+$/, '') || MOTRIX_NEXT_DEFAULT_API
+}
+
+async function loadMotrixNextSettings(): Promise<MotrixNextSettings> {
+  try {
+    const settings = await usePlugin().loadData(MOTRIX_NEXT_SETTINGS)
+    return {
+      apiUrl: normalizeMotrixNextApiUrl(settings?.apiUrl),
+      apiSecret: String(settings?.apiSecret || ''),
+      publicBaseUrl: normalizeMotrixNextPublicBaseUrl(settings?.publicBaseUrl),
+    }
+  } catch {
+    return { apiUrl: MOTRIX_NEXT_DEFAULT_API, apiSecret: '', publicBaseUrl: '' }
+  }
+}
+
+async function saveMotrixNextSettings(settings: MotrixNextSettings) {
+  await usePlugin().saveData(MOTRIX_NEXT_SETTINGS, {
+    apiUrl: normalizeMotrixNextApiUrl(settings.apiUrl),
+    apiSecret: settings.apiSecret,
+    publicBaseUrl: normalizeMotrixNextPublicBaseUrl(settings.publicBaseUrl),
+  })
+}
+
+async function prepareMotrixNextDownloadUrl(url: string, settings: MotrixNextSettings, tf: TranslateFallback) {
+  if (normalizeMotrixNextApiUrl(settings.apiUrl) === MOTRIX_NEXT_DEFAULT_API || !isPluginPrivateRoute(url))
+    return url
+  const target = new URL(url)
+  if (!['127.0.0.1', 'localhost', '::1'].includes(target.hostname))
+    return url
+  if (!settings.publicBaseUrl) {
+    settings.publicBaseUrl = normalizeMotrixNextPublicBaseUrl(await promptText({
+      title: tf('motrixNextPublicBaseUrl', 'Siyuan Cloud external URL'),
+      value: location.origin,
+      placeholder: 'http://192.168.1.2:6806',
+      cancelText: tf('cancel', 'Cancel'),
+      confirmText: tf('confirm', 'Confirm'),
+    }) || '')
+  }
+  if (!settings.publicBaseUrl)
+    return null
+  const base = new URL(settings.publicBaseUrl)
+  target.protocol = base.protocol
+  target.host = base.host
+  return target.href
+}
+
+function normalizeMotrixNextPublicBaseUrl(value = '') {
+  return String(value || '').trim().replace(/\/+$/, '')
 }
 
 export async function copyOpenListItemLink<T extends OpenListUrlItem & { name: string }>(options: {
@@ -191,6 +472,17 @@ export function openOpenListFileItemMenu(options: {
       icon: 'iconDownload',
       label: options.tf('download', 'Download'),
       click: () => options.downloadItem(options.item),
+    })
+    menu.addItem({
+      icon: 'iconDownload',
+      label: options.tf('sendToMotrixNext', 'Send to Motrix Next'),
+      click: async () => {
+        try {
+          await sendOpenListItemToMotrixNext({ item: options.item, itemPath: options.itemPath, tf: options.tf })
+        } catch (error) {
+          showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
+        }
+      },
     })
     menu.addItem({
       icon: 'iconLink',

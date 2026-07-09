@@ -11,6 +11,7 @@ import {
   fsTorrentGenerate,
   fsTorrentParse,
 } from '@/utils/api'
+import { testOpenListDirect } from '@/utils/openlist_direct'
 import { fetchKernelStatus } from '@/utils/status'
 
 type Status = 'checking' | 'online' | 'offline'
@@ -643,6 +644,8 @@ export function useDock(plugin: Plugin) {
   }
 
   async function tryDriverTest(addition: Record<string, any>) {
+    if (await testOpenListDirect(verifyDriver.value, addition))
+      return t('driverTestPassed')
     const payload = await requestDriverTest(addition, driverHasQrSession(addition) ? { type: 'qrcode' } : undefined)
     if (payload.code === 501 || payload.message?.includes('does not expose a test method yet') || payload.message?.includes('not found'))
       return ''

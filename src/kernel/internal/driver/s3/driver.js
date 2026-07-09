@@ -1,6 +1,6 @@
 import { basename, dirname, normalizePath } from "../../model/path.js";
-import { forwardProxy, joinUrl } from "../http.js";
-import { hmacSha256, sha256Hex, signAwsV4 } from "../aws4.js";
+import { forwardProxy } from "../http.js";
+import { encodeRfc3986, hmacSha256, sha256Hex, signAwsV4 } from "../aws4.js";
 
 const tagText = (xml, name) => String(xml || "").match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`, "i"))?.[1] || "";
 const decodeXml = (value) => String(value || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
@@ -48,7 +48,8 @@ const s3Url = (addition, key = "", query = "") => {
   const forcePathStyle = boolValue(addition.force_path_style || addition.ForcePathStyle, false);
   const path = forcePathStyle ? normalizePath(`/${bucket}/${key}`) : normalizePath(`/${key}`);
   const base = forcePathStyle ? endpoint : endpoint.replace("://", `://${bucket}.`);
-  return `${joinUrl(base, path)}${query ? `?${query}` : ""}`;
+  const encodedPath = path.split("/").filter(Boolean).map(encodeRfc3986).join("/");
+  return `${base}/${encodedPath}${query ? `?${query}` : ""}`;
 };
 
 const rewriteHost = (url, host) => {
@@ -80,7 +81,6 @@ const directUploadUrl = (addition, key = "") => {
 
 const amzDate = (date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
 const dateStamp = (date) => amzDate(date).slice(0, 8);
-const encodeRfc3986 = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 const presignPutObject = (addition, key) => {
   const now = new Date();
@@ -224,6 +224,25 @@ const signedGetLink = (addition, key, fileName) => {
     header: {},
   };
 };
+
+const signedProxyGetLink = (addition, key, extraHeaders = {}) => {
+  const url = s3Url(addition, key);
+  return {
+    url,
+    header: signAwsV4({
+      accessKeyId: addition.access_key_id,
+      body: "",
+      headers: extraHeaders,
+      method: "GET",
+      region: addition.region || defaultRegion,
+      secretAccessKey: addition.secret_access_key,
+      sessionToken: addition.session_token || "",
+      url,
+    }),
+    method: "GET",
+  };
+};
+
 
 const listQuery = ({ continuationToken = "", marker = "", prefix, startAfter = "", version }) => {
   const params = new URLSearchParams();
@@ -451,11 +470,7 @@ export const createS3Driver = ({ client }) => ({
   },
   async read(storage, relPath, options = {}) {
     const range = headerValue(options.requestHeaders, "Range");
-    return signedRequest(client, storage.addition_json, "GET", keyFor(relPath), {
-      contentType: "",
-      headers: range ? { Range: range } : {},
-      responseEncoding: "base64",
-    });
+    return { link: signedProxyGetLink(storage.addition_json, keyFor(relPath), range ? { Range: range } : {}) };
   },
   async mkdir(storage, relPath) {
     const addition = storage.addition_json;

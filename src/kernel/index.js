@@ -275,6 +275,7 @@ import { createWebDavServer } from "./server/webdav.js";
     const token = (
       requestHeader(request, "X-Siyuan-Cloud-Authorization")
       || requestHeader(request, "Authorization")
+      || queryValue(request, "siyuan_cloud_token")
     ).replace(/^Bearer\s+/i, "");
     const context = (user, auth = "token") => {
       const normalized = normalizeUser(user || defaultGuestUser(), Math.max(0, Number(user?.id || 2) - 1));
@@ -341,6 +342,20 @@ import { createWebDavServer } from "./server/webdav.js";
       ogg: "audio/ogg",
     };
     return types[ext] || "application/octet-stream";
+  };
+
+  const downloadDisposition = (path) => {
+    const name = encodeURIComponent(basename(path) || "download");
+    return `attachment; filename="${name}"; filename*=UTF-8''${name}`;
+  };
+
+  const withDownloadDisposition = (response, filePath, enabled) => {
+    if (!enabled) return response;
+    response.headers = {
+      ...(response.headers || {}),
+      "Content-Disposition": [downloadDisposition(filePath)],
+    };
+    return response;
   };
 
   const saveState = async (domains) => {
@@ -547,33 +562,39 @@ import { createWebDavServer } from "./server/webdav.js";
   };
 
   const readFileResponse = async (filePath, request, readOptions = {}) => {
+    const asDownload = readOptions.shareDownload || readOptions.directDownload;
     if (isWorkspacePath(filePath)) {
       const file = await workspaceReadText(filePath);
       if (!file.ok) return textResponse(file.text || "not found", file.status || 404);
-      return textResponse(file.text, 200, file.contentType);
+      return withDownloadDisposition(textResponse(file.text, 200, file.contentType), filePath, asDownload);
     }
     const mount = driverRuntime.resolve(state.storages, filePath);
     if (mount && mount.driver.read) {
       try {
         const options = proxyReadOptions(request, filePath);
+        const signedProxyDownload = ["S3", "Doge"].includes(String(mount.storage?.driver || ""));
+        if (asDownload && mount.driver.link && !signedProxyDownload && !shareDownloadShouldProxy(mount, filePath)) {
+          const data = await mount.driver.link(mount.storage, mount.relPath, options);
+          return redirectResponse(linkFromDriverData(data).url);
+        }
         const data = await mount.driver.read(mount.storage, mount.relPath, options);
         if (data.redirect) return redirectResponse(data.redirect);
         if (data.link) {
           const link = linkFromDriverData(data);
           if ((readOptions.shareDownload || readOptions.directDownload) && !shareDownloadShouldProxy(mount, filePath)) return redirectResponse(link.url);
-          return proxy(null, link, { request_header: options.requestHeaders }, !!mount.storage.proxy_range);
+          return withDownloadDisposition(proxy(null, link, { request_header: options.requestHeaders }, !!mount.storage.proxy_range), filePath, asDownload);
         }
         if (String(data.bodyEncoding || "").startsWith("base64")) {
           const headers = rawForwardHeaders(data.headers);
           if (!headers["Accept-Ranges"] && !headers["accept-ranges"]) headers["Accept-Ranges"] = ["bytes"];
-          return rawResponse(
+          return withDownloadDisposition(rawResponse(
             base64ToArrayBuffer(data.body || ""),
             data.status || 200,
             data.contentType || fileMime(filePath),
             headers,
-          );
+          ), filePath, asDownload);
         }
-        return textResponse(data.body || "", data.status || 200, data.contentType || "application/octet-stream");
+        return withDownloadDisposition(textResponse(data.body || "", data.status || 200, data.contentType || "application/octet-stream"), filePath, asDownload);
       } catch (error) {
         return textResponse(error.message || "driver read failed", 502);
       }
@@ -581,13 +602,13 @@ import { createWebDavServer } from "./server/webdav.js";
     const entry = state.entries[filePath];
     if (!entry || entry.is_dir) return textResponse("not found", 404);
     if (String(entry.body_encoding || "").startsWith("base64")) {
-      return rawResponse(
+      return withDownloadDisposition(rawResponse(
         base64ToArrayBuffer(entry.content || ""),
         200,
         entry.mime || "application/octet-stream",
-      );
+      ), filePath, asDownload);
     }
-    return textResponse(entry.content || "", 200, entry.mime || "application/octet-stream");
+    return withDownloadDisposition(textResponse(entry.content || "", 200, entry.mime || "application/octet-stream"), filePath, asDownload);
   };
 
   const handleWebDav = createWebDavServer({

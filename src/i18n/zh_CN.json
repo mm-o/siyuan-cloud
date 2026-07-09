@@ -440,5 +440,22 @@
   "compactView": "紧凑视图",
   "comfortView": "常规视图",
   "pluginHelp": "思盘说明文档",
-  "docEditWarning": "你正在编辑思盘文档，请不要在这里编辑，因为在这里编辑的内容不会被保存，请在你自己创建的笔记本中记录笔记"
+  "docEditWarning": "你正在编辑思盘文档，请不要在这里编辑，因为在这里编辑的内容不会被保存，请在你自己创建的笔记本中记录笔记",
+  "transferPanel": "传输",
+  "transferRunning": "{count} 个传输中",
+  "dropFilesHere": "拖放文件到这里",
+  "uploading": "上传中",
+  "downloading": "下载中",
+  "downloadStarting": "准备中",
+  "processing": "处理中",
+  "saveAs": "保存到",
+  "clear": "清除",
+  "done": "完成",
+  "sendToMotrixNext": "发送到 Motrix Next",
+  "motrixNextStarted": "已发送到 Motrix Next",
+  "motrixNextApiUrl": "Motrix Next API 地址",
+  "motrixNextPublicBaseUrl": "思盘外部访问地址",
+  "motrixNextApiSecret": "Motrix Next API 密钥",
+  "motrixNextApiSecretPlaceholder": "粘贴扩展 API 密钥",
+  "motrixNextUnavailable": "无法连接 Motrix Next"
 }

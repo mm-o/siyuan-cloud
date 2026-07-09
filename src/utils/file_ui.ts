@@ -69,13 +69,8 @@ export function proxyPreviewUrl(path: string, absolute = true) {
   return toUrl(`${privateBase}/p${path}`, { escapeHash: true, escapeQuestion: true })
 }
 
-export function downloadPreviewUrl(path: string, absolute = true) {
-  const toUrl = absolute ? openListAbsoluteUrl : openListStableUrl
-  return toUrl(`${privateBase}/d${path}`, { escapeHash: true, escapeQuestion: true })
-}
-
 function readableOpenListRoute(route: 'd' | 'p', path: string) {
-  return `${privateBase}/${route}${String(path || '').replace(/#/g, '%23').replace(/\?/g, '%3F')}`
+  return `${location.origin}${privateBase}/${route}${String(path || '').replace(/#/g, '%23').replace(/\?/g, '%3F')}`
 }
 
 export function itemOpenUrl<T extends OpenListUrlItem>(item: T, path: PathInput<T>) {
@@ -103,16 +98,51 @@ export function openListCompanionHref(name: string, path: string, isDir = false)
   return companionHrefForKind(path, openListFileKind(name, isDir))
 }
 
-export function triggerDownload(url: string, filename?: string) {
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.target = '_blank'
-  anchor.rel = 'noopener'
-  if (filename)
-    anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
+export function requireModule(id: string) {
+  try {
+    const req = (window as any).require || (globalThis as any).require || Function('return typeof require === "function" ? require : null')()
+    return typeof req === 'function' ? req(id) : null
+  } catch {
+    return null
+  }
+}
+
+export async function selectSavePath(filename?: string, labels: {
+  cancel?: string
+  confirm?: string
+  title?: string
+} = {}) {
+  const electron = requireModule('electron') || requireModule('@electron/remote')
+  const ipcRenderer = electron?.ipcRenderer
+  const path = requireModule('path')
+  const os = requireModule('os')
+  const defaultPath = path?.join && os?.homedir
+    ? path.join(os.homedir(), 'Downloads', filename || 'download')
+    : filename || 'download'
+  if (ipcRenderer?.invoke) {
+    const result = await ipcRenderer.invoke('siyuan-get', {
+      cmd: 'showSaveDialog',
+      defaultPath,
+      title: labels.title || 'Save as',
+    })
+    return result?.canceled ? '' : String(result?.filePath || '')
+  }
+  const dialog = electron?.dialog || electron?.remote?.dialog
+  if (dialog) {
+    if (typeof dialog.showSaveDialogSync === 'function')
+      return String(dialog.showSaveDialogSync({ defaultPath }) || '')
+    if (typeof dialog.showSaveDialog === 'function') {
+      const result = await dialog.showSaveDialog({ defaultPath })
+      return result?.canceled ? '' : String(result?.filePath || '')
+    }
+  }
+  return await promptText({
+    cancelText: labels.cancel || 'Cancel',
+    confirmText: labels.confirm || 'Download',
+    placeholder: defaultPath,
+    title: labels.title || 'Save as',
+    value: defaultPath,
+  })
 }
 
 const videoPreviewTemplateOrder = ['FHD', 'HD', 'SD', 'LD', 'QHD', '4K']

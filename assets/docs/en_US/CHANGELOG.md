@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 0.5.1
+
+### Added
+
+- Added a Motrix Next handoff for file downloads. File context menus can now send downloads through a configurable Extension HTTP API URL, kernel-side forwarding avoids browser CORS issues, and the API secret plus external Siyuan Cloud URL are saved in plugin data.
+- Added a clean hover-only transfer area in the file manager: drag files onto the lower-right drop zone to upload, then view recent upload/download progress, success, and error states without keeping extra UI visible.
+
+### Fixed
+
+- Fixed the built-in transfer flow by replacing fake download progress with real stream progress, keeping finished/error states visible, throttling concurrent built-in downloads, and using temporary files until downloads complete.
+- Fixed OpenList/AList connection compatibility for private and LAN mounts by preserving the frontend-direct path where SiYuan blocks backend SSRF-style requests, while keeping the standard OpenList-compatible backend route for normal mounts.
+- Fixed 115 and S3 download parity with OpenList: 115 downloads now keep browser/player `User-Agent` alignment, and S3/Doge downloads use backend AWS-signed proxy reads with Range support instead of fragile presigned redirects.
+- Fixed 115 playback header parity: `/d` and `/p` now pass the player/browser `User-Agent` into 115 Cloud / 115 Open link resolution and forward the same header to the upstream download URL, reducing `115cdn.net` 403 responses caused by mismatched or stale direct links.
+- Fixed 115 Open token refresh bursts by sharing one refresh operation per mount when concurrent API or Range requests hit an expired token.
+- Clarified the 115 Open upstream `refresh frequently` prompt so the UI explains token-refresh rate limiting and tells users to wait or replace the existing mount tokens instead of recreating the mount.
+- Fixed mount creation and update safety: adding a storage at an existing mount path now returns a conflict instead of silently overwriting the old mount, and storage mutations refresh the latest config before saving.
+- Fixed S3-compatible object URLs for Chinese names and other special characters by using AWS RFC 3986 path encoding before signing, avoiding `SignatureDoesNotMatch` on upload and management operations.
+- Fixed companion-plugin file links and explicit downloads: PDF/EPUB/audio links now use absolute plugin URLs instead of `file:///plugin/...`, `/d` responses declare attachment downloads, and download actions temporarily bypass companion preview interception.
+
 ## 0.5.0
 
 ### Added

@@ -93,6 +93,11 @@ export const createFsHandlers = ({
 
   const proxyRawUrl = (path) => `/plugin/private/siyuan-cloud/p${normalizePath(path)}`;
   const rawUrlForStorage = (storage, path, linkUrl = "") => storageShouldProxy(storage) ? proxyRawUrl(path) : linkUrl;
+  const motrixNextApiUrl = (value) => {
+    const apiUrl = String(value || `http://127.0.0.1:29110`).trim().replace(/\/+$/, "");
+    if (!/^https?:\/\/[^/\s]+/i.test(apiUrl)) throw new Error("Motrix Next API URL must start with http:// or https://");
+    return apiUrl;
+  };
 
   const requestMeta = (request) => request?.request || request?.Request || {};
   const requestHeaders = (request) => requestMeta(request)?.headers || requestMeta(request)?.Headers || {};
@@ -1216,15 +1221,21 @@ export const createFsHandlers = ({
       const mount = driverRuntime.resolve(state.storages, path);
       if (mount && (mount.driver.link || mount.driver.read)) {
         try {
+          const readOptions = {
+            requestHeaders: requestHeaders(request),
+            userAgent: requestHeader(request, "User-Agent"),
+          };
+          const obj = await mount.driver.get?.(mount.storage, mount.relPath, { skipLink: true });
           const data = mount.driver.link
-            ? await mount.driver.link(mount.storage, mount.relPath, {})
-            : await mount.driver.read(mount.storage, mount.relPath, {});
+            ? await mount.driver.link(mount.storage, mount.relPath, readOptions)
+            : await mount.driver.read(mount.storage, mount.relPath, readOptions);
           const link = linkFromDriverData(data);
+          const contentLength = Number(link.content_length || obj?.size || 0);
           return jsonResponse(success({
             url: link.url,
             header: link.header,
             method: link.method,
-            content_length: link.content_length,
+            content_length: contentLength,
             raw_url: rawUrlForStorage(mount.storage, path, link.url),
             provider: mount.storage.driver,
           }));
@@ -1237,6 +1248,24 @@ export const createFsHandlers = ({
       }
       if (!state.entries[path]) return jsonResponse(failure("object not found", 404));
       return jsonResponse(success({ url: "/plugin/private/siyuan-cloud/d" + path }));
+    },
+    "POST /api/fs/motrix_next/add": async (request) => {
+      const req = await parseJson(request);
+      try {
+        const apiUrl = motrixNextApiUrl(req.api_url || req.apiUrl);
+        const payload = req.payload || {};
+        const resp = await forwardProxy(client, `${apiUrl}/add`, {
+          allowErrorStatus: true,
+          body: payload,
+          headers: req.api_secret || req.apiSecret ? { Authorization: `Bearer ${req.api_secret || req.apiSecret}` } : {},
+          method: "POST",
+          timeout: 10000,
+        });
+        if (Number(resp.status) >= 200 && Number(resp.status) < 300) return jsonResponse(success(resp.body || ""));
+        return jsonResponse(failure(String(resp.body || `HTTP ${resp.status}`), Number(resp.status) || 502), Number(resp.status) || 502);
+      } catch (error) {
+        return jsonResponse(failure(error.message || "Motrix Next is unavailable", 502), 502);
+      }
     },
     "POST /api/fs/add_offline_download": async (request) => {
       const req = await parseJson(request);

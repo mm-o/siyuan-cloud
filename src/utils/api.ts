@@ -169,24 +169,48 @@ async function fsMkdirLocalFirst(path: string) {
     || r.post('/fs/mkdir', { path })
 }
 
-export const fsWriteFile = async (path: string, file: File | Blob | string): Promise<OpenListResp> => {
+export const fsUploadFile = async (
+  path: string,
+  file: File,
+  onProgress?: (progress: number) => void,
+): Promise<OpenListResp> => {
   const local = await writeLocal(path, file)
-  if (local)
+  if (local) {
+    onProgress?.(100)
     return local
+  }
   const direct = await writeOpenListDirect(path, file)
-  if (direct)
+  if (direct) {
+    onProgress?.(100)
     return direct
-  if (typeof file === 'string')
-    return r.put('/fs/put', file, { headers: { 'File-Path': encodeURIComponent(path), Overwrite: 'false' } })
+  }
   const form = new FormData()
-  form.append('file', file, file instanceof File ? file.name : 'file')
-  const response = await fetch(`${privateBase}/api/fs/form`, {
-    method: 'PUT',
-    headers: withOpenListHeaders({ 'File-Path': encodeURIComponent(path), Overwrite: 'false' }),
-    body: form,
+  form.append('file', file, file.name)
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `${privateBase}/api/fs/form`)
+    const headers = withOpenListHeaders({ 'File-Path': encodeURIComponent(path), Overwrite: 'false' })
+    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, String(value)))
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total)
+        onProgress?.(Math.min(95, Math.round((event.loaded / event.total) * 95)))
+    }
+    xhr.onload = () => {
+      let payload: OpenListResp | null = null
+      try {
+        payload = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300 && payload) {
+        onProgress?.(100)
+        resolve(payload)
+      } else {
+        resolve({ code: xhr.status || -1, message: payload?.message || xhr.responseText || `HTTP ${xhr.status}`, data: null })
+      }
+    }
+    xhr.onerror = () => resolve({ code: -1, message: 'upload failed', data: null })
+    xhr.onabort = () => resolve({ code: -1, message: 'upload canceled', data: null })
+    xhr.send(form)
   })
-  const payload = await response.json()
-  return response.ok ? payload : { code: response.status, message: payload?.message || `HTTP ${response.status}`, data: null }
 }
 
 export const fsRename = (

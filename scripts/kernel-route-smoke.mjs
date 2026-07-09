@@ -77,6 +77,7 @@ const openListRenameBodies = [];
 const openListMoveBodies = [];
 const openListRemoveBodies = [];
 const s3ReadRanges = [];
+const s3PutUrls = [];
 
 const cloud189RsaKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 1024 });
 const cloud189RsaPubKey = cloud189RsaKeyPair.publicKey.export({ format: "der", type: "spki" }).toString("base64");
@@ -213,7 +214,11 @@ globalThis.siyuan = {
         const forwardedHeader = (name) => (req.headers || [])
           .map((item) => Object.entries(item)[0])
           .find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || "";
-        if (url.hostname === "s3.example.test" && req.method === "GET" && url.searchParams.get("delimiter") === "/") {
+        if (url.hostname === "s3.example.test" && req.method === "PUT") {
+          s3PutUrls.push(req.url);
+          status = 200;
+          body = "";
+        } else if (url.hostname === "s3.example.test" && req.method === "GET" && url.searchParams.get("delimiter") === "/") {
           contentType = "application/xml";
           body = `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Contents><Key>remote-s3/object.txt</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><Size>9</Size></Contents></ListBucketResult>`;
         } else if (url.hostname === "s3.example.test" && req.method === "HEAD") {
@@ -3410,8 +3415,7 @@ const storageCreateAgain = await json({
   method: "POST",
   path: "/api/admin/storage/create",
 });
-assert.equal(storageCreateAgain.code, 200);
-assert.equal(storageCreateAgain.data.id, storageCreate.data.id);
+assert.equal(storageCreateAgain.code, 409);
 const storageList = await json({
   method: "GET",
   path: "/api/admin/storage/list",
@@ -4167,6 +4171,20 @@ assert.equal(remoteS3DirectUrl.searchParams.get("X-Amz-Credential")?.startsWith(
 assert.equal(remoteS3DirectUrl.searchParams.get("X-Amz-Expires"), "14400");
 assert.equal(remoteS3DirectUrl.searchParams.get("X-Amz-SignedHeaders"), "host");
 assert.equal(Boolean(remoteS3DirectUrl.searchParams.get("X-Amz-Signature")), true);
+const remoteS3SpecialName = "投资/奥本海默传 “原子弹之父”的美国悲剧 (凯·伯德 马丁·J.舍温) (z-l v3.7.1).txt";
+const remoteS3SpecialPut = await json({
+  body: {
+    content: "special s3 upload",
+    path: `/remote-s3/${remoteS3SpecialName}`,
+  },
+  method: "PUT",
+  path: "/api/fs/put",
+});
+assert.equal(remoteS3SpecialPut.code, 200);
+const remoteS3SpecialUrl = new URL(s3PutUrls.at(-1));
+assert.equal(remoteS3SpecialUrl.pathname.includes("("), false);
+assert.equal(remoteS3SpecialUrl.pathname.includes("%28"), true);
+assert.equal(remoteS3SpecialUrl.pathname.includes("%29"), true);
 await json({
   body: {
     driver: "115 Cloud",

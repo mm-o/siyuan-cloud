@@ -30,7 +30,15 @@ function parseAddition(addition: any) {
 
 function addressOf(addition: Record<string, any>) {
   const raw = String(addition.url || addition.address || addition.Address || '').trim().replace(/\/+$/, '')
-  return raw.replace(/\/(?:admin|@manage)$/i, '')
+  const address = raw.replace(/\/(?:admin|@manage)$/i, '')
+  try {
+    const url = new URL(address)
+    if (url.hostname === '0.0.0.0')
+      url.hostname = '127.0.0.1'
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return address
+  }
 }
 
 function isDirectHost(address: string) {
@@ -44,6 +52,12 @@ function isDirectHost(address: string) {
     return false
   }
 }
+
+const mountOf = (addition: Record<string, any>, mountPath = '/'): DirectMount => ({
+  addition,
+  address: addressOf(addition),
+  mountPath: normalizeOpenListPath(mountPath),
+})
 
 function directPath(path: string, mount: DirectMount) {
   const clean = normalizeOpenListPath(path)
@@ -94,6 +108,20 @@ async function login(mount: DirectMount) {
   mount.addition.token = payload.data?.token || ''
 }
 
+export async function testOpenListDirect(driver: string, addition: Record<string, any>) {
+  const mount = mountOf(addition)
+  if (!DIRECT_DRIVERS.has(String(driver || '').toLowerCase()) || !isDirectHost(mount.address))
+    return false
+  await request(mount, '/fs/list', {
+    page: 1,
+    per_page: 1,
+    path: normalizeOpenListPath(addition.root_folder_path || addition.root_folder_id || '/'),
+    password: addition.meta_password || '',
+    refresh: false,
+  })
+  return true
+}
+
 async function directMounts() {
   if (cachedMounts)
     return cachedMounts
@@ -101,28 +129,37 @@ async function directMounts() {
   const storages = payload?.data?.content || payload?.data || []
   cachedMounts = storages
     .filter((item: any) => !item.disabled && DIRECT_DRIVERS.has(String(item.driver || '').toLowerCase()))
-    .map((item: any) => {
-      const addition = parseAddition(item.addition)
-      return {
-        addition,
-        address: addressOf(addition),
-        mountPath: normalizeOpenListPath(item.mount_path || '/'),
-      }
-    })
-    .filter((item: DirectMount) => item.mountPath !== '/' && item.address && isDirectHost(item.address))
+    .map((item: any) => mountOf(parseAddition(item.addition), item.mount_path || '/'))
+    .filter((item: DirectMount) => isDirectHost(item.address))
     .sort((a: DirectMount, b: DirectMount) => b.mountPath.length - a.mountPath.length)
   return cachedMounts
 }
 
 async function resolveDirectMount(path: string) {
   const clean = normalizeOpenListPath(path || '/')
-  return (await directMounts()).find(item => clean === item.mountPath || clean.startsWith(`${item.mountPath}/`)) || null
+  return (await directMounts()).find(item => clean === item.mountPath || clean.startsWith(`${item.mountPath.replace(/\/$/, '')}/`)) || null
 }
 
 async function sameDirectMount(srcPath: string, dstPath: string) {
   const src = await resolveDirectMount(srcPath)
   const dst = await resolveDirectMount(dstPath)
   return src && dst === src ? src : null
+}
+
+async function mutateDirect(path: string, run: (mount: DirectMount) => Promise<unknown>) {
+  const mount = await resolveDirectMount(path)
+  if (!mount)
+    return null
+  await run(mount)
+  return ok(null)
+}
+
+async function transferDirect(api: '/fs/copy' | '/fs/move', srcDir: string, dstDir: string, names: string[]) {
+  const mount = await sameDirectMount(srcDir, dstDir)
+  if (!mount)
+    return null
+  await request(mount, api, { src_dir: directPath(srcDir, mount), dst_dir: directPath(dstDir, mount), names })
+  return ok({ tasks: [] })
 }
 
 export async function clearOpenListDirectCache() {
@@ -186,43 +223,23 @@ export async function getOpenListDirect(path: string) {
 }
 
 export async function mkdirOpenListDirect(path: string) {
-  const mount = await resolveDirectMount(path)
-  if (!mount)
-    return null
-  await request(mount, '/fs/mkdir', { path: directPath(path, mount) })
-  return ok(null)
+  return mutateDirect(path, mount => request(mount, '/fs/mkdir', { path: directPath(path, mount) }))
 }
 
 export async function renameOpenListDirect(path: string, name: string) {
-  const mount = await resolveDirectMount(path)
-  if (!mount)
-    return null
-  await request(mount, '/fs/rename', { path: directPath(path, mount), name })
-  return ok(null)
+  return mutateDirect(path, mount => request(mount, '/fs/rename', { path: directPath(path, mount), name }))
 }
 
 export async function removeOpenListDirect(dir: string, names: string[]) {
-  const mount = await resolveDirectMount(dir)
-  if (!mount)
-    return null
-  await request(mount, '/fs/remove', { dir: directPath(dir, mount), names })
-  return ok(null)
+  return mutateDirect(dir, mount => request(mount, '/fs/remove', { dir: directPath(dir, mount), names }))
 }
 
 export async function moveOpenListDirect(srcDir: string, dstDir: string, names: string[]) {
-  const mount = await sameDirectMount(srcDir, dstDir)
-  if (!mount)
-    return null
-  await request(mount, '/fs/move', { src_dir: directPath(srcDir, mount), dst_dir: directPath(dstDir, mount), names })
-  return ok({ tasks: [] })
+  return transferDirect('/fs/move', srcDir, dstDir, names)
 }
 
 export async function copyOpenListDirect(srcDir: string, dstDir: string, names: string[]) {
-  const mount = await sameDirectMount(srcDir, dstDir)
-  if (!mount)
-    return null
-  await request(mount, '/fs/copy', { src_dir: directPath(srcDir, mount), dst_dir: directPath(dstDir, mount), names })
-  return ok({ tasks: [] })
+  return transferDirect('/fs/copy', srcDir, dstDir, names)
 }
 
 export async function writeOpenListDirect(path: string, data: string | File | Blob = '') {

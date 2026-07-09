@@ -118,6 +118,8 @@ Quark/UC 普通版上传已对齐 OpenList `drivers/quark_uc` 的 `Put -> upPre 
 
 百度 `download_api=crack_video` 的本地策略保持简单：只有视频/音频走 OpenList `linkCrackVideo`，其它文件走 official，避免 PDF、EPUB、图片等非媒体文件误进视频 API。
 
+115 Cloud / 115 Open 的播放链路继续贴近 OpenList `LinkArgs.Header`：`/d`、`/p` 入口会把播放器/浏览器请求头传给 driver，115 driver 从中取 `User-Agent` 请求 `downurl`，再把同一个 `User-Agent` 交给 `common.Proxy`。115 Open 的 token refresh 也按 storage 做并发合并，避免播放器多路 Range 请求同时撞到过期 token 时重复消耗旧 `refresh_token`。
+
 `src/kernel/internal/driver/common.js` 提供轻量 storage-scoped list/file/link cache，用来贴近 OpenList `internal/op/cache.go` 的 `dirCache` / `linkCache` 行为。BaiduNetdisk、AliyundriveOpen、Quark/UC、QuarkOpen、QuarkTV/UCTV 等播放路径必须复用对象解析和下载链接，避免播放器每个 Range 请求都重新逐层 list、重新取直链；管理操作后清理对应 storage cache。
 
 189CloudPC 和 189CloudTV 的迁移对照 `docs/OpenList-main/drivers/189pc` 与 `docs/OpenList-main/drivers/189_tv`：已接入 OpenList `List`、`Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename` 的签名请求边界和 addition 字段。189CloudPC 已接 PC 二维码登录、`getSessionForPC.action` session 刷新和扫码 cookie 保持；189CloudTV 已接 OpenList TV 二维码登录：`getQrCodeUUID.action` 获取 UUID，Dock 前端生成二维码并通过 `/api/admin/driver/test` 返回 `need verify`，扫码后轮询 `qrcodeLoginResult.action` 写回 `access_token`，再用 `loginFamilyMerge.action` 刷新 `sessionKey/sessionSecret`。二维码生成留在前端，避免 SiYuan 3.6.5 kernel runtime 缺少 `TextEncoder` 时失败。189CloudPC/TV 都复刻 OpenList `Init` 的个人/家庭云根目录规范化，并在家庭云 `family_id` 为空时调用 `getFamilyList.action` 自动写回。189CloudPC 密码登录、PC AES `params`、上传、家庭云中转、rapid/CAS/torrent 仍是结构化占位，后续继续按上游相邻文件复制。189PC/TV 的 session 签名请求实现分别放在 `src/kernel/internal/driver/189pc/session.js` 和 `src/kernel/internal/driver/189_tv/session.js`，不再使用根级 189 公共文件，确保每个驱动目录可以独立对照 OpenList 源目录继续迁移。

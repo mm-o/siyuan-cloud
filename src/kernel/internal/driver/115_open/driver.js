@@ -7,6 +7,7 @@ import {
   parseTime,
   persistAddition,
   rawDownloadUrl,
+  userAgentFromOptions,
 } from "../common.js";
 import { remoteJson } from "../http.js";
 
@@ -16,6 +17,7 @@ const UA = "Mozilla/5.0 (Macintosh; Apple macOS 26_1_0) AppleWebKit/537.36 (KHTM
 const MAX_PAGE_SIZE = 1150;
 const cache = createStorageCache();
 const limiterState = new WeakMap();
+const refreshPromises = new WeakMap();
 
 const formBody = (data) => new URLSearchParams(Object.entries(data)
   .filter(([, value]) => value !== undefined && value !== null && value !== "")
@@ -47,8 +49,11 @@ const unwrapData = (payload) => {
   return Object.hasOwn(checked || {}, "data") ? checked.data : checked;
 };
 
-const refreshToken = async (client, storage) => {
+const doRefreshToken = async (client, storage, previousRefreshToken = "") => {
   const addition = storage.addition_json;
+  if (previousRefreshToken && refreshTokenValue(addition) && refreshTokenValue(addition) !== previousRefreshToken) {
+    return accessToken(addition);
+  }
   const refreshToken = refreshTokenValue(addition);
   if (!refreshToken) throw new Error("empty refresh_token");
   const resp = unwrapData(await remoteJson(client, `${AUTH_API}/open/refreshToken`, {
@@ -63,6 +68,15 @@ const refreshToken = async (client, storage) => {
   return resp.access_token;
 };
 
+const refreshToken = async (client, storage, previousRefreshToken = "") => {
+  const existing = refreshPromises.get(storage);
+  if (existing) return existing;
+  const promise = doRefreshToken(client, storage, previousRefreshToken)
+    .finally(() => refreshPromises.delete(storage));
+  refreshPromises.set(storage, promise);
+  return promise;
+};
+
 const request115Open = async (client, storage, pathname, {
   body,
   method = "GET",
@@ -74,19 +88,21 @@ const request115Open = async (client, storage, pathname, {
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== "") target.searchParams.set(key, String(value));
   }
+  const tokenBeforeRequest = accessToken(storage.addition_json);
+  const refreshTokenBeforeRequest = refreshTokenValue(storage.addition_json);
   const payload = await remoteJson(client, target.toString(), {
     allowErrorStatus: true,
     body: body ? formBody(body) : undefined,
     contentType: body ? "application/x-www-form-urlencoded" : "application/json;charset=UTF-8",
     headers: {
-      Authorization: accessToken(storage.addition_json) ? `Bearer ${accessToken(storage.addition_json)}` : "",
+      Authorization: tokenBeforeRequest ? `Bearer ${tokenBeforeRequest}` : "",
       "User-Agent": userAgent,
     },
     method,
   });
   const code = Number(payload?.code ?? 0);
   if (retry && (code === 99 || String(code).startsWith("401"))) {
-    await refreshToken(client, storage);
+    await refreshToken(client, storage, refreshTokenBeforeRequest);
     return request115Open(client, storage, pathname, { body, method, query, retry: false, userAgent });
   }
   return unwrapData(payload);
@@ -263,7 +279,7 @@ export const create115OpenDriver = ({ client }) => ({
     await waitLimit(storage);
     const file = await resolveFile(client, storage, relPath);
     if (isDir(file)) throw new Error("not file");
-    const userAgent = options.userAgent || options.headers?.["User-Agent"] || UA;
+    const userAgent = userAgentFromOptions(options, UA);
     return { link: await linkFor(client, storage, file, userAgent) };
   },
 

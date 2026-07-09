@@ -147,6 +147,50 @@
       </div>
 
     </div>
+    <div
+      class="ol-file-transfer"
+      :class="{ 'ol-file-transfer--active': transferItems.length, 'ol-file-transfer--dragging': transferDragging }"
+      @dragenter.prevent="transferDragging = true"
+      @dragover.prevent="transferDragging = true"
+      @dragleave="onTransferDragLeave"
+      @drop.prevent="onTransferDrop"
+    >
+      <div class="ol-file-transfer__head">
+        <svg><use :xlink:href="transferIcon" /></svg>
+        <b>{{ transferTitle }}</b>
+        <button
+          v-if="finishedTransferCount"
+          class="block__icon fn__flex-center ariaLabel"
+          type="button"
+          :aria-label="tf('clear', 'Clear')"
+          @click.stop="clearFinishedTransfers"
+        >
+          <svg><use xlink:href="#iconTrashcan" /></svg>
+        </button>
+      </div>
+      <div class="ol-file-transfer__hint">
+        {{ tf('dropFilesHere', 'Drop files here') }}
+      </div>
+      <div
+        v-if="transferItems.length"
+        class="ol-file-transfer__list"
+      >
+        <div
+          v-for="item in visibleTransferItems"
+          :key="item.id"
+          class="ol-file-transfer__item"
+          :class="`ol-file-transfer__item--${item.status}`"
+        >
+          <div class="ol-file-transfer__line">
+            <span>{{ item.name }}</span>
+            <em>{{ item.message }}</em>
+          </div>
+          <div class="ol-file-transfer__bar">
+            <i :style="{ width: item.progress === null ? undefined : `${item.progress}%` }" />
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -173,7 +217,7 @@ import {
   fsNewFile,
   fsRename,
   fsSearch,
-  fsWriteFile,
+  fsUploadFile,
   resolveOpenListFile,
 } from '@/utils/api'
 import { handleResp, handleRespWithNotifySuccess } from '@/utils/handle_resp'
@@ -210,6 +254,7 @@ import {
   openListFileKinds,
   openOpenListMediaPreview,
   promptText,
+  selectSavePath,
   showErrorMessage,
 } from '@/utils/file_ui'
 
@@ -224,6 +269,15 @@ interface FsItem {
   url?: string
 }
 
+interface TransferItem {
+  id: number
+  name: string
+  progress: number | null
+  status: 'running' | 'done' | 'error'
+  type: 'upload' | 'download'
+  message: string
+}
+
 const plugin = usePlugin()
 const currentPath = ref('/')
 const searchInput = ref('')
@@ -236,7 +290,10 @@ const uploadInputRef = ref<HTMLInputElement>()
 const selectedPaths = ref<string[]>([])
 const selectionMode = ref(false)
 const focusPath = ref('')
+const transferDragging = ref(false)
+const transferItems = ref<TransferItem[]>([])
 let refreshSeq = 0
+let transferSeq = 0
 const sortedItems = computed(() =>
   [...items.value].sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name)),
 )
@@ -258,6 +315,17 @@ const selectedSummary = computed(() =>
   selectedItems.value.length
     ? tf('selectedCount', '{count} selected').replace('{count}', String(selectedItems.value.length))
     : tf('name', 'Name'),
+)
+const visibleTransferItems = computed(() => transferItems.value.slice(-5).reverse())
+const runningTransferCount = computed(() => transferItems.value.filter(item => item.status === 'running').length)
+const finishedTransferCount = computed(() => transferItems.value.filter(item => item.status !== 'running').length)
+const transferIcon = computed(() =>
+  visibleTransferItems.value.some(item => item.type === 'download') ? '#iconDownload' : '#iconUpload',
+)
+const transferTitle = computed(() =>
+  runningTransferCount.value
+    ? tf('transferRunning', '{count} running').replace('{count}', String(runningTransferCount.value))
+    : tf('transferPanel', 'Transfers'),
 )
 const toolbarActions = computed(() => [
   { key: 'refresh', icon: 'iconRefresh', label: tf('refresh', 'Refresh'), run: refresh },
@@ -662,31 +730,115 @@ function openUpload() {
   uploadInputRef.value?.click()
 }
 
+function pushTransfer(type: 'upload' | 'download', name: string) {
+  const item: TransferItem = {
+    id: ++transferSeq,
+    name,
+    progress: null,
+    status: 'running',
+    type,
+    message: type === 'upload' ? tf('uploading', 'Uploading') : tf('downloadStarting', 'Starting'),
+  }
+  transferItems.value.push(item)
+  return item
+}
+
+function finishTransfer(item: TransferItem, status: TransferItem['status'], message: string, progress = item.progress) {
+  item.status = status
+  item.message = message
+  item.progress = progress
+}
+
+function clearFinishedTransfers() {
+  transferItems.value = transferItems.value.filter(item => item.status === 'running')
+}
+
+function onTransferDragLeave(event: DragEvent) {
+  const current = event.currentTarget as HTMLElement
+  const next = event.relatedTarget as Node | null
+  if (!next || !current.contains(next))
+    transferDragging.value = false
+}
+
 async function uploadFile(file: File) {
-  const payload = await fsWriteFile(joinPath(currentPath.value, file.name), file)
-  if (payload.code !== 200)
-    throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+  const item = pushTransfer('upload', file.name)
+  try {
+    const payload = await fsUploadFile(joinPath(currentPath.value, file.name), file, (progress) => {
+      item.progress = progress
+      item.message = progress >= 95 && progress < 100 ? tf('processing', 'Processing') : `${progress}%`
+    })
+    if (payload.code !== 200)
+      throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+    finishTransfer(item, 'done', tf('done', 'Done'), 100)
+    return true
+  } catch (error) {
+    finishTransfer(item, 'error', error instanceof Error ? error.message : String(error))
+    return false
+  }
+}
+
+async function uploadFiles(files: File[]) {
+  if (!files.length)
+    return
+  let failed = false
+  for (const file of files)
+    failed = !await uploadFile(file) || failed
+  if (!failed)
+    showMessage(tf('uploadDone', 'Upload completed'), 2000)
+  await refresh()
+  notifyChanged()
+}
+
+async function onTransferDrop(event: DragEvent) {
+  transferDragging.value = false
+  const files = Array.from(event.dataTransfer?.files || [])
+  await uploadFiles(files)
 }
 
 async function onUploadChange(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files || [])
-  if (!files.length)
-    return
   try {
-    for (const file of files)
-      await uploadFile(file)
-    showMessage(tf('uploadDone', 'Upload completed'), 2000)
-    await refresh()
-    notifyChanged()
-  } catch (error) {
-    showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
+    await uploadFiles(files)
   } finally {
     input.value = ''
   }
 }
 
-const downloadItem = (item: FsItem) => downloadOpenListItem({ item, itemPath, resolveUrl: resolveDownloadUrl })
+async function downloadItem(item: FsItem) {
+  let transfer: TransferItem | null = null
+  try {
+    const targetPath = await selectSavePath(item.name, {
+      cancel: tf('cancel', 'Cancel'),
+      confirm: tf('download', 'Download'),
+      title: tf('saveAs', 'Save as'),
+    })
+    if (!targetPath)
+      return
+    transfer = pushTransfer('download', item.name)
+    transfer.message = tf('downloading', 'Downloading')
+    const result = await downloadOpenListItem({
+      item,
+      itemPath,
+      tf,
+      targetPath,
+      onProgress: (progress) => {
+        transfer.progress = progress
+        transfer.message = `${progress}%`
+      },
+    })
+    if (result === 'cancelled') {
+      transferItems.value = transferItems.value.filter(current => current.id !== transfer.id)
+      return
+    }
+    finishTransfer(transfer, 'done', tf('done', 'Done'), 100)
+  } catch (error) {
+    if (transfer)
+      finishTransfer(transfer, 'error', error instanceof Error ? error.message : String(error))
+    else
+      showErrorMessage(error)
+  }
+}
 
 async function downloadSelection() {
   for (const item of downloadableSelection.value)

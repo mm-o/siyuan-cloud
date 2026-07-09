@@ -1,5 +1,5 @@
 import { basename, normalizePath } from "../../model/path.js";
-import { rawDownloadUrl } from "../common.js";
+import { rawDownloadUrl, userAgentFromOptions } from "../common.js";
 import { remoteJsonWithMeta } from "../http.js";
 import { clearQrKeys, runQrLogin } from "../qr.js";
 import { decode115, encode115, generateKey } from "./m115.js";
@@ -441,7 +441,7 @@ export const create115Driver = ({ client }) => ({
       const detailed = await getFileById(client, storage, obj.id);
       Object.assign(obj, fileToObj({ ...item, ...(detailed || {}) }, relPath, storage));
     }
-    const userAgent = options.userAgent || UA;
+    const userAgent = userAgentFromOptions(options, UA);
     const info = await requestDownloadInfo(client, storage, obj, userAgent);
     return {
       link: {

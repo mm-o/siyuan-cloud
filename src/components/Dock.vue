@@ -765,7 +765,15 @@ function clearTreeSelection() {
 }
 
 async function downloadTreeItem(item: DockTreeItem) {
-  await downloadOpenListItem({ item, itemPath: treeItemPath, resolveUrl: resolveDownloadUrl })
+  try {
+    const tf = (key: string, fallback: string) => {
+      const value = t(key)
+      return value === key ? fallback : value
+    }
+    await downloadOpenListItem({ item, itemPath: treeItemPath, tf })
+  } catch (error) {
+    showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
+  }
 }
 
 async function browseTreeArchive(item: DockTreeItem) {

@@ -82,7 +82,7 @@ export const hmacSha256 = (key, message) => {
 
 const amzDate = (date) => date.toISOString().replace(/[:-]|\.\d{3}/g, "");
 const dateStamp = (date) => amzDate(date).slice(0, 8);
-const encodeRfc3986 = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+export const encodeRfc3986 = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 export const signAwsV4 = ({ accessKeyId, body = "", headers = {}, method, region, secretAccessKey, service = "s3", sessionToken = "", url }) => {
   const parsed = new URL(url);

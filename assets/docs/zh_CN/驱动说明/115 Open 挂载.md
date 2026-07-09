@@ -109,7 +109,8 @@ https://115.com/?cid=249163533602609229&offset=0&tab=&mode=wangpan
 
 - OpenList 文档说明：115 的 token 刷新不需要 AppKey，并且有基于 IP 的频控。
 - OpenList 文档中的“使用其他 APP ID 获取刷新令牌”和“手机扫码授权 PKCE 模式”仍标注为尚未实现。
-- 思盘会在 115 Open 接口返回鉴权过期时尝试刷新 `access_token` / `refresh_token`，并保存回挂载配置。
+- 思盘会在 115 Open 接口返回鉴权过期时尝试刷新 `access_token` / `refresh_token`，并保存回挂载配置。同一个挂载的并发播放/列表请求会共享一次刷新，避免一批 Range 请求反复消耗同一个旧 `refresh_token`。
+- 下载链接会按 User-Agent 区分。运行时会把播放器/浏览器请求里的 `User-Agent` 传给 115 Open `downurl`，并在 `/d`、`/p` 代理播放时继续转发同一个请求头，保持与 OpenList `LinkArgs.Header` 一致。
 - 当前上传尚未接入，上传失败时请先使用其他已支持上传的驱动。
 
 ## 排查
@@ -119,4 +120,6 @@ https://115.com/?cid=249163533602609229&offset=0&tab=&mode=wangpan
 | 找不到目录 | 检查 `root_folder_id` 是否为 115 网页 URL 中正确的 `cid` |
 | `no auth` | 重新获取 `access_token` 和 `refresh_token`，并确认旧授权没有被撤销 |
 | Refresh Token 失效 | 同一应用重复获取第三次 token 会让第一次 token 失效，重新保存最新 token |
+| 播放时频繁刷新 token | 请升级到已修复版本。并发请求现在会按挂载共享一次 token 刷新；若仍频繁出现，通常是保存的 `refresh_token` 已经失效或被撤销。 |
+| 播放返回 `115cdn.net` 上游 403 | 优先使用 `/p` 或打开挂载代理，然后刷新页面/播放器重试。115 下载直链会绑定请求 `User-Agent`，从旧播放器会话复制出的直链可能过期或失效。 |
 | 上传失败 | 当前 `115 Open` 上传尚未接入 |

@@ -359,6 +359,7 @@
     --ol-file-indent: 8px;
     --ol-file-size: 96px;
     --ol-file-modified: 19ch;
+    position: relative;
     min-height: 0;
     overflow: hidden;
   }
@@ -450,10 +451,172 @@
     gap: 8px;
   }
 
+  .ol-file-transfer {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: grid;
+    width: min(320px, calc(100% - 24px));
+    height: 44px;
+    max-height: 44px;
+    box-sizing: border-box;
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+    border: 1px dashed var(--b3-border-color);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--b3-theme-background) 94%, transparent);
+    box-shadow: var(--b3-dialog-shadow);
+    opacity: 0;
+    pointer-events: auto;
+    transform: translateY(8px);
+    transition: opacity 0.16s ease, transform 0.16s ease, width 0.16s ease, max-height 0.16s ease, padding 0.16s ease;
+  }
+
+  .ol-file-transfer:hover,
+  .ol-file-transfer--active,
+  .ol-file-transfer--dragging {
+    width: min(320px, calc(100% - 24px));
+    height: auto;
+    max-height: min(280px, calc(100% - 24px));
+    gap: 6px;
+    padding: 8px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .ol-file-transfer::before {
+    position: absolute;
+    inset: -18px;
+    content: "";
+  }
+
+  .ol-file-transfer--dragging {
+    border-color: var(--b3-theme-primary);
+    background: color-mix(in srgb, var(--b3-theme-primary) 12%, var(--b3-theme-background));
+  }
+
+  .ol-file-transfer__head,
+  .ol-file-transfer__line {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ol-file-transfer__head {
+    min-height: 24px;
+
+    svg {
+      width: 16px;
+      height: 16px;
+      color: var(--b3-theme-primary);
+    }
+
+    b {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      color: var(--b3-theme-on-surface);
+      font-size: 12px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .ol-file-transfer__hint {
+    color: var(--b3-theme-on-surface-light);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .ol-file-transfer__list {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+    overflow: auto;
+  }
+
+  .ol-file-transfer__item {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .ol-file-transfer__line {
+    font-size: 12px;
+
+    span,
+    em {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    span {
+      flex: 1;
+      color: var(--b3-theme-on-surface);
+      font-style: normal;
+    }
+
+    em {
+      max-width: 42%;
+      color: var(--b3-theme-on-surface-light);
+      font-style: normal;
+    }
+  }
+
+  .ol-file-transfer__bar {
+    height: 3px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--b3-theme-surface-lighter);
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--b3-theme-primary);
+      transition: width 0.16s ease;
+    }
+  }
+
+  .ol-file-transfer__item--done .ol-file-transfer__bar i {
+    background: var(--b3-theme-success);
+  }
+
+  .ol-file-transfer__item--error .ol-file-transfer__bar i {
+    background: var(--b3-theme-error);
+  }
+
+  .ol-file-transfer__item--running .ol-file-transfer__bar i:not([style]) {
+    width: 40%;
+    animation: ol-file-transfer-indeterminate 1s ease-in-out infinite;
+  }
+
+  @keyframes ol-file-transfer-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(250%);
+    }
+  }
+
   @media (max-width: 520px) {
     .ol-file-tab {
       --ol-file-size: 76px;
       --ol-file-modified: 128px;
+    }
+
+    .ol-file-transfer {
+      right: 8px;
+      bottom: 8px;
+      width: calc(100% - 16px);
     }
   }
 }

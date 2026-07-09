@@ -109,7 +109,8 @@ The folder's `root_folder_id` is:
 
 - OpenList notes that refreshing 115 tokens does not require AppKey and is subject to IP-based rate limiting.
 - OpenList still marks "use another APP ID to get refresh token" and "mobile QR authorization PKCE mode" as not implemented.
-- Siyuan Cloud retries token refresh when the 115 Open API reports an expired authorization, then saves the updated `access_token` / `refresh_token` back to the mount configuration.
+- Siyuan Cloud retries token refresh when the 115 Open API reports an expired authorization, then saves the updated `access_token` / `refresh_token` back to the mount configuration. Concurrent playback/list requests for the same mount share one refresh operation, so a burst of Range requests does not repeatedly spend the same old `refresh_token`.
+- Download links are User-Agent aware. The runtime passes the player/browser request `User-Agent` into 115 Open `downurl` and forwards the same header through `/d` and `/p`, matching OpenList's `LinkArgs.Header` flow.
 - Upload is not wired yet; use another upload-capable driver when you need uploads.
 
 ## Troubleshooting
@@ -119,4 +120,6 @@ The folder's `root_folder_id` is:
 | Folder not found | Check whether `root_folder_id` is the correct `cid` from the 115 web URL |
 | `no auth` | Get new `access_token` and `refresh_token`, and confirm the app authorization was not revoked |
 | Refresh Token expired | Getting a third token for the same app invalidates the first token; save the latest token |
+| Frequent refresh during playback | Upgrade to the fixed runtime. Concurrent requests now share one token refresh per mount; if it still happens, the saved `refresh_token` is probably already invalid or revoked. |
+| Playback returns upstream 403 from `115cdn.net` | Use `/p` or enable proxy for the mount, then retry after refreshing the page/player. 115 download URLs are bound to the request `User-Agent`; old direct URLs copied from a previous player session may expire or fail. |
 | Upload fails | `115 Open` upload is not wired yet |

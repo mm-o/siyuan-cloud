@@ -28,6 +28,16 @@ export function withOpenListHeaders(headers?: HeadersInit) {
   return merged
 }
 
+export function withOpenListAuthQuery(url: string) {
+  if (!openListAuthToken)
+    return url
+  const target = new URL(url, location.href)
+  if (target.origin !== location.origin || !target.pathname.startsWith(`${privateBase}/`))
+    return target.href
+  target.searchParams.set('siyuan_cloud_token', openListAuthToken)
+  return target.href
+}
+
 function jsonHeaders(headers?: HeadersInit) {
   return withOpenListHeaders({
     'Content-Type': 'application/json',

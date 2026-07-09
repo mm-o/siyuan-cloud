@@ -114,6 +114,7 @@
 
 - 已把 SiYuan PR #17748 的 kernel plugin `body.proxy` 能力写入文档：思源内核侧校验 `http/https` 和 `GET/HEAD`，过滤 hop-by-hop header，使用 SSRF-safe dialer，不自动解压，服务端受控跟随下载重定向并保留 `Range` / `User-Agent` 等代理请求头，最后以流式方式复制最终上游状态、安全响应头和 body，并过滤上游 `Set-Cookie`。
 - `src/kernel/server/common/proxy.js` 进一步对齐 OpenList `common.Proxy`：合并浏览器/player 请求头和 driver `model.Link` header，保留 `Range` / `If-Range` 等播放关键头，按大小写去重，并过滤 `Connection` 声明的逐跳头。
+- 115 Cloud / 115 Open 播放取链进一步对齐 OpenList `LinkArgs.Header`：`/d`、`/p` 会把播放器/浏览器 `User-Agent` 传给 115 `downurl` 并转发同一个 header 给上游下载直链；115 Open 同一挂载的并发 token refresh 会合并为一次，减少播放器 Range 请求导致的 refresh burst 和旧 `refresh_token` 重复使用。
 - `/api/fs/link.raw_url` 与 `/api/fs/get.raw_url` 统一按 OpenList 代理策略返回：`web_proxy` / `PreferProxy` / `OnlyProxy` / `NoLinkURL` 返回 `/plugin/private/siyuan-cloud/p/<path>`，否则保留 driver `Link()` URL。
 - Dock 迁移进度新增 `streaming-proxy` 阶段；smoke test 新增 OneDrive 直链 raw_url 和 Baidu 代理 raw_url 的覆盖，防止后续回退到全量 `/p` 或 per-driver 媒体补丁。
 

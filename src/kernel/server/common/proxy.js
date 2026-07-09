@@ -80,15 +80,18 @@ export const proxy = (_ctx, link, file, _proxyRange) => {
 };
 
 export const proxyReadOptions = (request) => {
+  const headers = requestHeader(request);
+  const userAgent = Object.entries(headers || {}).find(([key]) => String(key).toLowerCase() === "user-agent")?.[1];
   return {
     headers: {},
     proxyHeaders: {},
-    requestHeaders: requestHeader(request),
+    requestHeaders: headers,
+    userAgent: Array.isArray(userAgent) ? String(userAgent[0] || "") : String(userAgent || ""),
   };
 };
 
 export const shouldProxy = (storage, config = {}, filename = "") => {
-  if (config.only_proxy || config.no_link_url || storage?.web_proxy) return true;
+  if (config.only_proxy || config.no_link_url || config.prefer_proxy || storage?.web_proxy) return true;
   const ext = String(basename(filename || "")).split(".").pop().toLowerCase();
   return ["m3u8", "url"].includes(ext);
 };

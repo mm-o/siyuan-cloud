@@ -134,6 +134,10 @@ export const createAdminHandlers = ({
     };
   };
   const isLegacyKernelStorage = (storage) => storage?.driver === "SiYuanKernel";
+  const mountPathExists = (mountPath, exceptId = 0) => {
+    const target = normalizePath(mountPath || "/");
+    return state.storages.some((item) => Number(item.id) !== Number(exceptId) && normalizePath(item.mount_path || "/") === target);
+  };
   const nextUserId = () => Math.max(0, ...state.users.map((item) => Number(item.id || 0))) + 1;
   const userById = (id) => state.users.find((item) => Number(item.id) === Number(id));
   const userList = () => state.users.map(sanitizeUser);
@@ -224,32 +228,15 @@ export const createAdminHandlers = ({
       return jsonResponse(success(storageResp(state.storages.find((item) => item.id === id) || state.storages[0])));
     },
     "POST /api/admin/storage/create": async (request) => {
+      await refreshConfig();
       const req = await parseJson(request);
-      const mountPath = normalizePath(req.mount_path || req.mountPath || "");
-      const existing = mountPath && state.storages.find((item) => item.mount_path === mountPath);
-      if (existing) {
-        const driver = req.driver || existing.driver || "SiYuanWorkspace";
-        Object.assign(existing, {
-          order: Number(req.order ?? existing.order ?? 0),
-          driver,
-          cache_expiration: Number(req.cache_expiration ?? existing.cache_expiration ?? 30),
-          custom_cache_policies: req.custom_cache_policies ?? existing.custom_cache_policies ?? "",
-          status: req.status || existing.status || "work",
-          addition: storageAddition(req.addition, existing.addition),
-          remark: req.remark ?? existing.remark ?? "",
-          modified: now(),
-          disabled: !!req.disabled,
-          disable_index: boolValue(req.disable_index, existing.disable_index),
-          ...proxyDefaults(driver, { ...existing, ...req }),
-        });
-        await saveState();
-        return jsonResponse(success({ id: existing.id, updated: true }));
-      }
       const id = Math.max(0, ...state.storages.map((item) => item.id || 0)) + 1;
+      const mountPath = normalizePath(req.mount_path || req.mountPath || `/mount-${id}`);
+      if (mountPathExists(mountPath)) return jsonResponse(failure("mount path already exists", 409), 409);
       const driver = req.driver || "SiYuanWorkspace";
       const storage = {
         id,
-        mount_path: mountPath || normalizePath("/mount-" + id),
+        mount_path: mountPath,
         order: Number(req.order || 0),
         driver,
         cache_expiration: Number(req.cache_expiration ?? 30),
@@ -267,12 +254,15 @@ export const createAdminHandlers = ({
       return jsonResponse(success({ id }));
     },
     "POST /api/admin/storage/update": async (request) => {
+      await refreshConfig();
       const req = await parseJson(request);
       const storage = state.storages.find((item) => item.id === Number(req.id));
       if (!storage) return jsonResponse(failure("storage not found", 404));
+      const mountPath = normalizePath(req.mount_path || storage.mount_path);
+      if (mountPathExists(mountPath, storage.id)) return jsonResponse(failure("mount path already exists", 409), 409);
       Object.assign(storage, {
         ...req,
-        mount_path: req.mount_path ? normalizePath(req.mount_path) : storage.mount_path,
+        mount_path: mountPath,
         addition: storageAddition(req.addition, storage.addition),
         cache_expiration: Number(req.cache_expiration ?? storage.cache_expiration ?? 30),
         disabled: !!req.disabled,
@@ -284,6 +274,7 @@ export const createAdminHandlers = ({
       return jsonResponse(success());
     },
     "POST /api/admin/storage/delete": async (request) => {
+      await refreshConfig();
       const req = await parseJson(request);
       const id = Number(req.id);
       state.storages = state.storages.filter((item) => item.id !== id);
@@ -291,6 +282,7 @@ export const createAdminHandlers = ({
       return jsonResponse(success());
     },
     "POST /api/admin/storage/enable": async (request) => {
+      await refreshConfig();
       const req = await parseJson(request);
       const storage = state.storages.find((item) => item.id === Number(req.id));
       if (!storage) return jsonResponse(failure("storage not found", 404));
@@ -301,6 +293,7 @@ export const createAdminHandlers = ({
       return jsonResponse(success());
     },
     "POST /api/admin/storage/disable": async (request) => {
+      await refreshConfig();
       const req = await parseJson(request);
       const storage = state.storages.find((item) => item.id === Number(req.id));
       if (!storage) return jsonResponse(failure("storage not found", 404));
