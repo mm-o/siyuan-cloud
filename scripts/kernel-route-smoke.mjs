@@ -42,6 +42,7 @@ let pan123UploadRequestBody = null;
 let pan123S3AuthBody = null;
 let pan123UploadCompleteBody = null;
 let pan123UploadedBody = "";
+const pan123DownloadReferers = [];
 const aliOpenCreateBodies = [];
 const aliOpenCompleteBodies = [];
 let aliOpenPreviewBody = null;
@@ -213,6 +214,10 @@ globalThis.siyuan = {
         const forwardedHeader = (name) => (req.headers || [])
           .map((item) => Object.entries(item)[0])
           .find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || "";
+        if (url.hostname === "api.123278.com") {
+          assert.equal(forwardedHeader("origin"), "https://www.123pan.com");
+          assert.equal(forwardedHeader("referer"), "https://www.123pan.com/");
+        }
         if (url.hostname === "s3.example.test" && req.method === "PUT") {
           s3PutUrls.push(req.url);
           status = 200;
@@ -333,13 +338,15 @@ globalThis.siyuan = {
             refresh_token: "OD_REFRESH_REFRESHED",
           };
         } else if (url.hostname === "login.123pan.com" && url.pathname.endsWith("/api/user/sign_in")) {
+          assert.equal(forwardedHeader("origin"), "https://www.123pan.com");
+          assert.equal(forwardedHeader("referer"), "https://www.123pan.com/");
           if (req.payload?.passport === "needverify") {
             body = {
               code: 403,
               message: "请进行验证",
             };
           }
-        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/list/new")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/list/new")) {
           body = {
             code: 0,
             message: "success",
@@ -357,7 +364,7 @@ globalThis.siyuan = {
               }],
             },
           };
-        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/download_info")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/download_info")) {
           body = {
             code: 0,
             message: "success",
@@ -365,7 +372,7 @@ globalThis.siyuan = {
               DownloadUrl: "https://download123.example.test/pan123.txt",
             },
           };
-        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
           pan123UploadRequestBody = req.payload;
           body = {
             code: 0,
@@ -379,7 +386,7 @@ globalThis.siyuan = {
               UploadId: "pan123-upload-id",
             },
           };
-        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/s3_upload_object/auth")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/s3_upload_object/auth")) {
           pan123S3AuthBody = req.payload;
           body = {
             code: 0,
@@ -394,14 +401,14 @@ globalThis.siyuan = {
           assert.equal(req.payloadEncoding, "base64");
           pan123UploadedBody = Buffer.from(req.payload || "", "base64").toString("utf8");
           body = "";
-        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/upload_complete/v2")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_complete/v2")) {
           pan123UploadCompleteBody = req.payload;
           body = {
             code: 0,
             message: "success",
             data: null,
           };
-        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/user/info")) {
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/user/info")) {
           body = {
             code: 0,
             message: "success",
@@ -415,6 +422,7 @@ globalThis.siyuan = {
             },
           };
         } else if (url.hostname === "download123.example.test" && req.method === "GET") {
+          pan123DownloadReferers.push(forwardedHeader("referer"));
           contentType = "text/plain";
           body = "123pan doc";
         } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/user/getDriveInfo")) {
@@ -4740,6 +4748,7 @@ const remote123Read = await call({
 assert.equal(remote123Read.body.proxy.url, "https://download123.example.test/pan123.txt");
 assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://download123.example.test/");
 assert.equal(remote123Read.body.proxy.method, "GET");
+assert.equal(pan123DownloadReferers.includes("https://www.123pan.com/"), true);
 const remote123Preview = await call({
   method: "GET",
   path: "/p/remote-123/pan123.txt",

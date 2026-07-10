@@ -6,7 +6,7 @@ import {
 import { signAwsV4 } from "../aws4.js";
 
 const API = "https://yun.123pan.com/api";
-const B_API = "https://yun.123pan.com/b/api";
+const B_API = "https://api.123278.com/b/api";
 const LOGIN_API = "https://login.123pan.com/api";
 const SIGN_IN = LOGIN_API + "/user/sign_in";
 const USER_INFO = B_API + "/user/info";
@@ -189,8 +189,8 @@ const uploadBytes = (content, options = {}) => options.bodyEncoding === "base64"
 const platform = (addition) => addition.platform || addition.Platform || "web";
 
 const headersFor = (addition, token = addition.access_token || addition.AccessToken || "") => ({
-  origin: "https://yun.123pan.com",
-  referer: "https://yun.123pan.com/",
+  origin: "https://www.123pan.com",
+  referer: "https://www.123pan.com/",
   authorization: token ? `Bearer ${token}` : "",
   "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) siyuan-cloud-client",
   platform: platform(addition),
@@ -220,8 +220,8 @@ const login = async (client, addition) => {
   const payload = await remoteJson(client, SIGN_IN, {
     body,
     headers: {
-      origin: "https://yun.123pan.com",
-      referer: "https://yun.123pan.com/",
+      origin: "https://www.123pan.com",
+      referer: "https://www.123pan.com/",
       "user-agent": "Dart/2.19(dart:io)-siyuan-cloud",
       platform: "web",
       "app-version": "3",
@@ -374,7 +374,7 @@ const downloadUrlFor = async (client, storage, file) => {
   });
   const raw = payload?.data?.DownloadUrl || payload?.data?.downloadUrl || "";
   if (!raw) throw new Error("get download url failed");
-  let referer = "https://yun.123pan.com/";
+  let referer = "https://www.123pan.com/";
   try {
     const original = new URL(raw);
     referer = `${original.protocol}//${original.host}/`;
@@ -393,7 +393,7 @@ const downloadUrlFor = async (client, storage, file) => {
     const resolved = await forwardProxy(client, candidate, {
       allowErrorStatus: true,
       contentType: "application/json",
-      headers: { Referer: "https://yun.123pan.com/" },
+      headers: { Referer: "https://www.123pan.com/" },
       method: "GET",
       responseEncoding: "text",
     });
