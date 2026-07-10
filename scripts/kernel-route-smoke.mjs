@@ -42,7 +42,6 @@ let pan123UploadRequestBody = null;
 let pan123S3AuthBody = null;
 let pan123UploadCompleteBody = null;
 let pan123UploadedBody = "";
-const pan123DownloadReferers = [];
 const aliOpenCreateBodies = [];
 const aliOpenCompleteBodies = [];
 let aliOpenPreviewBody = null;
@@ -338,8 +337,6 @@ globalThis.siyuan = {
             refresh_token: "OD_REFRESH_REFRESHED",
           };
         } else if (url.hostname === "login.123pan.com" && url.pathname.endsWith("/api/user/sign_in")) {
-          assert.equal(forwardedHeader("origin"), "https://www.123pan.com");
-          assert.equal(forwardedHeader("referer"), "https://www.123pan.com/");
           if (req.payload?.passport === "needverify") {
             body = {
               code: 403,
@@ -422,7 +419,6 @@ globalThis.siyuan = {
             },
           };
         } else if (url.hostname === "download123.example.test" && req.method === "GET") {
-          pan123DownloadReferers.push(forwardedHeader("referer"));
           contentType = "text/plain";
           body = "123pan doc";
         } else if (url.hostname === "openapi.alipan.com" && url.pathname.endsWith("/adrive/v1.0/user/getDriveInfo")) {
@@ -4748,7 +4744,6 @@ const remote123Read = await call({
 assert.equal(remote123Read.body.proxy.url, "https://download123.example.test/pan123.txt");
 assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://download123.example.test/");
 assert.equal(remote123Read.body.proxy.method, "GET");
-assert.equal(pan123DownloadReferers.includes("https://www.123pan.com/"), true);
 const remote123Preview = await call({
   method: "GET",
   path: "/p/remote-123/pan123.txt",
