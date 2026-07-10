@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.5.4
+
+### Fixed
+
+- Fixed 123Pan connectivity on networks that cannot reach the current `yun.123pan.com` B API by falling back to `api.123278.com` with `www.123pan.com` web headers.
+- Merged mm-o/siyuan-cloud#1 and kept its compatibility path as a fallback instead of replacing the default official 123Pan API host.
+
 ## 0.5.3
 
 ### Fixed
