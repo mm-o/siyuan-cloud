@@ -298,7 +298,7 @@ const objFromFile = (file, relPath, storage) => {
     hashinfo: file?.Etag || file?.etag || "",
     hash_info: file?.Etag || file?.etag ? { md5: file?.Etag || file?.etag } : {},
     id: idOf(file),
-    raw_url: dir ? "" : `/plugin/private/siyuan-cloud/d${normalizePath(storage.mount_path + "/" + relPath)}`,
+    raw_url: dir ? "" : `/plugin/private/siyuan-cloud/p${normalizePath(storage.mount_path + "/" + relPath)}`,
     provider: "123Pan",
     file,
   };

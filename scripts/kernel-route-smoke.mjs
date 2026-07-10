@@ -4732,6 +4732,7 @@ const remote123Get = await json({
   path: "/api/fs/get",
 });
 assert.equal(remote123Get.data.provider, "123Pan");
+assert.equal(remote123Get.data.raw_url, "/plugin/private/siyuan-cloud/p/remote-123/pan123.txt");
 const remote123Read = await call({
   method: "GET",
   path: "/d/remote-123/pan123.txt",
@@ -4739,6 +4740,12 @@ const remote123Read = await call({
 assert.equal(remote123Read.body.proxy.url, "https://download123.example.test/pan123.txt");
 assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://download123.example.test/");
 assert.equal(remote123Read.body.proxy.method, "GET");
+const remote123Preview = await call({
+  method: "GET",
+  path: "/p/remote-123/pan123.txt",
+});
+assert.equal(remote123Preview.body.proxy.url, "https://download123.example.test/pan123.txt");
+assert.equal(remote123Preview.body.proxy.headers.Referer[0], "https://download123.example.test/");
 const remote123ShareCreate = await json({
   body: { files: ["/remote-123/pan123.txt"], id: "share-remote-123", pwd: "rpw" },
   method: "POST",

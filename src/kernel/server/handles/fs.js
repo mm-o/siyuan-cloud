@@ -617,10 +617,9 @@ export const createFsHandlers = ({
         try {
           const shouldProxy = storageShouldProxy(mount.storage);
           const data = await mount.driver.get(mount.storage, mount.relPath, { skipLink: shouldProxy });
-          let rawUrl = data.raw_url || "";
-          if (data && !data.is_dir && shouldProxy && !rawUrl) {
-            rawUrl = rawUrlForStorage(mount.storage, path);
-          }
+          const rawUrl = data && !data.is_dir && shouldProxy && mount.storage.driver !== "SiYuanWorkspace"
+            ? rawUrlForStorage(mount.storage, path)
+            : data.raw_url || "";
           return jsonResponse(success(driverGetResp(data, rawUrl)));
         } catch (error) {
           return jsonResponse(failure(error.message || "driver get failed", 502, {

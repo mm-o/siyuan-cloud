@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 0.5.3
+
+### Fixed
+
+- Fixed 123Pan PDF/EPUB/book preview links by aligning proxied storage `raw_url` handling with OpenList: `PreferProxy`, `WebProxy`, and `OnlyProxy` mounts now expose stable `/p/<path>` links from `/api/fs/get`, while direct download links remain available through `/api/fs/link`.
+- Fixed 123Pan file rows to use the stable `/p` proxy entry for previews, so companion reader plugins do not receive fragile upstream direct URLs.
+
 ## 0.5.2
 
 ### Added

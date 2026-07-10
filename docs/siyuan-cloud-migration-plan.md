@@ -332,7 +332,7 @@
 
 - 对照 `docs/OpenList-main/drivers/wps/{meta.go,driver.go,util.go,types.go}` 新增 `src/kernel/internal/driver/wps/driver.js`，接入 Cookie 登录校验、Personal/Business 模式、根目录路径解析、群组/文件列表、文件 `Link`、`MakeDir`、`Move`、`Copy`、`Remove`、`Rename` 和容量详情。
 - `WPS` 已加入 `/api/admin/driver/names`、driver metadata 和中英文 i18n；字段保持 OpenList addition key：`root_folder_path`、`cookie`、`mode`、`custom_ua`。
-- WPS 下载/播放沿用 OpenList `Link -> /p -> common proxy -> body.proxy` 边界。上传上游依赖 SHA1/SHA256、外部 PUT/POST 和 commit 步骤，当前 JS kernel runtime 暂按 `no_upload=true` 保留结构化占位。
+- WPS 下载/播放沿用 OpenList `Link -> /p -> common proxy -> body.proxy` 边界。上传保持 `no_upload=true`：OpenList 依赖 Go 后端流式处理 SHA1/SHA256、外部 PUT/POST 和 commit，当前思源 JS kernel 不在请求线程里执行这条重链路。
 - 新增 `assets/docs/zh_CN/驱动说明/WPS 云文档.md` 和 `assets/docs/en_US/Drivers/WPS.md`，记录 Cookie 获取、Personal/Business 模式、字段、测试清单和当前边界。
 
 ## 2026-07-07 189Cloud 家庭云收口
@@ -347,16 +347,24 @@
 - S3/Doge GET link 补齐 `custom_host`、`enable_custom_host_presign`、`remove_bucket` 和 `response-content-disposition` 文件名参数；`force_path_style` 默认值修正为 OpenList 的关闭状态，避免缤纷云 S4 这类 virtual-host style 服务被默认拼成 path-style。
 - smoke test 新增 S3 `/api/fs/link` 和 `/p/remote-s3/object.txt` 断言，分别覆盖 GET 预签名 URL、文件名响应参数和本地 `/p` 读取不返回 403；S3 兼容存储文档补充缤纷云 S4、PDF/思阅打不开、`custom_host` 与 path-style 排查说明。
 
+## 2026-07-10 文件交互与上传边界收口
+
+- FileTab 支持 Ctrl/Shift 多选、Ctrl+A、Esc、Delete、Enter；选中项按当前可见排序批量下载或批量发送到 Motrix Next，右键菜单仍复用 `src/utils/file_actions.ts`。
+- FileTab 与 Dock 文件树拖入文档复用 `openListDocumentLink/openListDragHtml`：图片生成 Markdown 图片，音频生成 `<audio controls src="...">`，视频生成 `<video controls src="...">`，其它文件生成 `siyuan://plugins/siyuan-cloud/open?path=...` 链接。
+- S3/Doge 上传优先请求 OpenList `HttpDirect` 直传信息并用预签名 PUT 直接上传；无直传或直传失败时回落到显式 base64 `/api/fs/put`，避免 multipart 在 SiYuan JS kernel 中丢失文件内容导致 0KB。
+- WPS 上传保持 `no_upload=true`：OpenList 的 WPS 上传由 Go 后端流式处理；当前思源 JS kernel 的 base64 解码、SHA1/SHA256 校验和 forwardProxy 上传会阻塞思源运行环境，不能在请求线程里假装完成。
+
 ## 下一步
 
-1. 权限上下文后续继续对齐 OpenList auth 安全细节：`PwdHash/Salt` 双重哈希、logout token invalidation cache、2FA/WebAuthn/SSO/LDAP 的真实挑战和登录链路；主要 request context、`AuthAdmin`、权限位、S3 signing 已完成。也可以转向真实异步 task manager。
-2. Offline/torrent 后续继续对齐 `server/handles/offline_download.go`、`server/handles/torrent.go` 和相关 tool/driver：真实 aria2/qbit/transmission/SimpleHttp/ed2k，以及 189/189PC driver 侧 CAS rapid upload 方法；通用 torrent generate 已在本端可读文件范围内完成。
-3. 任务后续增强继续对齐 `internal/task` + `tache`：补真实异步 manager、取消传播、重试调度、进度更新和 task group coordinator。
-4. 搜索后续增强继续对齐 `internal/search/build.go`：补异步 running/stop、auto_update_index hook 和更接近 OpenList searcher backend 的配置边界。
-5. 驱动继续按 `docs/OpenList-main/drivers/*` 逐目录迁移：优先真实账号验证普通 189Cloud 短信二次验证后的一级/二级目录和大文件上传；随后攻 189PC/TV upload/rapid/CAS/torrent，再按用户高频驱动补 runtime。metadata-only 驱动不能暴露到 Dock 挂载列表。
-6. Archive 若继续扩格式，只接有真实 reader、明确许可证/wasm 打包路径和 smoke fixture 的 RAR/7z/ISO 等格式；否则继续保持结构化占位。
-7. Archive 媒体预览下一步不要与普通网盘视频播放混淆：普通百度视频走 driver `Link()` / `/p` / `body.proxy`，压缩包内视频走 `/ae` 解压 entry。若要让压缩包内视频可稳定播放，需要实现 archive entry Range 响应或改为下载/外部打开；当前内嵌 `<video src="/ae?...">` 可能一直加载，这是能力边界。
-8. 每个 capability batch 必须补 smoke test，并同步更新本计划、`docs/kernel-architecture.md`、`docs/kernel-plugin-notes.md` 和 Dock 进度文案。
+1. 上传链路后续优先沿用 OpenList direct upload 或分阶段直传；需要大文件哈希、分片和 commit 的驱动不能继续依赖思源 JS kernel 内同步 base64/forwardProxy 路径。WPS 上传若要启用，需要先改为前端分阶段直传或 Worker/流式方案。
+2. 权限上下文后续继续对齐 OpenList auth 安全细节：2FA/WebAuthn/SSO/LDAP 的真实挑战和登录链路；主要 request context、`AuthAdmin`、权限位、S3 signing、`PwdHash/Salt` 和 logout token invalidation 已完成。也可以转向真实异步 task manager。
+3. Offline/torrent 后续继续对齐 `server/handles/offline_download.go`、`server/handles/torrent.go` 和相关 tool/driver：真实 aria2/qbit/transmission/SimpleHttp/ed2k，以及 189/189PC driver 侧 CAS rapid upload 方法；通用 torrent generate 已在本端可读文件范围内完成。
+4. 任务后续增强继续对齐 `internal/task` + `tache`：补真实异步 manager、取消传播、重试调度、进度更新和 task group coordinator。
+5. 搜索后续增强继续对齐 `internal/search/build.go`：补 auto_update_index hook 和更接近 OpenList searcher backend 的配置边界。
+6. 驱动继续按 `docs/OpenList-main/drivers/*` 逐目录迁移：优先真实账号验证普通 189Cloud 短信二次验证后的一级/二级目录和大文件上传；随后攻 189PC/TV upload/rapid/CAS/torrent，再按用户高频驱动补 runtime。metadata-only 驱动不能暴露到 Dock 挂载列表。
+7. Archive 若继续扩格式，只接有真实 reader、明确许可证/wasm 打包路径和 smoke fixture 的 RAR/7z/ISO 等格式；否则继续保持结构化占位。
+8. Archive 媒体预览下一步不要与普通网盘视频播放混淆：普通百度视频走 driver `Link()` / `/p` / `body.proxy`，压缩包内视频走 `/ae` 解压 entry。若要让压缩包内视频可稳定播放，需要实现 archive entry Range 响应或改为下载/外部打开；当前内嵌 `<video src="/ae?...">` 可能一直加载，这是能力边界。
+9. 每个 capability batch 必须补 smoke test，并同步更新本计划、`docs/kernel-architecture.md`、`docs/kernel-plugin-notes.md` 和 Dock 进度文案。
 
 ## 下轮对话接续清单
 

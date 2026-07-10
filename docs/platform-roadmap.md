@@ -160,12 +160,12 @@
 - 复制 HTML audio/video：`<audio src="...">`、`<video src="...">`
 - 复制普通链接：`siyuan://plugins/siyuan-cloud/open?path=...`
 - 复制 OpenList API 链接：`/api/fs/get`、`/p/<path>`、`/d/<path>`
+- 从 FileTab 或 Dock 拖拽云文件到编辑器：图片生成 Markdown 图片，音频/视频生成 HTML 媒体标签，普通文件生成 `siyuan://plugins/siyuan-cloud/open?path=...` 链接。
 - 批量生成文件清单块：文件名、大小、修改时间、云盘路径、下载链接。
 
 后续可做：
 
 - 文档右键菜单“插入云文件链接”。
-- 拖拽云文件到编辑器生成对应 Markdown/HTML/链接。
 - 对图片支持插入缩略图链接和原图下载链接。
 - 对目录支持插入动态目录索引卡片，点击后打开 FileTab 对应路径。
 
@@ -173,6 +173,26 @@
 
 - 文档链接必须优先使用 root-relative 私有路径或 `siyuan://plugins`，避免写死 `127.0.0.1:6806`。
 - 公开分享链接和私有文档链接要明确区分。
+- URL/path 不做额外转义补丁；文档中显示和请求中传递都应尽量保持原始文件名语义，由对应 HTTP/API 边界负责必要编码。
+
+### 上传融合
+
+能力：
+
+- S3/Doge 上传优先使用 OpenList `HttpDirect` 预签名 PUT，前端直接把文件发给云盘。
+- 无直传或直传失败时，通用回退路径使用显式 base64 `/api/fs/put`，避免 multipart body 在思源 JS kernel 中丢失导致 0KB。
+- OneDrive、S3/Doge 等支持 direct upload 的驱动可通过 `/api/fs/get_direct_upload_info` 暴露 OpenList `HttpDirect` 信息。
+
+后续可做：
+
+- 把更多支持直传或分阶段上传的驱动接到前端直传路径。
+- 长耗时上传进入 task manager，展示取消、重试和进度。
+- 大文件哈希计算改为 Worker/分片方案，避免阻塞 UI 和 kernel runtime。
+
+边界：
+
+- WPS 上传当前保持禁用：OpenList 使用 Go 后端流式处理，思源 JS kernel 中同步 base64 解码、SHA1/SHA256 校验和 proxy 上传会卡住思源。
+- 需要复杂哈希、分片、commit 的驱动优先迁移 OpenList 直传/分阶段流程，不在 handler 请求线程里做大文件正文处理。
 
 ### 媒体播放融合
 
@@ -404,7 +424,7 @@
 3. 搜索索引任务化和增量化。
 4. 安全模型收口：密码哈希、logout invalidation、分享复核。
 5. 189Cloud/189PC/115 等高优驱动真实能力补齐。
-6. 文档链接、拖拽插入、复制链接、图床/阅读器/播放器 companion 契约增强。
+6. 文档链接、复制链接、图床/阅读器/播放器 companion 契约增强。
 7. 离线下载、torrent CAS、archive entry Range 这类重能力在 task manager 上继续扩展。
 
 长期判断：思盘最有价值的位置不是替代 OpenList，而是把 OpenList 的文件能力嵌进思源的知识工作流。OpenList-compatible API 保证生态和可迁移性，思源原生融合层决定它是否真正好用。
