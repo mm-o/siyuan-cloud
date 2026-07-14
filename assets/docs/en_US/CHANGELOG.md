@@ -6,6 +6,8 @@
 
 - Fixed 123Pan connectivity on networks that cannot reach the current `yun.123pan.com` B API by falling back to `api.123278.com` with `www.123pan.com` web headers.
 - Merged mm-o/siyuan-cloud#1 and kept its compatibility path as a fallback instead of replacing the default official 123Pan API host.
+- Completed the 123Pan dual-host download fallback: even after a successful current-host `download_info`, an HTTP 403, `code=1010`, `50001` message, or another redirect error restarts the complete `download_info → decode → redirect → final proxy` flow on the legacy host instead of passing a failed candidate URL to `/p`.
+- Updated the kernel status version to `siyuan-cloud-port-0.5.4` so it matches `plugin.json` and `package.json`.
 
 ## 0.5.3
 

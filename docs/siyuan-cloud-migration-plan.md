@@ -308,6 +308,13 @@
 - 初始修复 OpenListTeam/OpenList#2677 使用 `api.123278.com` / `api.123pan.cn`，但上游后续合并的 OpenListTeam/OpenList#2678 覆盖范围更完整：`Api`、`AApi`、`BApi`、`123 Share` 和下载跳转 referer 统一从 `www.123pan.com` 改为 `yun.123pan.com`。
 - 本端 `123Pan` runtime 已跟随 #2678，把 `API` / `B_API`、`origin/referer` 和下载跳转 Referer 统一切到 `https://yun.123pan.com`；当前尚未迁移独立 `123_share` runtime。
 
+## 2026-07-14 123Pan 双域名下载完整回退
+
+- 保留 `yun.123pan.com` 为默认路径，并保留 `api.123278.com` + `www.123pan.com` 为兼容路径；两者不再只在 JSON API 层互相回退。
+- `download_info -> params 解码 -> 下载跳转 -> /p 或 /d 最终 model.Link` 作为一个整体重试。默认路径出现 HTTP 403、`code=1010`、消息包含 `50001` 或其它错误响应时，从兼容 API 重新获取一次下载信息，并让跳转及最终代理都使用 `www.123pan.com` Referer。
+- smoke test 模拟默认 API 成功但跳转返回 `403 + code=1010 + 50001`，断言随后完整调用旧 API、旧 Referer，并得到可代理的最终 URL。
+- `OPENLIST_VERSION` 已从错误的 `siyuan-cloud-port-0.5.3` 更新为 `siyuan-cloud-port-0.5.4`；Dock 的运行信息来自 `/siyuan-cloud/status.version`，现与 `plugin.json`/`package.json` 一致。
+
 ## 2026-06-30 默认挂载收口
 
 - 新状态不再自动创建 `/` 的 `SiYuanKernel` 默认挂载；虚拟 FS 根目录继续由 `state.entries["/"]` 提供，并且不再作为可添加 driver 暴露。

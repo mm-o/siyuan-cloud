@@ -106,6 +106,8 @@ WebDav runtime 已按 `docs/OpenList-main/drivers/webdav` 与 `docs/OpenList-mai
 
 驱动下载/播放边界按 OpenList `Link(ctx, file, args) -> common.Proxy` 组织。115 Cloud、OneDrive、123Pan、WebDav、BaiduNetdisk、AliyundriveOpen、189Cloud、189CloudPC、189CloudTV、Quark/UC/QuarkOpen/QuarkTV/UCTV、WPS 等 runtime adapter 的 `read()` 应返回 `model.Link` 风格数据，由 `/d`、`/p` 统一交给 `src/kernel/server/common/proxy.js` 和 SiYuan `body.proxy`。不要让具体 driver 自行下载完整文件正文作为播放路径。
 
+123Pan 下载保留两套成对的 API/网页来源：默认 `yun.123pan.com`，回退 `api.123278.com` + `www.123pan.com`。回退边界覆盖完整的 `download_info -> params 解码 -> 下载跳转 -> model.Link 最终代理`；当前域名跳转出现 HTTP 403、`code=1010`、消息 `50001` 或其它错误响应时，必须从回退 API 重新获取下载信息，不能只切换 JSON API，也不能继续代理失败候选 URL。
+
 OneDrive 上传已对齐 OpenList `drivers/onedrive` 的 `Put` 分支：小文件走 Graph `PUT /content`，大文件走 `createUploadSession` 后按 addition `chunk_size` MiB 写 `Content-Range` 分片。`enable_direct_upload=true` 时，`/api/fs/get_direct_upload_info` 会调用 driver 并返回 OpenList `HttpDirect` 风格的 upload URL、chunk size 和 `PUT` method；未实现 direct upload 的驱动继续返回原有 `null`。
 
 123Pan 上传已对齐 OpenList `drivers/123` 的 `Put -> upload_request -> S3 upload -> upload_complete` 边界：上传请求使用 MD5 `etag`、`duplicate=2` 和父目录 ID；非复用文件按 16MiB 分片走 `s3_upload_object/auth` / `s3_repare_upload_parts_batch` 预签名 URL 后调用 `upload_complete/v2`，带临时 S3 AK/SK/session 的响应走 AWS v4 签名 `PUT` 后调用 `upload_complete`。后续继续用真实大文件和远端响应差异收敛 multipart 细节。
