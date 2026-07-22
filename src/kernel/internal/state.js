@@ -15,9 +15,31 @@ import {
 
 const lastWritten = new Map();
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const storageRateLimitDelay = (error) => {
+  const message = String(error?.message || error || "");
+  if (!/TooManyRequests|Requests?/i.test(message)) return 0;
+  const match = message.match(/(\d{3,6})/);
+  return Math.max(1000, Number(match?.[1] || 3000) + 200);
+};
+
+const storageCall = async (run) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      const delay = storageRateLimitDelay(error);
+      if (!delay || attempt === 2) throw error;
+      await sleep(delay);
+    }
+  }
+  return null;
+};
+
 const readJson = async (storage, path) => {
   try {
-    const file = await storage.get(path);
+    const file = await storageCall(() => storage.get(path));
     if (file?.text) {
       const content = await file.text();
       lastWritten.set(path, content);
@@ -34,8 +56,16 @@ const readJson = async (storage, path) => {
 const writeJson = async (storage, path, value) => {
   const content = JSON.stringify(value, null, 2);
   if (lastWritten.get(path) === content) return;
-  await storage.put(path, content);
+  await storageCall(() => storage.put(path, content));
   lastWritten.set(path, content);
+};
+
+const parseJsonObject = (value) => {
+  try {
+    return value ? JSON.parse(value) : {};
+  } catch (_) {
+    return {};
+  }
 };
 
 const pickConfigState = (state) => ({
@@ -60,6 +90,7 @@ const pickRuntimeState = (state) => ({
 
 const pickSearchState = (state) => ({
   version: 1,
+  index_progress: state.index_progress || {},
   search_nodes: state.search_nodes || [],
 });
 
@@ -140,6 +171,7 @@ export const loadState = async ({ now, storage }) => {
           webdav_locks: loaded.webdav_locks || {},
           s3_multipart_uploads: loaded.s3_multipart_uploads || {},
           sharings: loaded.sharings || [],
+          index_progress: loaded.index_progress || parseJsonObject(loaded.settings?.index_progress),
           search_nodes: loaded.search_nodes || [],
         },
       };

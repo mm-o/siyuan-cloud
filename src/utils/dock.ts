@@ -8,6 +8,8 @@ import {
   privateBase,
 } from '@/utils/request'
 import {
+  indexBuild,
+  indexProgress,
   fsTorrentGenerate,
   fsTorrentParse,
 } from '@/utils/api'
@@ -1247,20 +1249,8 @@ export function useDock(plugin: Plugin) {
     window._siyuan_cloud?.openFileManager?.(path)
   }
 
-  function openApiDoc() {
-    return window._siyuan_cloud?.openApiDoc?.()
-  }
-
-  function openReadmeDoc() {
-    return window._siyuan_cloud?.openReadmeDoc?.()
-  }
-
-  function openPackagedDoc(key: string) {
-    return window._siyuan_cloud?.openPackagedDoc?.(key)
-  }
-
   function openMountHelpDoc() {
-    return openPackagedDoc(t('openHelp') === '打开说明' ? '驱动说明' : 'Drivers')
+    return window._siyuan_cloud?.openDriverDoc?.('')
   }
 
   function openDriverHelpDoc(driver = verifyDriver.value) {
@@ -1277,7 +1267,26 @@ export function useDock(plugin: Plugin) {
     }
   }
 
+  async function buildIndex() {
+    try {
+      const progress = await indexProgress()
+      if (progress.code === 200 && progress.data?.is_done && Number(progress.data?.obj_count || 0) > 0) {
+        showMessage(t('indexExists'))
+        return
+      }
+      const payload = await indexBuild()
+      if (payload.code !== 200 && !(payload.code === 400 && String(payload.message || '').includes('index is running')))
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      showMessage(t('indexBuildStarted'))
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
+    }
+  }
+
   const sectionActions = computed(() => ({
+    tools: [
+      { key: 'buildIndex', icon: '#iconSearch', label: t('buildIndex'), run: buildIndex },
+    ],
     config: [
       { key: 'export', icon: '#iconUpload', label: t('exportConfig'), run: exportConfig },
       { key: 'import', icon: '#iconDownload', label: t('importConfig'), run: importConfig },
@@ -1379,9 +1388,6 @@ export function useDock(plugin: Plugin) {
     mountCreating,
     mountFormOpen,
     docItems,
-    openApiDoc,
-    openReadmeDoc,
-    openPackagedDoc,
     openDriverHelpDoc,
     openFileManager,
     openAddMount,

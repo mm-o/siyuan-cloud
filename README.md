@@ -5,6 +5,53 @@
 > [!IMPORTANT]
 > Requires **SiYuan 3.7.0** or later.
 
+## Recent Updates
+
+### 0.6.0
+
+#### Added
+
+- Added the `/` command insertion entry. Type `/`, choose Siyuan Cloud, then search or browse the cloud file tree and insert a file link into the document.
+- `/` insertion now reuses the same link-generation path as the context-menu Copy Link action: images insert Markdown images, audio inserts `<audio>`, video inserts `<video>`, and all other files or folders insert stable `siyuan://plugins/siyuan-cloud/open?path=...` links.
+- Added index-building entry points in the file-manager More menu and Dock Tools page. Empty search results now explain that an index may need to be built first, and build time depends on file count.
+- Added the GitHub Releases runtime driver, with browsing for release assets, README/LICENSE files, source archives, all-version mode, GitHub token configuration, and GitHub proxy support.
+- Added Chinese and English GitHub Releases driver guides.
+- Added `pnpm docs:feishu` and `release:with-docs` so README, API, changelog, and driver guides can be synced from local Markdown to Feishu.
+
+#### Improved
+
+- Simplified search-index progress and execution: index builds run in the background, progress is stored directly in runtime state, and stop, clear, and progress routes remain available.
+- Improved preview and document insertion formats: images, audio, and video keep directly previewable/playable resource links; PDF, EPUB, TXT, archives, ordinary files, and folders use `siyuan://` to open Siyuan Cloud.
+- Document insertion supports image formats `jpg/tiff/jpeg/png/gif/bmp/svg/ico/swf/webp/avif`, audio formats `mp3/wav/aac/m4a/flac/ogg`, video formats `mp4/mkv/avi/mov/rmvb/webm/flv/m3u8/m4v`, and text-preview formats `txt/log/md/markdown/json/xml/yml/yaml/toml/ini/conf/js/ts/jsx/tsx/vue/css/scss/less/html/htm/go/py/java/rb/rs/php/c/cpp/h`; only image/audio/video get embedded preview snippets, and everything else uses `siyuan://`.
+- Unified link generation across FileTab, Dock, drag-and-drop, and `/` insertion to reduce drift between copied and inserted links.
+- Dock status documentation entries now open Feishu Wiki links directly in the browser for README, API, changelog, and driver guides.
+- Removed the old packaged-doc manifest and SiYuan document-writing path. Runtime docs now use generated Feishu links and no longer create or update SiYuan notebook documents.
+- Added lightweight frontend request retries for rate-limit responses, reducing occasional TooManyRequests failures.
+- Added lightweight kernel storage retries for TooManyRequests responses during plugin-state reads and writes.
+- Added `github_releases` to the status adapter list and runtime capability matrix, and exposed GitHub Releases only as a runtime-backed mount option.
+- Simplified packaging so only the root English and Chinese README files are copied into the plugin package, instead of the whole `assets/docs` tree.
+
+#### Fixed
+
+- Fixed Docker deployments failing to verify and create cloud-drive mounts, avoiding `Auth failed [session]` during driver tests.
+- Fixed compatibility for older search progress data that was stored as a JSON string under settings by migrating it into the dedicated `index_progress` runtime state.
+
+### 0.5.5
+
+- Documentation now opens from Feishu Wiki links in the Dock status page: README, API, changelog, and driver guides are direct browser links.
+- The old packaged SiYuan docs manifest and document-writing path were removed; local Markdown remains the source for release sync to Feishu.
+- Fixed Docker deployments failing to verify and create cloud-drive mounts, avoiding `Auth failed [session]` during driver tests.
+
+### 0.5.4
+
+- Fixed 123Pan connectivity on networks that cannot reach the current `yun.123pan.com` B API by falling back to `api.123278.com` with `www.123pan.com` web headers.
+- Merged mm-o/siyuan-cloud#1 and kept its compatibility path as a fallback instead of replacing the default official 123Pan API host.
+
+### 0.5.3
+
+- Fixed 123Pan PDF/EPUB/book preview links by aligning proxied storage `raw_url` handling with OpenList: `PreferProxy`, `WebProxy`, and `OnlyProxy` mounts now expose stable `/p/<path>` links from `/api/fs/get`.
+- Fixed 123Pan file rows to use the stable `/p` proxy entry for previews, so companion reader plugins do not receive fragile upstream direct URLs.
+
 ## What It Is
 
 - A SiYuan-native cloud-drive manager for browsing, mounting, uploading, downloading, sharing, and linking files.
@@ -60,6 +107,7 @@ Runtime adapters currently exposed in the Dock include:
 - [[OneDrive]]
 - [[123Pan]]
 - [[Baidu Netdisk]]
+- [[GitHub Releases]]
 - [[Aliyundrive Open]]
 - [[189Cloud Series]]
 - [[Quark UC Series]]

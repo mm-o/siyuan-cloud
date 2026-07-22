@@ -217,7 +217,59 @@ globalThis.siyuan = {
           assert.equal(forwardedHeader("origin"), "https://www.123pan.com");
           assert.equal(forwardedHeader("referer"), "https://www.123pan.com/");
         }
-        if (url.hostname === "s3.example.test" && req.method === "PUT") {
+        if (url.hostname === "api.github.com" && url.pathname === "/repos/OpenListTeam/OpenList/releases/latest") {
+          assert.equal(forwardedHeader("accept"), "application/vnd.github+json");
+          assert.equal(forwardedHeader("x-github-api-version"), "2022-11-28");
+          assert.equal(forwardedHeader("authorization"), "Bearer GH_SMOKE_TOKEN");
+          body = {
+            tag_name: "v4.0.0",
+            html_url: "https://github.com/OpenListTeam/OpenList/releases/tag/v4.0.0",
+            created_at: "2026-01-01T00:00:00Z",
+            published_at: "2026-01-02T00:00:00Z",
+            zipball_url: "https://github.com/OpenListTeam/OpenList/archive/refs/tags/v4.0.0.zip",
+            tarball_url: "https://github.com/OpenListTeam/OpenList/archive/refs/tags/v4.0.0.tar.gz",
+            assets: [{
+              name: "openlist-windows-amd64.zip",
+              size: 1024,
+              created_at: "2026-01-02T00:00:00Z",
+              updated_at: "2026-01-03T00:00:00Z",
+              browser_download_url: "https://github.com/OpenListTeam/OpenList/releases/download/v4.0.0/openlist-windows-amd64.zip",
+            }],
+          };
+        } else if (url.hostname === "api.github.com" && url.pathname === "/repos/OpenListTeam/OpenList/releases") {
+          body = [{
+            tag_name: "v4.0.0",
+            html_url: "https://github.com/OpenListTeam/OpenList/releases/tag/v4.0.0",
+            created_at: "2026-01-01T00:00:00Z",
+            published_at: "2026-01-02T00:00:00Z",
+            zipball_url: "https://github.com/OpenListTeam/OpenList/archive/refs/tags/v4.0.0.zip",
+            tarball_url: "https://github.com/OpenListTeam/OpenList/archive/refs/tags/v4.0.0.tar.gz",
+            assets: [{
+              name: "openlist-linux-amd64.tar.gz",
+              size: 2048,
+              created_at: "2026-01-02T00:00:00Z",
+              updated_at: "2026-01-03T00:00:00Z",
+              browser_download_url: "https://github.com/OpenListTeam/OpenList/releases/download/v4.0.0/openlist-linux-amd64.tar.gz",
+            }],
+          }];
+        } else if (url.hostname === "api.github.com" && url.pathname === "/repos/OpenListTeam/OpenList/contents") {
+          body = [{
+            name: "README.md",
+            size: 512,
+            download_url: "https://raw.githubusercontent.com/OpenListTeam/OpenList/main/README.md",
+            type: "file",
+          }, {
+            name: "LICENSE",
+            size: 256,
+            download_url: "https://raw.githubusercontent.com/OpenListTeam/OpenList/main/LICENSE",
+            type: "file",
+          }, {
+            name: "main.go",
+            size: 128,
+            download_url: "https://raw.githubusercontent.com/OpenListTeam/OpenList/main/main.go",
+            type: "file",
+          }];
+        } else if (url.hostname === "s3.example.test" && req.method === "PUT") {
           s3PutUrls.push(req.url);
           status = 200;
           body = "";
@@ -1686,6 +1738,14 @@ const waitFor = async (callback, attempts = 20) => {
   return last;
 };
 
+const waitForIndexDone = () => waitFor(async () => {
+  const info = await json({
+    method: "GET",
+    path: "/api/admin/index/progress",
+  });
+  return info.data.is_done && !info.data.running ? info : null;
+}, 200);
+
 const text = async (input) => {
   const response = await call(input);
   const body = response.body.raw
@@ -1717,7 +1777,10 @@ assert.ok(status.data.stages.some((item) => item.key === "torrent" && item.statu
 assert.ok(status.data.stages.some((item) => item.key === "archive" && item.status === "active"));
 assert.ok(status.data.adapters.includes("115_cloud"));
 assert.ok(status.data.adapters.includes("wps"));
+assert.ok(status.data.adapters.includes("github_releases"));
 assert.ok(status.data.capability_summary.partial > 0);
+assert.equal(status.data.driver_capabilities["GitHub Releases"].methods.list, "done");
+assert.equal(status.data.driver_capabilities["GitHub Releases"].methods.put, "unsupported");
 assert.equal(status.data.driver_capabilities["189CloudPC"].methods.put, "placeholder");
 assert.equal(status.data.driver_capabilities.WPS.methods.put, "placeholder");
 assert.equal(status.data.driver_capabilities.WPS.methods.details, "done");
@@ -3191,32 +3254,24 @@ const indexProgress = await json({
   method: "GET",
   path: "/api/admin/index/progress",
 });
-assert.equal(indexProgress.data.is_done, true);
-assert.equal(indexProgress.data.obj_count > 0, true);
+assert.equal(indexProgress.code, 200);
+const completedIndexProgress = await waitForIndexDone();
+assert.equal(completedIndexProgress.data.running, false);
+assert.equal(completedIndexProgress.data.obj_count > 0, true);
 const asyncIndexUpdate = await json({
-  body: { async: true, paths: ["/copy-skip-src"] },
+  body: { paths: ["/copy-skip-src"] },
   method: "POST",
   path: "/api/admin/index/update",
 });
 assert.equal(asyncIndexUpdate.code, 200);
-assert.equal(["pending", "running"].includes(asyncIndexUpdate.data.task.state), true);
-const asyncIndexTask = await waitFor(async () => {
-  const info = await json({
-    body: { tid: asyncIndexUpdate.data.task.id },
-    method: "POST",
-    path: "/api/task/index/info",
-  });
-  return info.data.state === "succeeded" ? info : null;
-});
-assert.equal(asyncIndexTask.code, 200);
-assert.equal(asyncIndexTask.data.progress, 100);
-const indexDoneTasks = await json({
-  method: "GET",
-  path: "/api/task/index/done",
-});
-assert.equal(indexDoneTasks.data.some((item) => item.id === asyncIndexUpdate.data.task.id), true);
+assert.equal(asyncIndexUpdate.data, null);
+const asyncIndexProgress = await waitForIndexDone();
+assert.equal(asyncIndexProgress.code, 200);
+assert.equal(asyncIndexProgress.data.running, false);
+assert.equal(asyncIndexProgress.data.task, undefined);
+assert.equal(asyncIndexProgress.data.obj_count > 0, true);
 const stoppableIndexUpdate = await json({
-  body: { async: true, paths: ["/copy-skip-src"] },
+  body: { paths: ["/copy-skip-src"] },
   method: "POST",
   path: "/api/admin/index/update",
 });
@@ -3225,26 +3280,7 @@ const indexStop = await json({
   method: "POST",
   path: "/api/admin/index/stop",
 });
-if (indexStop.code === 200) {
-  assert.equal(indexStop.data.task_id, stoppableIndexUpdate.data.task.id);
-  const canceledIndexTask = await waitFor(async () => {
-    const info = await json({
-      body: { tid: stoppableIndexUpdate.data.task.id },
-      method: "POST",
-      path: "/api/task/index/info",
-    });
-    return info.data.state === "canceled" ? info : null;
-  });
-  assert.equal(canceledIndexTask.data.state, "canceled");
-} else {
-  assert.equal(indexStop.code, 400);
-  const finishedIndexTask = await json({
-    body: { tid: stoppableIndexUpdate.data.task.id },
-    method: "POST",
-    path: "/api/task/index/info",
-  });
-  assert.equal(["succeeded", "canceled"].includes(finishedIndexTask.data.state), true);
-}
+assert.equal([200, 400].includes(indexStop.code), true);
 const searchFile = await json({
   body: { keywords: "fresh", page: 1, parent: "/", per_page: 10, scope: 2 },
   method: "POST",
@@ -3291,6 +3327,7 @@ const workspaceIndexUpdate = await json({
   path: "/api/admin/index/update",
 });
 assert.equal(workspaceIndexUpdate.code, 200);
+await waitForIndexDone();
 const searchWorkspace = await json({
   body: { keywords: "workspace-hit", page: 1, parent: "/@workspace/search-root", per_page: 10, scope: 2 },
   method: "POST",
@@ -3315,6 +3352,7 @@ const indexUpdate = await json({
   path: "/api/admin/index/update",
 });
 assert.equal(indexUpdate.code, 200);
+await waitForIndexDone();
 const searchAfterUpdate = await json({
   body: { keywords: "fresh", page: 1, parent: "/", per_page: 10, scope: 2 },
   method: "POST",
@@ -3349,8 +3387,13 @@ await json({
 });
 await json({
   method: "POST",
+  path: "/api/admin/index/clear",
+});
+await json({
+  method: "POST",
   path: "/api/admin/index/build",
 });
+await waitForIndexDone();
 const searchIgnoredPath = await json({
   body: { keywords: "fresh", page: 1, parent: "/copy-skip-src", per_page: 10, scope: 2 },
   method: "POST",
@@ -3376,8 +3419,13 @@ const noIndexStorage = await json({
 assert.equal(noIndexStorage.code, 200);
 await json({
   method: "POST",
+  path: "/api/admin/index/clear",
+});
+await json({
+  method: "POST",
   path: "/api/admin/index/build",
 });
+await waitForIndexDone();
 const searchDisabledIndex = await json({
   body: { keywords: "hit", page: 1, parent: "/no-index", per_page: 10, scope: 2 },
   method: "POST",
@@ -3512,6 +3560,7 @@ assert.equal(driverNames.data.includes("115 Cloud"), true);
 assert.equal(driverNames.data.includes("115 Open"), true);
 assert.equal(driverNames.data.includes("115 Share"), true);
 assert.equal(driverNames.data.includes("WPS"), true);
+assert.equal(driverNames.data.includes("GitHub Releases"), true);
 assert.equal(driverNames.data.includes("SiYuanKernel"), false);
 assert.equal(driverNames.data.includes("SiYuanWorkspace"), true);
 assert.equal(driverNames.data.includes("GoogleDrive"), false);
@@ -3536,6 +3585,14 @@ const oneDriveInfo = await json({
   query: "driver=Onedrive",
 });
 assert.equal(oneDriveInfo.data.additional.some((item) => item.name === "region" && item.type === "select"), true);
+const githubReleasesInfo = await json({
+  method: "GET",
+  path: "/api/admin/driver/info",
+  query: "driver=GitHub%20Releases",
+});
+assert.equal(githubReleasesInfo.code, 200);
+assert.equal(githubReleasesInfo.data.config.no_upload, true);
+assert.equal(githubReleasesInfo.data.additional.some((item) => item.name === "repo_structure" && item.required), true);
 const cloud189PcInfo = await json({
   method: "GET",
   path: "/api/admin/driver/info",
@@ -5073,6 +5130,72 @@ const remoteQuarkTvLink = await json({
   path: "/api/fs/link",
 });
 assert.equal(remoteQuarkTvLink.data.url, "https://quark-tv-download.example.test/quark-tv.txt");
+
+await json({
+  body: {
+    driver: "GitHub Releases",
+    mount_path: "/remote-github-releases",
+    addition: JSON.stringify({
+      repo_structure: "OpenListTeam/OpenList",
+      show_readme: true,
+      show_source_code: true,
+      token: "GH_SMOKE_TOKEN",
+      gh_proxy: "https://gh-proxy.example.test/github.com",
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteGithubReleasesList = await json({
+  body: { path: "/remote-github-releases", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteGithubReleasesList.data.provider, "GitHub Releases");
+assert.equal(remoteGithubReleasesList.data.write, false);
+assert.equal(remoteGithubReleasesList.data.content.some((item) => item.name === "openlist-windows-amd64.zip" && item.size === 1024), true);
+assert.equal(remoteGithubReleasesList.data.content.some((item) => item.name === "README.md" && item.size === 512), true);
+assert.equal(remoteGithubReleasesList.data.content.some((item) => item.name === "Source code (zip)"), true);
+const remoteGithubReleasesLink = await json({
+  body: { path: "/remote-github-releases/openlist-windows-amd64.zip" },
+  method: "POST",
+  path: "/api/fs/link",
+});
+assert.equal(remoteGithubReleasesLink.data.url, "https://gh-proxy.example.test/github.com/OpenListTeam/OpenList/releases/download/v4.0.0/openlist-windows-amd64.zip");
+assert.equal(remoteGithubReleasesLink.data.raw_url, remoteGithubReleasesLink.data.url);
+
+await json({
+  body: {
+    driver: "GitHub Releases",
+    mount_path: "/remote-github-versions",
+    addition: JSON.stringify({
+      repo_structure: "tools:OpenListTeam/OpenList",
+      show_all_version: true,
+      show_source_code: true,
+    }),
+  },
+  method: "POST",
+  path: "/api/admin/storage/create",
+});
+const remoteGithubVersionsRoot = await json({
+  body: { path: "/remote-github-versions", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteGithubVersionsRoot.data.content[0].name, "tools");
+const remoteGithubVersionsRepo = await json({
+  body: { path: "/remote-github-versions/tools", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteGithubVersionsRepo.data.content.some((item) => item.name === "v4.0.0" && item.is_dir), true);
+const remoteGithubVersionsTag = await json({
+  body: { path: "/remote-github-versions/tools/v4.0.0", page: 1, per_page: 50 },
+  method: "POST",
+  path: "/api/fs/list",
+});
+assert.equal(remoteGithubVersionsTag.data.content.some((item) => item.name === "openlist-linux-amd64.tar.gz" && item.size === 2048), true);
+assert.equal(remoteGithubVersionsTag.data.content.some((item) => item.name === "Source code (tar.gz)"), true);
 
 const quarkTvQrStart = await json({
   body: {

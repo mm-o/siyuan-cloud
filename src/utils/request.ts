@@ -85,13 +85,40 @@ export interface OpenListResp<T = any> {
   data: T
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+function rateLimitDelay(text: string, status = 0) {
+  if (status !== 429 && !/TooManyRequests|Requests?/i.test(text))
+    return 0
+  const match = text.match(/(\d{3,6})/)
+  return Math.max(1000, Number(match?.[1] || 3000) + 200)
+}
+
+async function fetchOpenListSafe(url: string, init?: RequestInit) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, init)
+      const text = await response.text()
+      const delay = rateLimitDelay(text, response.status)
+      if (!delay || attempt === 2)
+        return { response, text }
+      await sleep(delay)
+    } catch (error) {
+      const delay = rateLimitDelay(error instanceof Error ? error.message : String(error), 429)
+      if (!delay || attempt === 2)
+        throw error
+      await sleep(delay)
+    }
+  }
+  throw new Error('unreachable')
+}
+
 export async function fetchOpenListJson(path: string, init?: RequestInit) {
   const url = `${privateBase}${path}`
-  const response = await fetch(url, {
+  const { response, text } = await fetchOpenListSafe(url, {
     ...init,
     headers: withOpenListHeaders(init?.headers),
   })
-  const text = await response.text()
   if (!response.ok)
     throw new Error(text ? `HTTP ${response.status}: ${text.slice(0, 160)}` : `HTTP ${response.status}`)
   return text ? JSON.parse(text) : null
@@ -110,11 +137,10 @@ export async function openListJson(path: string, body?: unknown, init?: RequestI
 }
 
 export async function fetchOpenListText(path: string, init?: RequestInit) {
-  const response = await fetch(`${privateBase}${path}`, {
+  const { response, text } = await fetchOpenListSafe(`${privateBase}${path}`, {
     ...init,
     headers: withOpenListHeaders(init?.headers),
   })
-  const text = await response.text()
   if (!response.ok)
     throw new Error(`HTTP ${response.status}: ${text}`)
   return { response, text }
@@ -122,11 +148,10 @@ export async function fetchOpenListText(path: string, init?: RequestInit) {
 
 async function requestOpenList<T = any>(path: string, init?: RequestInit): Promise<OpenListResp<T>> {
   try {
-    const response = await fetch(`${privateBase}/api${path}`, {
+    const { response, text } = await fetchOpenListSafe(`${privateBase}/api${path}`, {
       ...init,
       headers: withOpenListHeaders(init?.headers),
     })
-    const text = await response.text()
     if (!response.ok) {
       return {
         code: response.status,
@@ -145,6 +170,12 @@ async function requestOpenList<T = any>(path: string, init?: RequestInit): Promi
 }
 
 export const r = {
+  get<T = any>(path: string, init?: RequestInit): Promise<OpenListResp<T>> {
+    return requestOpenList<T>(path, {
+      ...init,
+      method: 'GET',
+    })
+  },
   post<T = any>(path: string, body?: unknown, init?: RequestInit): Promise<OpenListResp<T>> {
     return requestOpenList<T>(path, {
       ...init,

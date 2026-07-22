@@ -105,6 +105,9 @@ import { createWebDavServer } from "./server/webdav.js";
   });
 
   const warn = (...args) => siyuan.logger.warn("[siyuan-cloud]", ...args);
+  const requestAuthContext = { cookie: "" };
+  const originalFetch = siyuan.client.fetch.bind(siyuan.client);
+  const client = { fetch: (path, init = {}) => originalFetch(path, { ...init, headers: requestAuthContext.cookie ? { ...(init.headers || {}), Cookie: requestAuthContext.cookie } : init.headers }) };
 
   const pick = (value, lowerName, upperName) => {
     if (!value) return undefined;
@@ -162,7 +165,7 @@ import { createWebDavServer } from "./server/webdav.js";
     workspaceReadText,
     workspaceRelPath,
   } = createWorkspaceAdapter({
-    client: siyuan.client,
+    client,
     extensionType,
     failure,
     now,
@@ -375,7 +378,7 @@ import { createWebDavServer } from "./server/webdav.js";
   };
 
   const driverRuntime = createDriverRuntime({
-    client: siyuan.client,
+    client,
     getSettings: () => state.settings,
     saveStorageAddition,
     workspaceGet,
@@ -637,7 +640,7 @@ import { createWebDavServer } from "./server/webdav.js";
     saveState: saveRuntimeState,
   });
   const archiveDownloadResponse = createArchiveDownloadResponse({
-    client: siyuan.client,
+    client,
     driverRuntime,
     getState: () => state,
   });
@@ -645,7 +648,7 @@ import { createWebDavServer } from "./server/webdav.js";
   let handlers = {};
   handlers = {
     ...createStatusHandlers({
-      client: siyuan.client,
+      client,
       getState: () => state,
       handlersRef: () => handlers,
     }),
@@ -727,7 +730,7 @@ import { createWebDavServer } from "./server/webdav.js";
       workspaceGet,
     }),
     ...createFsHandlers({
-      client: siyuan.client,
+      client,
       cloneEntryTree,
       createFile,
       currentUser: requestUser,
@@ -758,7 +761,7 @@ import { createWebDavServer } from "./server/webdav.js";
       workspaceRelPath,
     }),
     ...createArchiveHandlers({
-      client: siyuan.client,
+      client,
       createFile,
       currentUser: requestUser,
       driverRuntime,
@@ -802,7 +805,7 @@ import { createWebDavServer } from "./server/webdav.js";
   siyuan.plugin.lifecycle.onload = async () => {
     await loadState();
     await siyuan.rpc.bind("siyuan-cloud.status", async () => createStatusPayload({
-      client: siyuan.client,
+      client,
       getState: () => state,
       handlersRef: () => handlers,
     }), "Return Siyuan Cloud compatibility runtime status.");
@@ -814,6 +817,12 @@ import { createWebDavServer } from "./server/webdav.js";
   };
 
   siyuan.server.private.http.handler = async (request) => {
-    return route(request);
+    const previousCookie = requestAuthContext.cookie;
+    requestAuthContext.cookie = Object.entries(pick(pick(request, "request", "Request"), "cookies", "Cookies") || {}).flatMap(([key, values]) => (Array.isArray(values) ? values : [values]).map((value) => `${key}=${value}`)).join("; ") || requestHeader(request, "Cookie");
+    try {
+      return await route(request);
+    } finally {
+      requestAuthContext.cookie = previousCookie;
+    }
   };
 })();

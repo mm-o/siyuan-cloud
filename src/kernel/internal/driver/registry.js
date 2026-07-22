@@ -8,6 +8,7 @@ import { create189CloudTVDriver } from "./189_tv/driver.js";
 import { create189CloudPCDriver } from "./189pc/driver.js";
 import { createAliyundriveOpenDriver } from "./aliyundrive_open/driver.js";
 import { createBaiduNetdiskDriver } from "./baidu_netdisk/driver.js";
+import { createGitHubReleasesDriver } from "./github_releases/driver.js";
 import { createOneDriveDriver } from "./onedrive/driver.js";
 import { createOpenListDriver } from "./openlist/driver.js";
 import { createQuarkOpenDriver } from "./quark_open/driver.js";
@@ -56,6 +57,7 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
     "123": create123PanDriver({ client }),
     BaiduNetdisk: createBaiduNetdiskDriver({ client }),
     BaiduNetDisk: createBaiduNetdiskDriver({ client }),
+    "GitHub Releases": createGitHubReleasesDriver({ client }),
     AliyundriveOpen: createAliyundriveOpenDriver({ client }),
     AliyunDriveOpen: createAliyundriveOpenDriver({ client }),
     "189Cloud": create189CloudDriver({ client }),

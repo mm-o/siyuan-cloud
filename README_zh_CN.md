@@ -5,6 +5,53 @@
 > [!IMPORTANT]
 > 需要 **思源 3.7.0** 或以上版本。
 
+## 最近更新
+
+### 0.6.0
+
+#### 新增
+
+- 新增 `/` 命令插入入口：在编辑器输入 `/` 后选择“思盘”，可搜索或浏览思盘文件树并插入文件链接。
+- `/` 插入复用右键菜单的复制链接逻辑：图片插入 Markdown 图片，音频插入 `<audio>`，视频插入 `<video>`，其它文件和文件夹插入稳定的 `siyuan://plugins/siyuan-cloud/open?path=...` 链接。
+- 新增索引建立入口：文件管理器“更多”菜单和 Dock 工具页都可触发建立索引；搜索无结果时会提示先建立索引，耗时取决于文件数量。
+- 新增 GitHub Releases 运行时驱动：支持按仓库结构浏览 Release 资产、README/LICENSE、源码包和全部版本，可配置 GitHub Token 与代理地址。
+- 新增中英文 GitHub Releases 驱动说明。
+- 新增飞书文档同步脚本 `pnpm docs:feishu` 和 `release:with-docs` 发布入口，README、API、更新日志和驱动说明可从本地 Markdown 同步到飞书。
+
+#### 优化
+
+- 精简搜索索引进度存储和执行路径：建立索引在后台执行，进度直接记录到运行时状态，并支持停止、清空和查询进度。
+- 优化预览与文档插入格式：图片、音频、视频保留可直接预览/播放的资源链接；PDF、EPUB、TXT、压缩包、普通文件和文件夹统一使用 `siyuan://` 打开思盘。
+- 明确 `/` 插入支持格式：图片包含 `jpg/tiff/jpeg/png/gif/bmp/svg/ico/swf/webp/avif`，音频包含 `mp3/wav/aac/m4a/flac/ogg`，视频包含 `mp4/mkv/avi/mov/rmvb/webm/flv/m3u8/m4v`，文本预览类包含 `txt/log/md/markdown/json/xml/yml/yaml/toml/ini/conf/js/ts/jsx/tsx/vue/css/scss/less/html/htm/go/py/java/rb/rs/php/c/cpp/h`；除图片、音频、视频外，插入文档时统一生成 `siyuan://` 链接。
+- 统一 FileTab、Dock、拖拽和 `/` 插入的链接生成入口，减少复制链接与插入链接之间的分叉。
+- Dock 状态页文档入口切换为飞书 Wiki 链接，说明文档、API、更新日志和驱动说明直接在浏览器打开。
+- 删除旧的打包文档清单和思源文档写入路径，运行时只读取生成的飞书文档链接，不再创建或更新思源笔记本文档。
+- 前端请求增加轻量重试，遇到限流提示时会短暂等待后重试，减少偶发 TooManyRequests 失败。
+- 内核状态读写增加限流重试，减少同步存储读写遇到 TooManyRequests 时的失败。
+- 状态页和能力矩阵补入 `github_releases` 适配器信息，驱动列表只展示已经接入运行时的 GitHub Releases。
+- 打包规则精简为只复制根目录中英文 README，不再把 `assets/docs` 整树打入插件包。
+
+#### 修复
+
+- 修复 Docker 部署下无法验证和创建云盘挂载的问题，避免驱动测试阶段直接返回 `Auth failed [session]`。
+- 修复搜索索引进度曾经写在 settings 字符串里的历史兼容问题，加载旧数据时会迁移到独立的 `index_progress` 运行时状态。
+
+### 0.5.5
+
+- 文档入口切换到飞书 Wiki 链接：Dock 状态页里的说明文档、API、更新日志和驱动说明现在都是直接打开浏览器的链接。
+- 删除旧的打包文档清单和思源文档写入路径，本地 Markdown 作为源文件，发版时同步到飞书。
+- 修复 Docker 部署下无法验证和创建云盘挂载的问题，避免驱动测试阶段直接返回 `Auth failed [session]`。
+
+### 0.5.4
+
+- 修复部分网络无法访问 123 网盘当前 `yun.123pan.com` B API 时的连接问题：失败后自动回退到 `api.123278.com`，并使用 `www.123pan.com` 网页请求头。
+- 合并 mm-o/siyuan-cloud#1，并将其中的兼容路径保留为回退方案，而不是替换默认的 123 网盘官方 API 域名。
+
+### 0.5.3
+
+- 修复 123Pan 的 PDF/EPUB/书籍类文件预览链接：`/api/fs/get` 现在按 OpenList 语义让 `PreferProxy`、`WebProxy` 和 `OnlyProxy` 挂载返回稳定的 `/p/<path>` 代理入口。
+- 修复 123Pan 文件行预览入口，统一使用稳定的 `/p` 代理链接，避免阅读类 companion 插件拿到脆弱的上游直链。
+
 ## 它是什么
 
 - **云盘聚合管理器**：浏览、挂载、上传、下载、分享和引用文件。
@@ -62,6 +109,7 @@ Dock 当前可见的运行时适配包括：
 - [[OneDrive 挂载]]
 - [[123Pan 挂载]]
 - [[百度网盘挂载]]
+- [[GitHub Releases]]
 - [[阿里云盘开放平台]]
 - [[189Cloud 系列]]
 - [[Quark UC 系列]]

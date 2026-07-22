@@ -18,7 +18,7 @@ src/kernel/**/*.js -> Vite kernel build step -> dist/kernel.js
 | `src/kernel/internal/conf` | `internal/conf` | 设置、任务类型和兼容常量 |
 | `src/kernel/internal/model` | `internal/model` | path、meta、args、storage/user/obj 模型辅助 |
 | `src/kernel/internal/fs` | `internal/fs` | virtual FS、workspace adapter、archive 边界 |
-| `src/kernel/internal/driver` | `internal/driver` / `drivers/*` | driver info、mount runtime、具体云盘适配；具体驱动使用 OpenList 源目录名，例如 `onedrive/driver.js` 对齐 `drivers/onedrive/driver.go` |
+| `src/kernel/internal/driver` | `internal/driver` / `drivers/*` | driver info、mount runtime、具体云盘适配；具体驱动使用 OpenList 源目录名，例如 `onedrive/driver.js` 对齐 `drivers/onedrive/driver.go`，`github_releases/driver.js` 对齐 `drivers/github_releases/driver.go` |
 | `src/kernel/internal/bootstrap/data` | `internal/bootstrap/data` | 默认 users/settings/metas/storages |
 
 长期规则：新增能力优先复制 OpenList 相邻源码结构；无法直接迁移时保留兼容占位，并在文档中标明原因和下一步。
@@ -85,6 +85,7 @@ OpenList-compatible JSON 响应统一使用：
 - `OneDrive`
 - `123Pan`
 - `BaiduNetdisk`
+- `GitHub Releases`
 - `AliyundriveOpen`
 - `189Cloud`
 - `189CloudPC`

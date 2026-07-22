@@ -27,6 +27,7 @@ const ADAPTERS = [
   "quark_open",
   "quark_tv",
   "uc_tv",
+  "github_releases",
   "wps",
 ];
 

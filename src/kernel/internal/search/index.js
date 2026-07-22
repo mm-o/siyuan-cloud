@@ -36,10 +36,7 @@ const normalizeNode = (node) => ({
 export const ensureSearchState = (state) => {
   if (!Array.isArray(state.search_nodes)) state.search_nodes = [];
   state.search_nodes = state.search_nodes.map(normalizeNode).filter((node) => node.name);
-  if (!state.settings) state.settings = {};
-  if (!state.settings.index_progress) {
-    state.settings.index_progress = JSON.stringify(progress());
-  }
+  if (!state.index_progress) state.index_progress = progress();
 };
 
 export const createSearchIndex = ({
@@ -52,22 +49,20 @@ export const createSearchIndex = ({
 }) => {
   const getProgress = () => {
     ensureSearchState(getState());
-    try {
-      return { ...progress(), ...JSON.parse(getState().settings.index_progress || "{}") };
-    } catch (_) {
-      return progress();
-    }
+    return { ...progress(), ...(getState().index_progress || {}) };
   };
 
   const writeProgress = async (value) => {
-    getState().settings.index_progress = JSON.stringify({ ...progress(), ...(value || {}) });
-    await saveState();
+    const next = { ...progress(), ...(value || {}) };
+    getState().index_progress = next;
+    if (next.is_done)
+      await saveState();
   };
 
-  const clear = async () => {
+  const clear = async ({ persist = true } = {}) => {
     ensureSearchState(getState());
     getState().search_nodes = [];
-    await saveState();
+    if (persist) await saveState();
   };
 
   const buildStateNodes = (paths, maxDepth) => {
@@ -93,7 +88,7 @@ export const createSearchIndex = ({
       }));
   };
 
-  const walkNodes = async (paths, maxDepth, shouldCancel) => {
+  const walkNodes = async (paths, maxDepth, shouldCancel, onProgress) => {
     if (!getObj || !listObjs) return buildStateNodes(paths, maxDepth);
     const roots = (Array.isArray(paths) && paths.length ? paths : ["/"]).map(normalizePath);
     const ignorePaths = parseIgnorePaths(getState().settings?.ignore_paths);
@@ -101,14 +96,14 @@ export const createSearchIndex = ({
     const nodes = [];
     const seen = new Set();
 
-    const walk = async (path, depth) => {
+    const walk = async (path, depth, listedObj = null) => {
       if (shouldCancel?.()) throw new Error("index canceled");
       const normalized = normalizePath(path);
       if (seen.has(normalized) || depth > depthLimit) return;
       seen.add(normalized);
       if (isIgnoredPath(normalized, ignorePaths)) return;
       if (isIndexDisabled?.(normalized)) return;
-      const obj = await getObj(normalized);
+      const obj = listedObj || await getObj(normalized);
       if (!obj) return;
       if (normalized !== "/") {
         nodes.push(normalizeNode({
@@ -117,13 +112,33 @@ export const createSearchIndex = ({
           is_dir: obj.is_dir,
           size: obj.size,
         }));
+        await onProgress?.({ found: nodes.length });
       }
       if (!obj.is_dir || depth >= depthLimit) return;
-      const children = await listObjs(normalized);
+      let children = [];
+      try {
+        children = await listObjs(normalized);
+      } catch (_) {
+        return;
+      }
       for (const child of children || []) {
         if (!child?.name) continue;
         if (shouldCancel?.()) throw new Error("index canceled");
-        await walk(normalizePath(`${normalized}/${child.name}`), depth + 1);
+        const childPath = normalizePath(`${normalized}/${child.name}`);
+        if (seen.has(childPath) || depth + 1 > depthLimit) continue;
+        if (isIgnoredPath(childPath, ignorePaths) || isIndexDisabled?.(childPath)) continue;
+        if (child.is_dir) {
+          await walk(childPath, depth + 1, child);
+          continue;
+        }
+        seen.add(childPath);
+        nodes.push(normalizeNode({
+          parent: normalized,
+          name: child.name,
+          is_dir: false,
+          size: child.size,
+        }));
+        await onProgress?.({ found: nodes.length });
       }
     };
 
@@ -133,14 +148,14 @@ export const createSearchIndex = ({
     return nodes;
   };
 
-  const build = async ({ clearFirst = true, paths = ["/"], maxDepth, count = true, shouldCancel } = {}) => {
+  const build = async ({ clearFirst = true, paths = ["/"], maxDepth, count = true, shouldCancel, onProgress } = {}) => {
     ensureSearchState(getState());
     await writeProgress(progress(0, false));
     if (clearFirst) getState().search_nodes = [];
     let nodes = [];
     try {
       if (shouldCancel?.()) throw new Error("index canceled");
-      nodes = await walkNodes(paths, maxDepth, shouldCancel);
+      nodes = await walkNodes(paths, maxDepth, shouldCancel, onProgress);
       if (shouldCancel?.()) throw new Error("index canceled");
     } catch (error) {
       await writeProgress(progress(0, true, error?.message || String(error), now()));
@@ -189,7 +204,6 @@ export const createSearchIndex = ({
       total: filtered.length,
     };
   };
-
   return {
     build,
     clear,

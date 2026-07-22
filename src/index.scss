@@ -235,7 +235,9 @@
     grid-template-columns: var(--ol-mount-icon) minmax(0, 1fr);
     align-items: center;
     gap: var(--ol-mount-gap);
+    color: inherit;
     padding: var(--ol-mount-gap);
+    text-decoration: none;
   }
 
   .ol-mount-row,

@@ -69,8 +69,15 @@ export function proxyPreviewUrl(path: string, absolute = true) {
   return toUrl(`${privateBase}/p${path}`, { escapeHash: true, escapeQuestion: true })
 }
 
-function readableOpenListRoute(route: 'd' | 'p', path: string) {
-  return `${location.origin}${privateBase}/${route}${String(path || '').replace(/#/g, '%23').replace(/\?/g, '%3F')}`
+function normalizeOpenListPath(path: string) {
+  const input = path ? String(path) : '/'
+  const slash = input.startsWith('/') ? input : `/${input}`
+  const normalized = slash.replace(/\/+/g, '/')
+  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '')
+}
+
+export function openListPluginOpenUrl(path: string) {
+  return `siyuan://plugins/siyuan-cloud/open?path=${encodeURIComponent(normalizeOpenListPath(path))}`
 }
 
 export function itemOpenUrl<T extends OpenListUrlItem>(item: T, path: PathInput<T>) {
@@ -84,18 +91,10 @@ export function itemStableUrl<T extends OpenListUrlItem>(item: T, path: PathInpu
   return siyuanWorkspacePublicUrl(resolvedPath) || String(item.raw_url || item.url || '') || proxyPreviewUrl(resolvedPath, false)
 }
 
-function companionHrefForKind(path: string, kind: string) {
-  if (kind === 'video')
-    return undefined
-  if (kind === 'audio')
-    return readableOpenListRoute('d', path)
-  return readableOpenListRoute('p', path)
-}
-
 export function openListCompanionHref(name: string, path: string, isDir = false) {
   if (isDir || !openListCompanionExts.has(extensionOfName(name)))
     return undefined
-  return companionHrefForKind(path, openListFileKind(name, isDir))
+  return openListPluginOpenUrl(path)
 }
 
 export function requireModule(id: string) {

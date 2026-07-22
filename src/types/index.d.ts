@@ -1,14 +1,15 @@
 interface Window {
   _siyuan_cloud?: {
     openPanel?: () => void
-    openApiDoc?: () => void
     openDriverDoc?: (driver: string) => void
-    openReadmeDoc?: () => void
-    openPackagedDoc?: (key: string) => void
     openDock?: () => void
     openFileManager?: (path?: string) => void
+    openPicker?: (options: {
+      targetElement: HTMLElement
+      onSelect: (item: { name: string, path: string, is_dir?: boolean }) => void
+    }) => void
   }
-  _siyuan_cloud_docs?: Array<{ key: string, icon: string, title: string, desc: string }>
+  _siyuan_cloud_docs?: Array<{ key: string, icon: string, title: string, desc: string, href: string }>
   Viewer?: any
   siyuan: {
     viewer?: any

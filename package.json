@@ -1,6 +1,6 @@
 {
   "name": "siyuan-cloud",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "type": "module",
   "description": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
   "author": "mm-o",
@@ -8,14 +8,16 @@
   "homepage": "https://github.com/mm-o/siyuan-cloud",
   "repository": "https://github.com/mm-o/siyuan-cloud",
   "scripts": {
-    "dev": "node ./scripts/docs-manifest.mjs && vite build --watch",
+    "dev": "vite build --watch",
     "dev:kernel": "node ./scripts/build-kernel.mjs --watch --out-dir=dev",
     "release": "node ./release.js",
     "release:manual": "node ./release.js --mode=manual",
     "release:patch": "node ./release.js --mode=patch",
     "release:minor": "node ./release.js --mode=minor",
     "release:major": "node ./release.js --mode=major",
-    "build": "node ./scripts/docs-manifest.mjs && vite build",
+    "release:with-docs": "pnpm docs:feishu && node ./release.js",
+    "build": "vite build",
+    "docs:feishu": "node ./scripts/feishu-doc-sync.mjs",
     "test:kernel": "node ./scripts/kernel-route-smoke.mjs"
   },
   "dependencies": {

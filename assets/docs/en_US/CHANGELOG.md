@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 0.6.0
+
+### Added
+
+- Added the `/` command insertion entry. Type `/`, choose Siyuan Cloud, then search or browse the cloud file tree and insert a file link into the document.
+- `/` insertion now reuses the same link-generation path as the context-menu Copy Link action: images insert Markdown images, audio inserts `<audio>`, video inserts `<video>`, and all other files or folders insert stable `siyuan://plugins/siyuan-cloud/open?path=...` links.
+- Added index-building entry points in the file-manager More menu and Dock Tools page. Empty search results now explain that an index may need to be built first, and build time depends on file count.
+- Added the GitHub Releases runtime driver, with browsing for release assets, README/LICENSE files, source archives, all-version mode, GitHub token configuration, and GitHub proxy support.
+- Added Chinese and English GitHub Releases driver guides.
+- Added `pnpm docs:feishu` and `release:with-docs` so README, API, changelog, and driver guides can be synced from local Markdown to Feishu.
+
+### Improved
+
+- Simplified search-index progress and execution: index builds run in the background, progress is stored directly in runtime state, and stop, clear, and progress routes remain available.
+- Improved preview and document insertion formats: images, audio, and video keep directly previewable/playable resource links; PDF, EPUB, TXT, archives, ordinary files, and folders use `siyuan://` to open Siyuan Cloud.
+- Document insertion supports image formats `jpg/tiff/jpeg/png/gif/bmp/svg/ico/swf/webp/avif`, audio formats `mp3/wav/aac/m4a/flac/ogg`, video formats `mp4/mkv/avi/mov/rmvb/webm/flv/m3u8/m4v`, and text-preview formats `txt/log/md/markdown/json/xml/yml/yaml/toml/ini/conf/js/ts/jsx/tsx/vue/css/scss/less/html/htm/go/py/java/rb/rs/php/c/cpp/h`; only image/audio/video get embedded preview snippets, and everything else uses `siyuan://`.
+- Unified link generation across FileTab, Dock, drag-and-drop, and `/` insertion to reduce drift between copied and inserted links.
+- Dock status documentation entries now open Feishu Wiki links directly in the browser for README, API, changelog, and driver guides.
+- Removed the old packaged-doc manifest and SiYuan document-writing path. Runtime docs now use generated Feishu links and no longer create or update SiYuan notebook documents.
+- Added lightweight frontend request retries for rate-limit responses, reducing occasional TooManyRequests failures.
+- Added lightweight kernel storage retries for TooManyRequests responses during plugin-state reads and writes.
+- Added `github_releases` to the status adapter list and runtime capability matrix, and exposed GitHub Releases only as a runtime-backed mount option.
+- Simplified packaging so only the root English and Chinese README files are copied into the plugin package, instead of the whole `assets/docs` tree.
+
+### Fixed
+
+- Fixed Docker deployments failing to verify and create cloud-drive mounts, avoiding `Auth failed [session]` during driver tests.
+- Fixed compatibility for older search progress data that was stored as a JSON string under settings by migrating it into the dedicated `index_progress` runtime state.
+
+## 0.5.5
+
+### Improved
+
+- Moved plugin documentation entry points to Feishu Wiki links. The Dock status page now shows README, API, changelog, and driver-guide entries as direct browser links instead of opening packaged SiYuan documents.
+- Simplified the documentation runtime by removing the packaged docs manifest and old SiYuan document-writing path; release sync now keeps local Markdown as the source and updates Feishu documents from it.
+
+### Fixed
+
+- Fixed Docker deployments failing to verify and create cloud-drive mounts, avoiding `Auth failed [session]` during driver tests.
+
 ## 0.5.4
 
 ### Fixed

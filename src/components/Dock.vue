@@ -62,6 +62,10 @@
       <template v-else-if="currentTab === 'tools'">
         <div class="ol-mount-list">
           <div class="ol-mount-form">
+            <DockSectionHeader icon="#iconSearch" :title="t('indexTools')" :actions="sectionActions.tools" />
+          </div>
+
+          <div class="ol-mount-form">
             <DockSectionHeader icon="#iconSettings" :title="t('configImportExport')" :actions="sectionActions.config" />
             <textarea v-model="configText" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('configJsonPlaceholder')" />
           </div>
@@ -91,9 +95,7 @@
           <DockRow :icon="statusIcon" :title="statusTitle" :desc="statusDetail" />
           <DockRow icon="#iconFile" :title="t('stateFile')" :desc="storageInfo.state_file || '/storage/petal/siyuan-cloud/config.json'" />
           <DockRow icon="#iconRefresh" :title="t('sync')" :desc="storageSyncLabel" />
-          <DockRow icon="#iconHelp" :title="t('openHelp')" :desc="t('pluginHelp')" :open="openReadmeDoc" />
-          <DockRow icon="#iconOpen" :title="t('openApi')" :desc="storageInfo.source || t('waitingStatus')" :open="openApiDoc" />
-          <DockRow v-for="item in docItems" :key="item.key" :icon="item.icon" :title="item.title" :desc="item.desc" :open="() => openPackagedDoc(item.key)" />
+          <DockRow v-for="item in docItems" :key="item.key" :icon="item.icon" :title="item.title" :desc="item.desc" :href="item.href" />
         </div>
       </template>
 
@@ -380,18 +382,21 @@ const DockRow = (props: any, { emit, slots }: any) => {
     event.stopPropagation()
     props.open(event)
   }
-  return h('div', {
+  return h(props.href ? 'a' : 'div', {
     class: 'ol-mount-row',
-    role: props.open ? 'button' : undefined,
+    href: props.href,
+    rel: props.href ? 'noopener' : undefined,
+    role: props.open && !props.href ? 'button' : undefined,
     style: props.style,
-    tabindex: props.open ? 0 : undefined,
-    onClick: open,
-    onKeydown: (event: KeyboardEvent) => {
+    tabindex: props.open && !props.href ? 0 : undefined,
+    target: props.href ? '_blank' : undefined,
+    onClick: props.open ? open : undefined,
+    onKeydown: props.open && !props.href ? (event: KeyboardEvent) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         open(event)
       }
-    },
+    } : undefined,
   }, [
     h('div', { class: 'ol-mount-row__cover' }, [h('svg', [h('use', { 'xlink:href': props.icon })])]),
     h('div', { class: 'ol-mount-row__main' }, [
@@ -447,10 +452,7 @@ const {
   mountFormOpen,
   openAddMount,
   openAddUser,
-  openApiDoc,
-  openReadmeDoc,
   docItems,
-  openPackagedDoc,
   openDriverHelpDoc,
   openFileManager,
   openEditMount,
@@ -800,7 +802,7 @@ async function browseTreeArchive(item: DockTreeItem) {
 }
 
 async function copyTreeLink(item: DockTreeItem, path: string) {
-  await copyOpenListItemLink({ item, link: documentLink, path, t })
+  await copyOpenListItemLink({ item, path, t })
 }
 
 function openTreeInFileManager() {

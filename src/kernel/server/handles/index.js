@@ -1,84 +1,68 @@
 import { failure, jsonResponse, success } from "../common/response.js";
 
 export const createIndexHandlers = ({
-  currentUser,
   parseJson,
   requireAdmin,
   searchIndex,
-  taskStore,
 }) => {
-  let activeIndexTaskId = "";
+  let cancelIndex = false;
+  let indexRunning = false;
   const withAdmin = (handler) => async (request) => {
     const ctx = requireAdmin?.(request);
     if (ctx?.error) return jsonResponse(ctx.error, ctx.error.code);
-    return handler(request, ctx?.user);
+    return handler(request);
   };
-  const shouldRunAsync = (req) => req.async === true || req.task === true || req.queued === true;
-  const queueIndexTask = async (request, req, user, taskName, buildOptions) => {
-    if (!taskStore?.enqueueTask) return null;
-    const task = await taskStore.enqueueTask("index", {
-      creator: currentUser?.(request) || user,
-      name: taskName,
-      status: "queued",
-    }, async ({ id, isCanceled, progress, throwIfCanceled }) => {
-      activeIndexTaskId = id;
-      await progress({ progress: 5, status: "clearing" });
-      throwIfCanceled();
-      if (buildOptions.clearFirst) await searchIndex.clear();
-      await progress({ progress: 15, status: "indexing" });
-      await searchIndex.build({ ...buildOptions, shouldCancel: isCanceled });
-      throwIfCanceled();
-      await progress({ progress: 95, status: "finalizing" });
+  const runIndexBuild = async (buildOptions) => {
+    if (indexRunning) return false;
+    indexRunning = true;
+    cancelIndex = false;
+    Promise.resolve().then(async () => {
+      let lastProgressAt = 0;
+      try {
+        await searchIndex.build({
+          ...buildOptions,
+          shouldCancel: () => cancelIndex,
+          onProgress: async ({ found }) => {
+            const time = Date.now();
+            if (time - lastProgressAt < 1000) return;
+            lastProgressAt = time;
+            await searchIndex.writeProgress({ obj_count: found, is_done: false, error: "" });
+          },
+        });
+      } catch (error) {
+        // searchIndex.build already writes the final error progress.
+        if ((error?.message || String(error)) !== "index canceled")
+          console.warn("[siyuan-cloud] build index error", error?.message || String(error));
+      } finally {
+        indexRunning = false;
+        cancelIndex = false;
+      }
     });
-    return task;
-  };
-  const currentIndexTask = (user) => {
-    const undone = taskStore?.listTasks?.("index", false, user) || [];
-    return undone.find((task) => task.state === "running" || task.state === "canceling")
-      || undone[0]
-      || null;
+    return true;
   };
   const handlers = {
-    "POST /api/admin/index/build": async (request, user) => {
-      const req = await parseJson(request);
-      if (shouldRunAsync(req)) {
-        const task = await queueIndexTask(request, req, user, "index build", { clearFirst: true, count: true, paths: ["/"] });
-        return jsonResponse(success({ task }));
-      }
-      await searchIndex.clear();
-      await searchIndex.build({ clearFirst: true, count: true, paths: ["/"] });
+    "POST /api/admin/index/build": async () => {
+      if (!await runIndexBuild({ clearFirst: true, count: true, paths: ["/"] }))
+        return jsonResponse(failure("index is running", 400), 400);
       return jsonResponse(success());
     },
-    "POST /api/admin/index/update": async (request, user) => {
+    "POST /api/admin/index/update": async (request) => {
       const req = await parseJson(request);
       const paths = Array.isArray(req.paths) && req.paths.length ? req.paths : ["/"];
-      if (shouldRunAsync(req)) {
-        const task = await queueIndexTask(request, req, user, "index update", { clearFirst: false, count: false, maxDepth: req.max_depth, paths });
-        return jsonResponse(success({ task }));
-      }
-      await searchIndex.build({ clearFirst: false, count: false, maxDepth: req.max_depth, paths });
+      if (!await runIndexBuild({ clearFirst: false, count: false, maxDepth: req.max_depth, paths }))
+        return jsonResponse(failure("index is running", 400), 400);
       return jsonResponse(success());
     },
-    "POST /api/admin/index/stop": async (_request, user) => {
-      const activeTask = activeIndexTaskId
-        ? taskStore?.getTask?.("index", activeIndexTaskId, user)
-        : currentIndexTask(user);
-      const task = activeTask && !["succeeded", "failed", "canceled"].includes(activeTask.state)
-        ? activeTask
-        : currentIndexTask(user);
-      if (!task || task.state === "succeeded" || task.state === "failed" || task.state === "canceled") {
-        return jsonResponse(failure("index is not running", 400));
-      }
-      await taskStore.markCanceled("index", task.id, user);
-      await searchIndex.writeProgress({
-        error: "index canceled",
-        is_done: true,
-        task_id: task.id,
-      });
-      return jsonResponse(success({ task_id: task.id }));
+    "POST /api/admin/index/stop": async () => {
+      if (!indexRunning)
+        return jsonResponse(failure("index is not running", 400), 400);
+      cancelIndex = true;
+      return jsonResponse(success());
     },
     "POST /api/admin/index/clear": async () => {
-      await searchIndex.clear();
+      if (indexRunning)
+        return jsonResponse(failure("index is running", 400), 400);
+      await searchIndex.clear({ persist: false });
       await searchIndex.writeProgress({
         error: "",
         is_done: true,
@@ -88,11 +72,9 @@ export const createIndexHandlers = ({
       return jsonResponse(success());
     },
     "GET /api/admin/index/progress": async () => {
-      const task = currentIndexTask();
       return jsonResponse(success({
         ...searchIndex.getProgress(),
-        task: task || null,
-        task_id: task?.id || "",
+        running: indexRunning,
       }));
     },
   };

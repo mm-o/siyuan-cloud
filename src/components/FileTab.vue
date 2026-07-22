@@ -212,7 +212,15 @@
           class="ol-file-tab__empty"
         >
           <svg><use xlink:href="#iconOpenListFolder" /></svg>
-          <span>{{ t('rootEmpty') }}</span>
+          <span>{{ searchActive ? tf('searchIndexHint', 'No results. Build the index from More or Tools first; time depends on file count.') : t('rootEmpty') }}</span>
+          <button
+            v-if="searchActive"
+            class="b3-button b3-button--outline"
+            type="button"
+            @click.stop="buildIndex"
+          >
+            {{ tf('buildIndex', 'Build Index') }}
+          </button>
         </div>
       </div>
 
@@ -281,6 +289,8 @@ import { usePlugin } from '@/main'
 import {
   fsCopy,
   fsGet,
+  indexBuild,
+  indexProgress,
   fsList,
   fsMkdir,
   fsMove,
@@ -426,6 +436,7 @@ const primaryToolbarActions = computed(() => [
   { key: 'download', icon: 'iconDownload', label: tf('download', 'Download'), disabled: !downloadableSelection.value.length, run: downloadSelection },
 ])
 const moreToolbarActions = computed(() => [
+  { key: 'buildIndex', icon: 'iconSearch', label: tf('buildIndex', 'Build Index'), run: buildIndex },
   { key: 'createFolder', icon: 'iconFolder', label: t('createFolder'), run: createFolder },
   { key: 'createFile', icon: 'iconFile', label: t('createFile'), run: createFile },
   { key: 'rename', icon: 'iconEdit', label: tf('rename', 'Rename'), disabled: selectedItems.value.length !== 1, run: renameSelection },
@@ -435,7 +446,7 @@ const moreToolbarActions = computed(() => [
   { key: 'delete', icon: 'iconTrashcan', label: t('deleteFile'), disabled: !selectedItems.value.length, run: deleteSelection },
   { key: 'settings', icon: 'iconSettings', label: t('openSettings'), run: openSettings },
 ])
-const moreToolbarSeparators = new Set(['rename', 'share', 'settings'])
+const moreToolbarSeparators = new Set(['createFolder', 'rename', 'share', 'settings'])
 
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -609,7 +620,7 @@ async function resolveDownloadUrl(path: string, preferFresh = false) {
   return (await resolveOpenListFile(path)).url
 }
 
-const copyLink = (item: FsItem, path: string) => copyOpenListItemLink({ item, link: documentLink, path, t })
+const copyLink = (item: FsItem, path: string) => copyOpenListItemLink({ item, path, t })
 
 function onItemDragStart(event: DragEvent, item: FsItem) {
   if (!event.dataTransfer)
@@ -774,6 +785,22 @@ async function openSearchInput() {
 
 function closeSearchInput() {
   searchInputOpen.value = false
+}
+
+async function buildIndex() {
+  try {
+    const progress = await indexProgress()
+    if (progress.code === 200 && progress.data?.is_done && Number(progress.data?.obj_count || 0) > 0) {
+      showMessage(tf('indexExists', 'Index already exists'))
+      return
+    }
+    const payload = await indexBuild()
+    if (payload.code !== 200 && !(payload.code === 400 && String(payload.message || '').includes('index is running')))
+      throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+    showMessage(tf('indexBuildStarted', 'Building index. Time depends on file count.'))
+  } catch (error) {
+    showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
+  }
 }
 
 async function createFolder() {

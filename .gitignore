@@ -8,6 +8,7 @@ dev
 dist
 build
 tmp
+.tmp
 .env
 docs/siyuan-master/
 docs/OpenList-main/

@@ -221,7 +221,7 @@ The long-form migration plan is kept in `docs/siyuan-cloud-migration-plan.md`.
 ## 2026-05-30 SiYuan Status Alignment
 
 - The Dock status card now uses the private HTTP status route directly through `src/utils/status.ts`, keeping OpenList-compatible HTTP as the primary integration surface and avoiding user-visible noise from SiYuan's `/ws/plugin/rpc` notification channel when that WebSocket handshake fails.
-- `src/kernel/server/handles/status.js` still exports `createStatusPayload`, so the HTTP status route and `siyuan-cloud.status` RPC return the same complete payload: counters, adapters, storage sync facts, routes, and migration stages.
+- `src/kernel/server/handles/status.js` still exports `createStatusPayload`, so the HTTP status route and `siyuan-cloud.status` RPC return the same complete payload: counters, adapters, storage sync facts, routes, and migration stages. `github_releases` is now included in the adapter list, and `GitHub Releases` appears in the runtime driver capability matrix as a read-only release asset driver.
 - Dock status refreshes use the shared `fetchKernelStatus` helper, avoiding duplicated status parsing while keeping the OpenList-compatible HTTP surface unchanged.
 - Smoke tests now capture the registered kernel RPC handler and assert that `siyuan-cloud.status` exposes the same torrent route/stage coverage as the HTTP status route.
 
@@ -268,13 +268,12 @@ Conclusion: `siyuan.storage` is persistent and syncable by default. Users can st
 - FileTab can copy document-ready snippets with root-relative plugin URLs, avoiding fixed 127.0.0.1:6806 origins: images use ![](/plugin/private/siyuan-cloud/p/<path>), audio/video use native audio/video tags, and generic files use siyuan://plugins/siyuan-cloud/open?... links.
 - The frontend plugin handles siyuan://plugins/siyuan-cloud/open?... via SiYuan's open-siyuan-url-plugin event and opens the proxy URL directly. Companion plugins that need audio/video playback should call the OpenList-compatible HTTP API themselves, preserving the `raw_url` and `/d`/`/p` boundary without adding a hard dependency here.
 
-## 2026-06-28 Native Plugin Docs
+## 2026-06-28 Plugin Docs
 
-- Dock status/info can open plugin documentation as normal SiYuan documents. The frontend uses SiYuan `fetchSyncPost` plus `openTab({ doc: { id } })`: find/create the dedicated notebook `Siyuan OpenList`, find/create the target doc by hpath, update existing docs with current Markdown, and open the doc tab.
-- Packaged docs are static plugin assets. Keep marketplace `README.md` and `README_zh_CN.md` at the plugin root. Put maintained extra docs under `assets/docs/*.md`; language variants use the same base name plus suffix, for example `CHANGELOG.md` and `CHANGELOG_zh_CN.md`.
-- `scripts/docs-manifest.mjs` scans `assets/docs/*.md` and writes `assets/docs/index.json`; `pnpm dev` and `pnpm build` run it before Vite. Runtime reads the JSON manifest through `/plugins/siyuan-cloud/assets/docs/index.json` and fetches Markdown files directly. This avoids Vite `import.meta.glob` chunks, which produced `Cannot find module './CHANGELOG-*.cjs'` in SiYuan/Electron.
-- Language selection uses the loaded plugin i18n result instead of `window.siyuan.config.appearance.lang`, because the latter was unreliable in the plugin runtime. Chinese UI picks `*_zh_CN.md` when present and falls back to the default file otherwise.
-- Opening a doc after the packaged Markdown changes will sync the existing SiYuan document on click. Newly created docs are written once by `/api/filetree/createDocWithMd`; existing docs are refreshed with `/api/block/updateBlock`.
+- Maintained docs stay as local Markdown for Git review and release sync.
+- `pnpm docs:feishu` syncs README, changelog, API, and driver docs to Feishu Wiki and writes the idempotent manifest to `docs/feishu-docs.json`.
+- Runtime docs use `src/utils/feishuDocs.generated.ts`; `src/App.vue` only opens Feishu URLs and does not write SiYuan notebooks or docs.
+- Keep marketplace `README.md` and `README_zh_CN.md` at the plugin root. Extra maintained docs live under `assets/docs/**` but are not copied into the plugin package.
 
 ## 2026-06-29 Capability Contract Freeze
 

@@ -116,6 +116,10 @@ export const fsSearch = (
   })
 }
 
+export const indexBuild = (): Promise<OpenListResp> => r.post('/admin/index/build')
+
+export const indexProgress = (): Promise<OpenListResp> => r.get('/admin/index/progress')
+
 export const fsOther = (body: {
   path: string
   method: string

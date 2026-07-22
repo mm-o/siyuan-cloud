@@ -7,7 +7,8 @@ import { fsRemove, resolveOpenListFile } from '@/utils/api'
 import {
   escapeHtml,
   itemStableUrl,
-  openListFileKinds,
+  openListFileKind,
+  openListPluginOpenUrl,
   promptText,
   requireModule,
   selectSavePath,
@@ -15,7 +16,7 @@ import {
 } from '@/utils/file_ui'
 import { handleResp } from '@/utils/handle_resp'
 import { usePlugin } from '@/main'
-import { formatResourceUrlForMarkdown, openListJson, withOpenListAuthQuery, withOpenListHeaders } from '@/utils/request'
+import { openListJson, withOpenListAuthQuery, withOpenListHeaders } from '@/utils/request'
 import { createShareForPaths } from '@/utils/share'
 
 export interface OpenListFileItem {
@@ -391,9 +392,8 @@ export async function copyOpenListItemLink<T extends OpenListUrlItem & { name: s
   item: T
   path: string
   t: (key: string) => string
-  link?: (item: T, path: string) => string
 }) {
-  await navigator.clipboard?.writeText(options.link?.(options.item, options.path) || `[${options.item.name}](${itemStableUrl(options.item, options.path)})`)
+  await navigator.clipboard?.writeText(openListDocumentLink(options))
   showMessage(options.t('linkCopied'), 2000)
 }
 
@@ -414,7 +414,6 @@ export const fallbackTranslator = (t: (key: string) => string): TranslateFallbac
     return value === key ? fallback : value
   }
 
-const extensionOf = (name: string) => name.split('.').pop()?.toLowerCase() || ''
 const escapeMdText = (value: string) => value.replace(/([\\[\]])/g, '\\$1')
 
 export function openListDocumentLink<T extends OpenListUrlItem & { name: string; is_dir?: boolean }>(options: {
@@ -422,19 +421,12 @@ export function openListDocumentLink<T extends OpenListUrlItem & { name: string;
   path: string
 }) {
   const name = escapeMdText(options.item.name)
-  if (!options.item.is_dir) {
-    const ext = extensionOf(options.item.name)
-    const tag = openListFileKinds.audio.has(ext) ? 'audio' : openListFileKinds.video.has(ext) ? 'video' : ''
-    if (tag) {
-      const url = escapeHtml(formatResourceUrlForMarkdown(itemStableUrl(options.item, options.path)))
-      return `<${tag} controls src="${url}"></${tag}>`
-    }
-    if (openListFileKinds.image.has(ext)) {
-      const url = formatResourceUrlForMarkdown(itemStableUrl(options.item, options.path))
-      return `![${name}](${url})`
-    }
-  }
-  return `[${name}](siyuan://plugins/siyuan-cloud/open?path=${normalizeOpenListPath(options.path)})`
+  const kind = openListFileKind(options.item.name, options.item.is_dir)
+  if (kind === 'image')
+    return `![${name}](${itemStableUrl(options.item, options.path)})`
+  if (kind === 'audio' || kind === 'video')
+    return `<${kind} controls src="${escapeHtml(itemStableUrl(options.item, options.path))}"></${kind}>`
+  return `[${name}](${openListPluginOpenUrl(options.path)})`
 }
 
 export function openListDragHtml(markdown: string) {
