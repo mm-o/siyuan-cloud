@@ -42,6 +42,8 @@ let pan123UploadRequestBody = null;
 let pan123S3AuthBody = null;
 let pan123UploadCompleteBody = null;
 let pan123UploadedBody = "";
+const pan123DownloadHosts = [];
+const pan123RedirectReferers = [];
 const aliOpenCreateBodies = [];
 const aliOpenCompleteBodies = [];
 let aliOpenPreviewBody = null;
@@ -413,12 +415,41 @@ globalThis.siyuan = {
               }],
             },
           };
-        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/download_info")) {
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/download_info")) {
+          pan123DownloadHosts.push(url.hostname);
+          assert.equal(forwardedHeader("origin"), "https://yun.123pan.com");
+          assert.equal(forwardedHeader("referer"), "https://yun.123pan.com/");
           body = {
             code: 0,
             message: "success",
             data: {
-              DownloadUrl: "https://download123.example.test/pan123.txt",
+              DownloadUrl: `https://yun.123pan.com/download?params=${encodeURIComponent(Buffer.from("https://download123-jump.example.test/current").toString("base64"))}`,
+            },
+          };
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/download_info")) {
+          pan123DownloadHosts.push(url.hostname);
+          body = {
+            code: 0,
+            message: "success",
+            data: {
+              DownloadUrl: `https://www.123pan.com/download?params=${encodeURIComponent(Buffer.from("https://download123-jump.example.test/fallback").toString("base64"))}`,
+            },
+          };
+        } else if (url.hostname === "download123-jump.example.test" && url.pathname.endsWith("/current")) {
+          pan123RedirectReferers.push(forwardedHeader("referer"));
+          status = 403;
+          body = {
+            code: 1010,
+            message: "download redirect failed: 50001",
+            data: null,
+          };
+        } else if (url.hostname === "download123-jump.example.test" && url.pathname.endsWith("/fallback")) {
+          pan123RedirectReferers.push(forwardedHeader("referer"));
+          body = {
+            code: 0,
+            message: "success",
+            data: {
+              redirect_url: "https://download123.example.test/pan123.txt",
             },
           };
         } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/file/upload_request")) {
@@ -4799,14 +4830,16 @@ const remote123Read = await call({
   path: "/d/remote-123/pan123.txt",
 });
 assert.equal(remote123Read.body.proxy.url, "https://download123.example.test/pan123.txt");
-assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://download123.example.test/");
+assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://www.123pan.com/");
 assert.equal(remote123Read.body.proxy.method, "GET");
+assert.deepEqual(pan123DownloadHosts.slice(0, 2), ["yun.123pan.com", "api.123278.com"]);
+assert.deepEqual(pan123RedirectReferers.slice(0, 2), ["https://yun.123pan.com/", "https://www.123pan.com/"]);
 const remote123Preview = await call({
   method: "GET",
   path: "/p/remote-123/pan123.txt",
 });
 assert.equal(remote123Preview.body.proxy.url, "https://download123.example.test/pan123.txt");
-assert.equal(remote123Preview.body.proxy.headers.Referer[0], "https://download123.example.test/");
+assert.equal(remote123Preview.body.proxy.headers.Referer[0], "https://www.123pan.com/");
 const remote123ShareCreate = await json({
   body: { files: ["/remote-123/pan123.txt"], id: "share-remote-123", pwd: "rpw" },
   method: "POST",

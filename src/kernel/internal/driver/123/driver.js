@@ -8,6 +8,10 @@ import { signAwsV4 } from "../aws4.js";
 const API = "https://yun.123pan.com/api";
 const B_API = "https://yun.123pan.com/b/api";
 const FALLBACK_B_API = "https://api.123278.com/b/api";
+const B_API_TARGETS = [
+  ["https://yun.123pan.com", B_API],
+  ["https://www.123pan.com", FALLBACK_B_API],
+];
 const LOGIN_API = "https://login.123pan.com/api";
 const SIGN_IN = LOGIN_API + "/user/sign_in";
 const USER_INFO = B_API + "/user/info";
@@ -234,7 +238,9 @@ const login = async (client, addition) => {
   return addition.access_token;
 };
 
-const request123 = async (client, storage, url, {
+const requestTargets = (url) => B_API_TARGETS.map(([origin, api]) => ({ origin, url: url.replace(B_API, api) }));
+
+const request123At = async (client, storage, url, origin, {
   body,
   method = "GET",
   query,
@@ -242,22 +248,26 @@ const request123 = async (client, storage, url, {
 } = {}) => {
   const addition = storage.addition_json;
   if (!addition.access_token && !addition.AccessToken) await login(client, addition);
+  const api = new URL(url);
+  for (const [key, value] of Object.entries(query || {})) api.searchParams.set(key, String(value));
+  const payload = await remoteJson(client, signedApi(api.toString()), {
+    allowErrorStatus: true,
+    body,
+    headers: headersFor(addition, undefined, origin),
+    method,
+  });
+  if (Number(payload?.code) === 401 && retry) {
+    await login(client, addition);
+    return request123At(client, storage, url, origin, { body, method, query, retry: false });
+  }
+  return check123(payload);
+};
+
+const request123 = async (client, storage, url, options = {}) => {
   let lastError;
-  for (const [raw, origin] of [[url, "https://yun.123pan.com"], [url.replace(B_API, FALLBACK_B_API), "https://www.123pan.com"]]) {
+  for (const target of requestTargets(url)) {
     try {
-      const api = new URL(raw);
-      for (const [key, value] of Object.entries(query || {})) api.searchParams.set(key, String(value));
-      const payload = await remoteJson(client, signedApi(api.toString()), {
-        allowErrorStatus: true,
-        body,
-        headers: headersFor(addition, undefined, origin),
-        method,
-      });
-      if (Number(payload?.code) === 401 && retry) {
-        await login(client, addition);
-        return request123(client, storage, url, { body, method, query, retry: false });
-      }
-      return check123(payload);
+      return await request123At(client, storage, target.url, target.origin, options);
     } catch (error) {
       lastError = error;
     }
@@ -368,52 +378,65 @@ const resolveFile = async (client, storage, relPath) => {
   return { file: found, id: idOf(found), name: fileNameOf(found), path: current };
 };
 
-const downloadUrlFor = async (client, storage, file) => {
-  const payload = await request123(client, storage, DOWNLOAD_INFO, {
-    body: {
-      driveId: 0,
-      etag: file?.Etag || file?.etag || "",
-      fileId: Number(idOf(file)),
-      fileName: fileNameOf(file),
-      s3keyFlag: file?.S3KeyFlag || file?.s3KeyFlag || "",
-      size: Number(file?.Size ?? file?.size ?? 0),
-      type: Number(file?.Type ?? file?.type ?? 0),
-    },
-    method: "POST",
-  });
-  const raw = payload?.data?.DownloadUrl || payload?.data?.downloadUrl || "";
-  if (!raw) throw new Error("get download url failed");
-  let referer = "https://yun.123pan.com/";
-  try {
-    const original = new URL(raw);
-    referer = `${original.protocol}//${original.host}/`;
-  } catch (_) {
-    // Keep the web referer fallback used by the upstream request flow.
-  }
-  let candidate = raw;
+const decodeDownloadCandidate = (raw) => {
   try {
     const url = new URL(raw);
     const params = url.searchParams.get("params");
-    candidate = params ? decodeBase64(params) : url.toString();
+    return params ? decodeBase64(params) : url.toString();
   } catch (_) {
-    candidate = raw;
+    return raw;
   }
+};
+
+const resolveDownloadRedirect = async (client, candidate, referer) => {
+  const resolved = await forwardProxy(client, candidate, {
+    allowErrorStatus: true,
+    contentType: "application/json",
+    headers: { Referer: referer },
+    method: "GET",
+    responseEncoding: "text",
+  });
+  const status = Number(resolved?.status || 0);
+  if (status >= 400) throw new Error(`123Pan download redirect HTTP ${status}`);
+  let data;
   try {
-    const resolved = await forwardProxy(client, candidate, {
-      allowErrorStatus: true,
-      contentType: "application/json",
-      headers: { Referer: "https://yun.123pan.com/" },
-      method: "GET",
-      responseEncoding: "text",
-    });
-    const data = JSON.parse(resolved.body || "{}");
-    return {
-      url: data?.data?.redirect_url || data?.data?.redirectUrl || candidate,
-      referer,
-    };
+    data = JSON.parse(resolved?.body || "{}");
   } catch (_) {
-    return { url: candidate, referer };
+    return candidate;
   }
+  const redirect = data?.data?.redirect_url || data?.data?.redirectUrl || "";
+  const code = Number(data?.code ?? 0);
+  const message = String(data?.message || data?.msg || "");
+  if (code === 1010 || message.includes("50001") || (!redirect && code !== 0 && code !== 200)) {
+    throw new Error(message || `123Pan download redirect code ${code}`);
+  }
+  return redirect || candidate;
+};
+
+const downloadUrlFor = async (client, storage, file) => {
+  const body = {
+    driveId: 0,
+    etag: file?.Etag || file?.etag || "",
+    fileId: Number(idOf(file)),
+    fileName: fileNameOf(file),
+    s3keyFlag: file?.S3KeyFlag || file?.s3KeyFlag || "",
+    size: Number(file?.Size ?? file?.size ?? 0),
+    type: Number(file?.Type ?? file?.type ?? 0),
+  };
+  let lastError;
+  for (const target of requestTargets(DOWNLOAD_INFO)) {
+    try {
+      const payload = await request123At(client, storage, target.url, target.origin, { body, method: "POST" });
+      const raw = payload?.data?.DownloadUrl || payload?.data?.downloadUrl || "";
+      if (!raw) throw new Error("get download url failed");
+      const referer = `${target.origin}/`;
+      const url = await resolveDownloadRedirect(client, decodeDownloadCandidate(raw), referer);
+      return { url, referer };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 };
 
 const linkFor = async (client, storage, file) => {
