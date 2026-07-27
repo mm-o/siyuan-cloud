@@ -1,4 +1,4 @@
-export const OPENLIST_VERSION = "siyuan-cloud-port-0.5.3"
+export const OPENLIST_VERSION = "siyuan-cloud-port-0.6.2"
 export const CONFIG_FILE = "config.json"
 export const LEGACY_STATE_FILE = "siyuan-cloud/state.json"
 export const RUNTIME_FILE = "runtime.json"

@@ -7,7 +7,7 @@
 
 ## Recent Updates
 
-### 0.6.1
+### 0.6.2
 
 #### Added
 
@@ -22,6 +22,7 @@
 
 - Fixed mounted media file clicks being intercepted by the companion `data-href` path before playback could resolve. Audio and video rows now use the active media-preview flow, while reader files keep stable `/p/<path>` companion links.
 - Added clearer unsupported upload/download prompts. Unsupported mounts now fail before upload or download starts.
+- Fixed 123Pan downloads by retrying the paired `yun.123pan.com` and `api.123278.com` address flows when the decoded redirect is rejected by Referer-sensitive responses such as 403/50001.
 
 ### 0.6.0
 
