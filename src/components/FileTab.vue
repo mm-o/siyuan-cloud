@@ -83,7 +83,7 @@
           v-if="loading"
           class="ol-file-tab__loading"
         >
-          <div class="fn__loading" />
+          <div class="ol-loading" />
         </div>
         <ul
           v-else-if="sortedItems.length && viewMode === 'list'"
@@ -285,6 +285,7 @@ import {
   onMounted,
   ref,
 } from 'vue'
+import { ensureDriveTransfer } from '@/config/drive_policy'
 import { usePlugin } from '@/main'
 import {
   fsCopy,
@@ -308,6 +309,7 @@ import {
 import {
   copyOpenListItemLink,
   deleteOpenListSelection,
+  downloadActionLabel,
   downloadOpenListItem,
   itemOpenListPath,
   joinOpenListPath as joinPath,
@@ -363,7 +365,7 @@ const searchInput = ref('')
 const searchActive = ref(false)
 const searchInputOpen = ref(false)
 const items = ref<FsItem[]>([])
-const loading = ref(false)
+const loading = ref(true)
 const contentRef = ref<HTMLElement>()
 const searchInputRef = ref<HTMLInputElement>()
 const uploadInputRef = ref<HTMLInputElement>()
@@ -371,6 +373,7 @@ const selectedPaths = ref<string[]>([])
 const selectionMode = ref(false)
 const shortcutSelecting = ref(false)
 const focusPath = ref('')
+const currentProvider = ref('')
 const transferDragging = ref(false)
 const transferItems = ref<TransferItem[]>([])
 const VIEW_MODE_KEY = 'siyuan-cloud-file-view-mode'
@@ -433,7 +436,7 @@ const primaryToolbarActions = computed(() => [
   { key: 'view', icon: viewMode.value === 'image' ? 'iconList' : 'iconOpenListGrid', label: viewMode.value === 'image' ? tf('listView', 'List View') : tf('imageView', 'Image View'), run: toggleViewMode },
   { key: 'upload', icon: 'iconUpload', label: tf('upload', 'Upload'), run: openUpload },
   { key: 'selection', icon: selectionMode.value ? 'iconCheck' : 'iconUncheck', label: tf('toggleCheckbox', 'Toggle selection'), run: toggleSelectionMode },
-  { key: 'download', icon: 'iconDownload', label: tf('download', 'Download'), disabled: !downloadableSelection.value.length, run: downloadSelection },
+  { key: 'download', icon: 'iconDownload', label: downloadActionLabel(tf), disabled: !downloadableSelection.value.length, run: downloadSelection },
 ])
 const moreToolbarActions = computed(() => [
   { key: 'buildIndex', icon: 'iconSearch', label: tf('buildIndex', 'Build Index'), run: buildIndex },
@@ -612,6 +615,7 @@ const itemOpenUrl = (item: FsItem) => openListItemOpenUrl(item, itemPath)
 const companionHref = (item: FsItem) => openListCompanionHref(item.name, itemPath(item), item.is_dir)
 const companionDataHref = (item: FsItem) => shortcutSelecting.value ? undefined : companionHref(item)
 const documentLink = (item: FsItem, path: string) => openListDocumentLink({ item, path })
+const showLoading = () => (loading.value = true, nextTick())
 
 async function resolveDownloadUrl(path: string, preferFresh = false) {
   const local = items.value.find(item => itemPath(item) === path)
@@ -685,11 +689,12 @@ async function refresh() {
     return
   }
   const seq = ++refreshSeq
-  loading.value = true
+  await showLoading()
   const payload = await fsList(currentPath.value, '', 1, 200)
   if (seq !== refreshSeq)
     return
   handleResp(payload, (data: any) => {
+    currentProvider.value = String(data?.provider || '')
     items.value = data?.content || []
     selectedPaths.value = selectedPaths.value.filter(path => items.value.some(item => itemPath(item) === path))
   })
@@ -703,11 +708,12 @@ async function runSearch() {
     return
   }
   const seq = ++refreshSeq
-  loading.value = true
+  await showLoading()
   const payload = await fsSearch(currentPath.value, keywords, 0, 1, 200)
   if (seq !== refreshSeq)
     return
   handleResp(payload, (data: any) => {
+    currentProvider.value = String(data?.provider || '')
     items.value = (data?.content || []).map((entry: any) => {
       const path = normalizePath(`${entry.parent || '/'}/${entry.name}`)
       const parent = parentPath(path)
@@ -760,7 +766,7 @@ defineExpose({ openPath: locatePath })
 async function goPath(path: string) {
   const nextPath = normalizePath(path || '/')
   searchInputOpen.value = false
-  loading.value = true
+  await showLoading()
   const payload = await fsList(nextPath, '', 1, 200)
   loading.value = false
   if (payload.code !== 200) {
@@ -768,6 +774,7 @@ async function goPath(path: string) {
     return false
   }
   currentPath.value = nextPath
+  currentProvider.value = String(payload.data?.provider || '')
   items.value = payload.data?.content || []
   searchInput.value = ''
   searchActive.value = false
@@ -952,6 +959,8 @@ async function shareSelection() {
 }
 
 function openUpload() {
+  if (!ensureDriveTransfer(currentProvider.value, 'upload', tf))
+    return
   uploadInputRef.value?.click()
 }
 
@@ -1005,6 +1014,8 @@ async function uploadFile(file: File) {
 async function uploadFiles(files: File[]) {
   if (!files.length)
     return
+  if (!ensureDriveTransfer(currentProvider.value, 'upload', tf))
+    return
   let failed = false
   for (const file of files)
     failed = !await uploadFile(file) || failed
@@ -1016,6 +1027,8 @@ async function uploadFiles(files: File[]) {
 
 async function onTransferDrop(event: DragEvent) {
   transferDragging.value = false
+  if (!ensureDriveTransfer(currentProvider.value, 'upload', tf))
+    return
   const files = Array.from(event.dataTransfer?.files || [])
   await uploadFiles(files)
 }
@@ -1031,6 +1044,8 @@ async function onUploadChange(event: Event) {
 }
 
 async function downloadItem(item: FsItem) {
+  if (!ensureDriveTransfer(currentProvider.value, 'download', tf))
+    return
   let transfer: TransferItem | null = null
   try {
     const targetPath = await selectSavePath(item.name, {
@@ -1045,6 +1060,7 @@ async function downloadItem(item: FsItem) {
     const result = await downloadOpenListItem({
       item,
       itemPath,
+      provider: currentProvider.value,
       tf,
       targetPath,
       onProgress: (progress) => {
@@ -1066,6 +1082,8 @@ async function downloadItem(item: FsItem) {
 }
 
 async function downloadSelection() {
+  if (!ensureDriveTransfer(currentProvider.value, 'download', tf))
+    return
   for (const item of downloadableSelection.value)
     await downloadItem(item)
 }

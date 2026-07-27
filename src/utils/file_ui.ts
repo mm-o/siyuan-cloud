@@ -44,7 +44,7 @@ export const openListFileKinds = {
   text: new Set('txt,log,md,markdown,json,xml,yml,yaml,toml,ini,conf,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,rb,rs,php,c,cpp,h'.split(',')),
   video: new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(',')),
 }
-const openListCompanionExts = new Set('mp3,wav,aac,m4a,flac,ogg,mp4,m3u8,webm,mov,m4v,mkv,avi,flv,wmv,epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
+const openListReaderExts = new Set('epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
 
 type PathInput<T> = string | ((item: T) => string)
 type MediaKind = 'audio' | 'video'
@@ -92,9 +92,9 @@ export function itemStableUrl<T extends OpenListUrlItem>(item: T, path: PathInpu
 }
 
 export function openListCompanionHref(name: string, path: string, isDir = false) {
-  if (isDir || !openListCompanionExts.has(extensionOfName(name)))
+  if (isDir || !openListReaderExts.has(extensionOfName(name)))
     return undefined
-  return openListPluginOpenUrl(path)
+  return proxyPreviewUrl(path, false)
 }
 
 export function requireModule(id: string) {

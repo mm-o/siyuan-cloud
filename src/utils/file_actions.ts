@@ -3,6 +3,7 @@ import {
   confirm,
   showMessage,
 } from 'siyuan'
+import { ensureDriveTransfer } from '@/config/drive_policy'
 import { fsRemove, resolveOpenListFile } from '@/utils/api'
 import {
   escapeHtml,
@@ -109,17 +110,21 @@ export async function deleteOpenListSelection(options: {
 export async function downloadOpenListItem<T extends OpenListFileItem>(options: {
   item: T
   itemPath: (item: T) => string
+  provider?: string
   targetPath?: string
   tf?: TranslateFallback
   onProgress?: (progress: number) => void
 }) {
   if (options.item.is_dir)
     return 'cancelled'
+  const tf = options.tf || ((_, fallback) => fallback)
+  if (!ensureDriveTransfer(options.provider || '', 'download', tf))
+    return 'cancelled'
   const path = options.itemPath(options.item)
   const targetPath = options.targetPath ?? await selectSavePath(options.item.name, {
-    cancel: options.tf?.('cancel', 'Cancel'),
-    confirm: options.tf?.('download', 'Download'),
-    title: options.tf?.('saveAs', 'Save as'),
+    cancel: tf('cancel', 'Cancel'),
+    confirm: tf('download', 'Download'),
+    title: tf('saveAs', 'Save as'),
   })
   if (!targetPath)
     return 'cancelled'
@@ -128,6 +133,10 @@ export async function downloadOpenListItem<T extends OpenListFileItem>(options: 
     await streamDownloadToFile(file.d_url || file.url, targetPath, options.onProgress, Number(file.size || options.item.size || 0))
   })
   return 'saved'
+}
+
+export function downloadActionLabel(tf: TranslateFallback) {
+  return `${tf('download', 'Download')} (${tf('downloadMotrixNextHint', 'Motrix Next recommended')})`
 }
 
 function enqueueDownload(task: () => Promise<void>) {
@@ -476,7 +485,7 @@ export function openOpenListFileItemMenu(options: {
   if (!options.item.is_dir) {
     menu.addItem({
       icon: 'iconDownload',
-      label: options.tf('download', 'Download'),
+      label: downloadActionLabel(options.tf),
       click: () => options.downloadItem(options.item),
     })
     menu.addItem({

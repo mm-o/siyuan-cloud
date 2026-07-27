@@ -1,9 +1,8 @@
-import { normalizeResourceUrl, privateBase, r, withOpenListHeaders, type OpenListResp } from './request'
+import { normalizeResourceUrl, privateBase, r, type OpenListResp } from './request'
 import {
   clearLocalMountCache,
   getLocal,
   listLocal,
-  localMountEntries,
   copyLocal,
   mkdirLocal,
   moveLocal,
@@ -22,6 +21,7 @@ import {
   renameOpenListDirect,
   writeOpenListDirect,
 } from './openlist_direct'
+import { usePlugin } from '@/main'
 
 export { clearLocalMountCache, clearOpenListDirectCache }
 
@@ -56,45 +56,20 @@ export const fsList = (
 }
 
 async function fsListLocalFirst(path: string, password = '', page = 1, per_page = 0, refresh = false) {
+  if (path === '/')
+    return await fsRootFromStoredConfig() || r.post('/fs/list', { path, password, page, per_page, refresh })
   const local = await listLocal(path, page, per_page)
   if (local)
     return local
   const direct = await listOpenListDirect(path, page, per_page, refresh)
   if (direct)
     return direct
-  if (path === '/') {
-    const payload = await r.post('/fs/list', { path, password, page, per_page, refresh })
-    const localEntries = await localMountEntries()
-    if (!localEntries.length || payload.code !== 200)
-      return payload
-    const content = mergeRootEntries(localEntries, payload.data?.content || [])
-    return {
-      ...payload,
-      data: {
-        ...payload.data,
-        content,
-        total: content.length,
-      },
-    }
-  }
   return r.post('/fs/list', {
     path,
     password,
     page,
     per_page,
     refresh,
-  })
-}
-
-function mergeRootEntries(localEntries: any[], remoteEntries: any[]) {
-  const seen = new Set<string>()
-  return [...localEntries, ...remoteEntries].filter((item) => {
-    const raw = item?.path || (item?.name ? `/${item.name}` : '')
-    const key = String(raw).replace(/\/+$/, '').toLowerCase() || '/'
-    if (!key || seen.has(key))
-      return false
-    seen.add(key)
-    return true
   })
 }
 
@@ -114,6 +89,34 @@ export const fsSearch = (
     per_page,
     password,
   })
+}
+
+async function fsRootFromStoredConfig(): Promise<OpenListResp | null> {
+  for (const name of ['config.json', 'siyuan-cloud/state.json']) {
+    try {
+      const value = await usePlugin().loadData(name)
+      const config = value && typeof value === 'object' ? value : value ? JSON.parse(String(value)) : null
+      const root = storageRootResp(config?.storages)
+      if (root)
+        return root
+    } catch {}
+  }
+  return null
+}
+
+function storageRootResp(storages: any[] = []): OpenListResp | null {
+  const seen = new Set<string>()
+  const content = []
+  const now = new Date().toISOString()
+  for (const storage of Array.isArray(storages) ? storages : []) {
+    const name = storage?.disabled ? '' : String(storage?.mount_path || storage?.mountPath || '/').split('/').filter(Boolean)[0]
+    const key = name.toLowerCase()
+    if (!name || seen.has(key))
+      continue
+    seen.add(key)
+    content.push({ name, path: `/${name}`, is_dir: true, size: 0, modified: now, created: now, provider: 'mount' })
+  }
+  return content.length ? { code: 200, message: 'success', data: { content, total: content.length, readme: '', header: '', write: false, write_content_bypass: false, provider: 'mount', direct_upload_tools: [] } } : null
 }
 
 export const indexBuild = (): Promise<OpenListResp> => r.post('/admin/index/build')
@@ -191,9 +194,6 @@ export const fsUploadFile = async (
   const directUpload = await tryDirectUpload(path, file, onProgress)
   if (directUpload)
     return directUpload
-  const blocked = await uploadBlockedByProvider(path)
-  if (blocked)
-    return blocked
   const content = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
   onProgress?.(40)
   const payload = await r.put('/fs/put', {
@@ -208,14 +208,6 @@ export const fsUploadFile = async (
   if (payload.code === 200)
     onProgress?.(100)
   return payload
-}
-
-async function uploadBlockedByProvider(path: string): Promise<OpenListResp | null> {
-  const parent = path.replace(/\/[^/]*$/, '') || '/'
-  const payload = await r.post('/fs/list', { path: parent, page: 1, per_page: 1 })
-  if (payload.code === 200 && payload.data?.provider === 'WPS')
-    return { code: 501, message: 'WPS upload is disabled in the SiYuan kernel JavaScript runtime to avoid blocking SiYuan', data: null }
-  return null
 }
 
 async function tryDirectUpload(path: string, file: File, onProgress?: (progress: number) => void): Promise<OpenListResp | null> {

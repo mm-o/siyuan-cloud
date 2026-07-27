@@ -263,6 +263,7 @@ import {
   computed,
   defineComponent,
   h,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -565,6 +566,7 @@ const mountEntries = computed(() => [
   ...verifyStorages.value.flatMap(item => [{ type: 'mount', key: item.id || item.mount_path, item }, ...(mountFormOpen.value && Number(item.id) === selectedStorageId.value ? [{ type: 'form', key: 'form' }] : [])]),
   mountFormOpen.value && !selectedStorageId.value ? { type: 'form', key: 'form' } : { type: 'add', key: 'add' },
 ])
+const LOADING_ROW = '<li class="b3-list-item"><span class="b3-list-item__toggle fn__hidden"></span><span class="b3-list-item__text"><span class="ol-loading"></span></span></li>'
 const formOrder = (items: any[], selected: any, key: (item: any) => any) => {
   const index = items.findIndex(item => String(key(item)) === String(selected))
   return index >= 0 ? index * 2 + 1 : items.length * 2 + 1
@@ -580,6 +582,8 @@ const rootItems = ref<DockTreeItem[]>([])
 const childrenByPath = ref<Record<string, DockTreeItem[]>>({})
 const expandedPaths = ref<string[]>([])
 const selectedTreePaths = ref<string[]>([])
+const currentProvider = ref('')
+const loadingPath = ref('')
 const mountMoreOpen = ref(false)
 const userPermissionOpen = ref(false)
 const secretVisible = ref<Record<string, boolean>>({})
@@ -603,7 +607,7 @@ watch(userFormOpen, (open) => {
 })
 const treeHtml = computed(() => {
   if (loading.value && !rootItems.value.length)
-    return '<div class="fn__loading"></div>'
+    return `<ul class="b3-list b3-list--background">${LOADING_ROW}</ul>`
   if (!rootItems.value.length) {
     return `<ul class="b3-list b3-list--background"><li class="b3-list-item">
   <span class="b3-list-item__toggle fn__hidden"></span>
@@ -632,17 +636,19 @@ function renderNode(node: DockTreeItem, level: number): string {
   const paddingLeft = level * 18
   const iconName = openListFileIconName(node.name, node.is_dir)
   const href = companionHref(node)
-  const children = node.is_dir && expandedPaths.value.includes(node.path)
+  const expanded = expandedPaths.value.includes(node.path)
+  const pending = loadingPath.value === node.path
+  const children = node.is_dir && expanded
     ? childrenByPath.value[node.path] || []
     : []
   return `<li class="b3-list-item b3-list-item--hide-action" data-type="${level === 0 ? 'navigation-root' : 'navigation-file'}" data-path="${escapeAttr(node.path)}" draggable="true" style="--file-toggle-width:${paddingLeft + 18}px">
   <span style="padding-left:${paddingLeft}px" class="b3-list-item__toggle b3-list-item__toggle--hl${node.is_dir ? '' : ' fn__hidden'}">
-    <svg class="b3-list-item__arrow${expandedPaths.value.includes(node.path) ? ' b3-list-item__arrow--open' : ''}"><use xlink:href="#iconRight"></use></svg>
+    <svg class="b3-list-item__arrow${expanded ? ' b3-list-item__arrow--open' : ''}"><use xlink:href="#iconRight"></use></svg>
   </span>
   <svg class="b3-list-item__graphic ol-file-row__icon ol-file-row__icon--${iconName}"><use xlink:href="${openListFileIconHref(node.name, node.is_dir)}"></use></svg>
   <span class="b3-list-item__text ariaLabel" data-position="parentE"${href ? ` data-href="${escapeAttr(href)}"` : ''} aria-label="${escapeAttr(node.name)}">${escapeHtml(node.name)}</span>${!node.is_dir && node.size ? `
   <span class="b3-list-item__meta">${formatSize(node.size)}</span>` : ''}
-</li>${children.length ? `<ul style="--QYL-indent-1:${paddingLeft + 12}px">${children.map(child => renderNode(child, level + 1)).join('')}</ul>` : ''}`
+</li>${children.length || pending ? `<ul style="--QYL-indent-1:${paddingLeft + 12}px">${pending ? LOADING_ROW : children.map(child => renderNode(child, level + 1)).join('')}</ul>` : ''}`
 }
 
 function normalizePath(path: string) {
@@ -684,11 +690,14 @@ async function loadPath(path = '/', refresh = false) {
   if (!refresh && dir !== '/' && childrenByPath.value[dir])
     return true
   loading.value = true
+  loadingPath.value = dir
   lastError.value = ''
+  await nextTick()
   try {
     const payload = await fsList(dir, '', 1, 0, refresh)
     if (payload.code !== 200)
       throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+    currentProvider.value = String(payload.data?.provider || '')
     const content = sortItems((payload.data?.content || []).map((item: any) => toTreeItem(item, dir)))
     if (dir === '/')
       rootItems.value = content
@@ -701,6 +710,8 @@ async function loadPath(path = '/', refresh = false) {
     return false
   } finally {
     loading.value = false
+    if (loadingPath.value === dir)
+      loadingPath.value = ''
   }
 }
 
@@ -732,10 +743,13 @@ async function openNode(node: DockTreeItem) {
   }
   if (expandedPaths.value.includes(node.path)) {
     expandedPaths.value = expandedPaths.value.filter(path => path !== node.path)
+    if (loadingPath.value === node.path)
+      loadingPath.value = ''
     return
   }
-  if (await loadPath(node.path))
-    expandedPaths.value = [...expandedPaths.value, node.path]
+  expandedPaths.value = [...expandedPaths.value, node.path]
+  if (!await loadPath(node.path))
+    expandedPaths.value = expandedPaths.value.filter(path => path !== node.path)
 }
 
 function onTreeClick(event: MouseEvent) {
@@ -779,11 +793,8 @@ function clearTreeSelection() {
 
 async function downloadTreeItem(item: DockTreeItem) {
   try {
-    const tf = (key: string, fallback: string) => {
-      const value = t(key)
-      return value === key ? fallback : value
-    }
-    await downloadOpenListItem({ item, itemPath: treeItemPath, tf })
+    const tf = fallbackTranslator(t)
+    await downloadOpenListItem({ item, itemPath: treeItemPath, provider: currentProvider.value, tf })
   } catch (error) {
     showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
   }
@@ -870,8 +881,6 @@ async function openImageViewer(item: DockTreeItem) {
 function formatSize(size = 0) {
   return formatByteSize(size, true)
 }
-
-
 
 onMounted(() => {
   window.addEventListener('siyuan-cloud:changed', refreshTree)

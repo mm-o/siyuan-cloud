@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 0.6.1
+
+### Added
+
+- Added a cloud-drive transfer policy that blocks unsupported uploads before the transfer flow starts and shows a clear prompt.
+- Added direct-download guards for mounts such as Baidu Netdisk, with download actions labeled to recommend Motrix Next when appropriate.
+
+### Improved
+
+- Made the cloud-drive home view open instantly by reading configured mounts directly instead of waiting on the slower storage-list route.
+- Added a lighter loading animation for cloud-drive navigation, shown in the Dock tree at the folder being opened and in the file manager while lists load.
+- Root listing now prefers mount data from `config.json` and only falls back to the file-list route when local config is unavailable, reducing the wait after restart.
+
+### Fixed
+
+- Fixed mounted media file clicks being intercepted by the companion `data-href` path before playback could resolve. Audio and video rows now use the active media-preview flow, while reader files keep stable `/p/<path>` companion links.
+- Added clearer unsupported upload/download prompts. Unsupported mounts now fail before upload or download starts.
+
 ## 0.6.0
 
 ### Added
