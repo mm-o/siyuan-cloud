@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.7.1
+
+### Improved
+
+- Refined preview-module support categories: Open File Viewer keeps its lightweight six-category matrix, while Flyfish File Viewer now uses an independent nine-category matrix aligned with its renderer registry.
+- Moved `.xmind` support to Flyfish File Viewer’s diagrams and mind-map category, avoiding unsupported Open File Viewer routing.
+- Added Lucide-style icons for spreadsheet/Office, diagrams, ebooks, and mail preview-module categories.
+
+### Fixed
+
+- Fixed PDF and EPUB clicks when SiReader is not installed or loaded. Reader companion links are now exposed only when SiReader is available, allowing preview modules to handle those files as fallback.
+- Expanded preview-module smoke coverage for category ownership, default-enabled Flyfish features, and selected extension routing.
+
 ## 0.7.0
 
 ### Added

@@ -400,11 +400,10 @@ const DockRow = (props: any, { attrs, slots }: any) => {
   }
   return h(props.href ? 'a' : 'div', {
     class: ['ol-mount-row', attrs.class],
-    style: attrs.style,
+    style: [attrs.style, props.style],
     href: props.href,
     rel: props.href ? 'noopener' : undefined,
     role: props.open && !props.href ? 'button' : undefined,
-    style: props.style,
     tabindex: props.open && !props.href ? 0 : undefined,
     target: props.href ? '_blank' : undefined,
     onClick: props.open ? open : undefined,

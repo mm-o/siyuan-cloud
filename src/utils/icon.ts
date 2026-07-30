@@ -268,6 +268,22 @@ const OPENLIST_ICONS = `
     <path d="M16 17H8"/>
     <path d="M10 9H8"/>
   </symbol>
+  <symbol id="iconOpenListFileSpreadsheet" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>
+    <path d="M14 2v5a1 1 0 0 0 1 1h5"/>
+    <path d="M8 13h2"/>
+    <path d="M14 13h2"/>
+    <path d="M8 17h2"/>
+    <path d="M14 17h2"/>
+  </symbol>
+  <symbol id="iconOpenListBookOpen" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M12 5v16"/>
+    <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+  </symbol>
+  <symbol id="iconOpenListMail" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/>
+    <rect x="2" y="4" width="20" height="16" rx="2"/>
+  </symbol>
   <symbol id="iconOpenListImageLine" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
     <rect x="3" y="3" width="18" height="18" rx="2"/>
     <circle cx="9" cy="9" r="2"/>
@@ -284,6 +300,11 @@ const OPENLIST_ICONS = `
     <path d="m12 7 5 14"/>
     <path d="M5 21h14"/>
     <path d="m9 14 6-2"/>
+  </symbol>
+  <symbol id="iconOpenListGitBranch" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M15 6a9 9 0 0 0-9 9V3"/>
+    <circle cx="18" cy="6" r="3"/>
+    <circle cx="6" cy="18" r="3"/>
   </symbol>
   <symbol id="iconOpenListArchive" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
     <rect x="3" y="3" width="18" height="4" rx="1"/>

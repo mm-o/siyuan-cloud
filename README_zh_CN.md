@@ -1,11 +1,19 @@
 # 思盘
 
-**思盘**是思源内的 OpenList 兼容文件能力底座。它不启动、不依赖 OpenList Go 后端，而是在思源 kernel 插件里迁移 OpenList 兼容的路由、响应形状、挂载分发、驱动运行时、代理播放、分享、搜索、压缩包、torrent、WebDAV 和 S3 能力。
-
-> [!IMPORTANT]
-> 需要 **思源 3.7.0** 或以上版本。
+**思盘**是思源里的网盘聚合管理器：支持 25+ 网盘和磁盘挂载、300+ 文件格式预览，联动思阅和思播，把远程文件、媒体、阅读、分享和文档引用放进同一个思源工作流。文件留在网盘，本地空间更轻，资料随时可浏览、可插入、可分享。
 
 ## 最近更新
+
+### 0.7.1
+
+#### 优化
+
+- 整理预览模块分类：Open File Viewer 保持轻量，Flyfish File Viewer 改为独立完整的分类能力矩阵。
+- 将 `.xmind` 支持归入 Flyfish File Viewer，并为 Office、图表/脑图、电子书、邮件等分类补充更清晰的 Lucide 风格图标。
+
+#### 修复
+
+- 修复未安装或未加载思阅时 PDF/EPUB 无法继续兜底打开的问题，现在可交给预览模块处理。
 
 ### 0.7.0
 
@@ -26,51 +34,56 @@
 
 - 删除旧的文本预览、压缩包浏览和原生音视频 `Dialog` 兜底，统一交给预览模块处理。
 
-## 它是什么
+> 详细版本变化请打开[更新日志](https://my.feishu.cn/wiki/Qvjjw63iMiVwBRkMREfcDuWDnrb)。
 
-- **云盘聚合管理器**：浏览、挂载、上传、下载、分享和引用文件。
-- **兼容 HTTP 能力层**：给 companion 插件、本机自动化、WebDAV 客户端和 S3 兼容工具调用。
-- **思源工作流底座**：把云盘文件接入文档、媒体笔记、阅读、图床、附件、AI 上下文和后续自动化。
+## 它能做什么
 
-> [!TIP]
-> 详细版本变化请打开[更新日志](https://my.feishu.cn/wiki/Qvjjw63iMiVwBRkMREfcDuWDnrb)。API 文档可以查看[飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf)；Dock/关于页的 API 入口会用预览模块打开正在运行的插件实时生成的 `/api/public/api`。
+| 能力 | 说明 |
+| --- | --- |
+| 网盘聚合 | 挂载 115、123Pan、天翼云盘、阿里云盘、百度网盘、夸克/UC、OneDrive、WPS、GitHub Releases、OpenList/AList、WebDAV、S3、本地磁盘、思源工作空间等 |
+| 文件管理 | 在 Dock 文件树和顶部文件管理器中浏览、上传、下载、复制、移动、重命名、删除 |
+| 预览增强 | 按需安装预览模块，覆盖 Office、PDF、Markdown、代码、文本、压缩包、邮件、工程图、3D/GIS、XMind 等 300+ 格式 |
+| 媒体与阅读 | 图片走思源图片查看器，音视频优先联动思播，PDF/EPUB 优先联动思阅；缺少伴侣插件时可由预览模块兜底 |
+| 文档引用 | 复制 Markdown 图片、音频、视频、下载链接或 `siyuan://plugins/siyuan-cloud/open?...`，也可通过 `/` 命令把文件链接插入文档 |
+| 在线分享 | 生成 `/sd/{id}` 分享链接，适合在可信环境里快速分享文件或目录 |
+| 图床/视频文件床 | 网盘文件可作为图片、音频、视频资源链接插入笔记，减少附件进入思源空间 |
+| 兼容接口 | 提供 OpenList 风格文件 API、WebDAV 和 S3 兼容能力，方便本机工具、自动化和其它插件接入 |
+
+## 能力总览
+
+思盘已经从单一文件管理入口，逐步收敛成思源内的 OpenList 兼容运行时：
+
+- **挂载与驱动**：接入 115、123Pan、189Cloud、阿里云盘、百度网盘、夸克/UC、OneDrive、WPS、GitHub Releases、S3/Doge、WebDAV、OpenList/AList、本地磁盘和思源工作空间等运行时驱动，并补齐对应驱动说明。
+- **文件与传输**：支持列表、详情、链接、上传、下载、复制、移动、删除、重命名、批量下载、Motrix Next 投递、拖拽上传和传输状态提示。
+- **预览与播放**：图片、音频、视频、PDF、EPUB、Office、Markdown、代码、压缩包、邮件、工程图、3D/GIS、XMind 等文件可以按原生查看器、思阅/思播或可下载预览模块打开。
+- **文档工作流**：支持右键复制链接、拖入文档、`/` 命令插入文件链接；图片、音频、视频可生成可直接预览/播放的 Markdown 或 HTML 片段。
+- **分享与权限**：具备 OpenList 风格用户、会话、权限、meta、分享链接、访问控制、密码、过期时间、访问次数限制和公开读取复核。
+- **搜索与任务**：提供本地持久搜索索引、索引建立/停止/清空/进度查询，以及任务状态、取消、重试等 OpenList 形态的基础能力。
+- **协议与自动化**：提供 `/api/public/api`、`/api/public/routes`、状态能力矩阵、OpenList 风格 FS API、WebDAV、S3 和 companion 插件可消费的 `/p`、`/d` 资源路径。
+- **界面与体验**：Dock、文件管理器、工具页、状态页、用户、分享、任务和图标体系持续整理，思源工作空间挂载打开更快，用户自建文件夹、点号文件和文件大小显示更稳定。
+
+## 快速开始
+
+- 打开 Dock 面板，进入 **挂载**。
+- 新增一个挂载，选择已经接入运行时的驱动。
+- 在 Dock 文件树或顶部文件管理器中浏览文件。
+- 右键文件可预览、复制链接、插入文档、分享、下载或管理文件。
+- 需要 Office、代码、XMind、压缩包等增强预览时，到 **工具 -> 预览模块** 安装并启用对应模块。
+
+## 文档入口
 
 | 内容 | 入口 |
 | --- | --- |
 | 版本变化 | [更新日志](https://my.feishu.cn/wiki/Qvjjw63iMiVwBRkMREfcDuWDnrb) |
-| 实时 API | [飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf) |
+| API 文档 | [飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf) |
 | 驱动教程 | [驱动说明](https://my.feishu.cn/wiki/Y1gqwvRmwi9mEGk6AHGcGX4OnTg) |
 | OpenList/AList 本地挂载 | [OpenList AList 本地挂载与代理](https://my.feishu.cn/wiki/Np9wwXWi3irGOoknwl0cwK7Sn9c) |
 | 百度网盘 | [百度网盘挂载](https://my.feishu.cn/wiki/Gig1wzFKSi0pCbkn1XKcLr8rnvl) |
 | Local 本地存储 | [Local 本地存储](https://my.feishu.cn/wiki/Q6s7wW4LRi7CZLkeNZkcbAJjnth) |
 
----
-
-## 快速开始
-
-> [!TIP]
-> 菜单路径可以按 <kbd>Dock</kbd> -> <kbd>挂载</kbd> -> <kbd>新增</kbd> 操作。新增后从 <kbd>Dock 文件树</kbd> 或 <kbd>顶部栏文件管理</kbd> 浏览。
-
-- [ ] 打开 Dock 面板。
-- [ ] 新增一个挂载，选择真实可用的运行时驱动。
-- [ ] 在文件树中打开文件或目录。
-- [ ] 右键复制 Markdown 链接、代理链接、下载链接或分享链接。
-- [ ] 需要自动化时查看[飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf)，或在 Dock/关于页打开实时 `/api/public/api`。
-
-## 当前能力一览
-
-| 模块 | 说明 |
-| --- | --- |
-| 文件管理 | 文件管理 Tab、Dock 文件树、右键菜单 |
-| 文件接口 | 列表、详情、链接、上传、复制、移动、删除、重命名 |
-| 播放下载 | 统一 `/p`、`/d` 路径，复用思源 kernel `body.proxy` |
-| 协议能力 | 用户、权限、meta、分享、任务形态、搜索索引、压缩包、torrent、WebDAV、S3 |
-| 文档链接 | Markdown 图片、audio/video 标签、下载链接、`siyuan://plugins/siyuan-cloud/open?...` |
-| 本地文件 | Local 通过桌面端 Electron runtime 访问，kernel HTTP 层只保留元数据 |
+Dock/关于页的 API 入口会用预览模块打开正在运行的 `/api/public/api` 实时接口清单；README 中的 API 链接指向飞书文档。
 
 ## 已接入运行时驱动
-
-Dock 当前可见的运行时适配包括：
 
 - [OpenList 兼容挂载](https://my.feishu.cn/wiki/UHWbwHFeGiXjGkkTW92cFxynnm3)
 - [OpenList AList 本地挂载与代理](https://my.feishu.cn/wiki/Np9wwXWi3irGOoknwl0cwK7Sn9c)
@@ -87,35 +100,21 @@ Dock 当前可见的运行时适配包括：
 - [阿里云盘开放平台](https://my.feishu.cn/wiki/LQRHwC0BciZFjmkoA7ycwNTknre)
 - [189Cloud 系列](https://my.feishu.cn/wiki/HBCiwsGnPiEJAvkRD65cjYxLnPg)
 - [Quark UC 系列](https://my.feishu.cn/wiki/Gx06wqy5xiyH6jkENAxcDOxrn5F)
+- [WPS 云文档](https://my.feishu.cn/wiki/QXhCwMFztiGy16kCIl1cMqZWnLe)
 - [Local 本地存储](https://my.feishu.cn/wiki/Q6s7wW4LRi7CZLkeNZkcbAJjnth)
 - [思源工作空间](https://my.feishu.cn/wiki/OpSrwXiUniBI7akO94ocSpqTnjc)
 - 内置虚拟存储
 
-> [!NOTE]
-> 其它 OpenList 驱动可能保留 metadata/config 参考；没有真实运行时的驱动不会出现在常规挂载列表里。
-
-## 常用动作
-
-| 目标 | 操作 |
-| --- | --- |
-| 浏览云盘 | <kbd>Dock</kbd> 文件树或顶部栏文件管理 |
-| 管理文件 | 右键菜单上传、下载、重命名、复制、移动、删除 |
-| 管理用户 | 内置 `admin` 和 `guest` 用户跟随 OpenList 行为不可删除，Dock 用户管理不会为这两个用户显示删除按钮 |
-| 放进文档 | 复制 Markdown 图片、音视频标签、下载链接或 `siyuan://` 链接 |
-| 分享文件 | 使用分享菜单生成 `/sd/{id}` 私有路由链接 |
-| 接入插件 | companion 插件消费 `raw_url`、`/p/<path>`、`/d/<path>` 或 OpenList-compatible HTTP API |
+其它 OpenList 驱动可能保留 metadata/config 参考；没有真实运行时的驱动不会出现在常规挂载列表里。
 
 ## 边界
 
-> [!WARNING]
-> `/plugin/private/siyuan-cloud/*` 是思源私有路由，不是公网匿名 OpenList 服务。
-
-- `/sd/{id}` 分享链接仍是私有路由链接，除非另外设计外部 bridge。
+- `/plugin/private/siyuan-cloud/*` 是思源私有路由，不是公网匿名 OpenList 服务。
+- `/sd/{id}` 分享链接仍是私有路由链接，外网访问需要你自己准备反代、隧道或其它 bridge。
 - 搜索使用本地持久索引，还不是完整 OpenList search backend 矩阵。
 - 任务接口已对齐 OpenList 形态，但真实异步队列、取消传播、重试调度和进度上报仍待实现。
-- ZIP/tar/tgz 已支持；RAR/7z/ISO 需要等 reader、许可证、打包路径和 fixture 都明确后再接入。
+- ZIP/tar/tgz 已支持；RAR/7z/ISO 等更复杂压缩格式由预览模块或后续 reader 能力覆盖。
 - `/ae` 压缩包内媒体偏向 entry 提取，不等同于普通 `/p` 的可 seek 流式播放。
-- 离线下载工具和真实 189/189PC CAS rapid-upload 仍需要继续迁移。
 
 ## 数据与同步
 
@@ -127,8 +126,7 @@ Dock 当前可见的运行时适配包括：
 | `runtime.json` | 虚拟 FS、tasks、messages、scan、WebDAV locks、S3 multipart 状态 |
 | `search-index.json` | 本地搜索索引 |
 
-> [!NOTE]
-> 思源默认会同步 `data/storage/petal/<plugin>`，用户可以通过 `.siyuan/syncignore` 排除。
+思源默认会同步 `data/storage/petal/<plugin>`，用户可以通过 `.siyuan/syncignore` 排除。
 
 ## 致谢与许可
 

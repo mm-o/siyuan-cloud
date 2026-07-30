@@ -92,7 +92,8 @@ export function itemStableUrl<T extends OpenListUrlItem>(item: T, path: PathInpu
 }
 
 export function openListCompanionHref(name: string, path: string, isDir = false) {
-  if (isDir || !openListReaderExts.has(extensionOfName(name)))
+  const plugins = (window as any).siyuan?.ws?.app?.plugins || []
+  if (isDir || !openListReaderExts.has(extensionOfName(name)) || (!(window as any).sireader && !plugins.some((plugin: any) => plugin?.name === 'siyuan-sireader')))
     return undefined
   return proxyPreviewUrl(path, false)
 }

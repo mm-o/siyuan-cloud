@@ -1,8 +1,8 @@
 {
   "name": "siyuan-cloud",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
-  "description": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
+  "description": "A cloud-drive aggregation manager for SiYuan: mount 25+ cloud drives and disks, preview 300+ formats, work with SiYuan Reader/Media Player, share online, insert file links, and use cloud files as image/video beds without filling your workspace.",
   "author": "mm-o",
   "license": "MIT",
   "homepage": "https://github.com/mm-o/siyuan-cloud",

@@ -8,11 +8,11 @@ import {
   previewModulePluginNames,
   previewModuleStyleAsset,
   rewritePreviewModuleScript,
+  setPreviewModuleEnabledCategoryKeys,
   PREVIEW_MODULES,
 } from "../src/utils/preview_modules.ts";
 
 const [openFileViewerModule, fileViewerModule] = PREVIEW_MODULES;
-const categories = PREVIEW_MODULES.flatMap(module => module.categories);
 
 [
   "demo.docx",
@@ -37,7 +37,7 @@ const categories = PREVIEW_MODULES.flatMap(module => module.categories);
 assert.equal(previewModuleForName("diagram.png"), null);
 assert.equal(previewModuleForFile("README", "text")?.key, "open-file-viewer");
 assert.equal(previewModuleForFile("diagram.png", "image"), null);
-assert.equal(categories.length, 12);
+assert.equal(PREVIEW_MODULES.reduce((sum, module) => sum + module.categories.length, 0), 15);
 assert.deepEqual(previewModulePluginNames("table.csv", "open-file-viewer"), ["textPlugin"]);
 assert.deepEqual(previewModulePluginNames("README.md", "open-file-viewer"), ["textPlugin"]);
 assert.deepEqual(previewModulePluginNames("model.glb", "open-file-viewer"), []);
@@ -46,7 +46,32 @@ assert.equal(PREVIEW_MODULES.length, 2);
 assert.equal(fileViewerModule.adapter, "file-viewer");
 assert.equal(fileViewerModule.version, "2.2.4");
 assert.equal(fileViewerModule.assets.length, 3);
-assert.deepEqual(fileViewerModule.categories.map(category => category.key), ["file-viewer-pdf-office", "file-viewer-image-media", "file-viewer-text-code", "file-viewer-engineering", "file-viewer-archive-email", "file-viewer-assets-data"]);
+assert.deepEqual(fileViewerModule.categories.map(category => category.key), [
+  "file-viewer-documents",
+  "file-viewer-office",
+  "file-viewer-engineering",
+  "file-viewer-diagrams",
+  "file-viewer-ebooks",
+  "file-viewer-archives",
+  "file-viewer-email-eda",
+  "file-viewer-text-code",
+  "file-viewer-media-assets",
+]);
+assert.deepEqual(fileViewerModule.categories.filter(category => category.defaultEnabled).map(category => category.key), ["file-viewer-documents", "file-viewer-office"]);
+assert.equal(openFileViewerModule.categories.some(category => category.exts.includes("xmind")), false);
+assert.equal(fileViewerModule.categories.find(category => category.key === "file-viewer-diagrams")?.exts.includes("xmind"), true);
+assert.equal(fileViewerModule.categories.find(category => category.key === "file-viewer-archives")?.exts.includes("iso"), true);
+assert.equal(fileViewerModule.categories.find(category => category.key === "file-viewer-email-eda")?.exts.includes("gds"), true);
+assert.equal(fileViewerModule.categories.find(category => category.key === "file-viewer-documents")?.desc, "PDF, OFD, Typst");
+assert.equal(fileViewerModule.categories.find(category => category.key === "file-viewer-office")?.desc, "Word, Excel, PowerPoint, OpenDocument");
+globalThis.localStorage = {
+  data: new Map(),
+  getItem(key) { return this.data.get(key) ?? null },
+  setItem(key, value) { this.data.set(key, String(value)) },
+};
+setPreviewModuleEnabledCategoryKeys("file-viewer-office", ["file-viewer-office", "file-viewer-diagrams"]);
+assert.equal(previewModuleForName("mindmap.xmind")?.key, "file-viewer-office");
+delete globalThis.localStorage;
 assert.equal(fileViewerModule.assets[0].content.includes("./file-viewer-web.bundle.js"), true);
 assert.equal(fileViewerModule.assets[0].content.includes("./file-viewer-preset-all.bundle.js"), true);
 assert.equal(fileViewerModule.assets[0].content.includes("unpkg.com/@file-viewer/web@"), true);

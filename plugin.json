@@ -2,7 +2,7 @@
   "name": "siyuan-cloud",
   "author": "mm-o",
   "url": "https://github.com/mm-o/siyuan-cloud",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "minAppVersion": "3.6.5",
   "disabledInPublish": true,
   "kernels": [
@@ -20,9 +20,9 @@
     "zh_CN": "思盘"
   },
   "description": {
-    "default": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
-    "en_US": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
-    "zh_CN": "思源网盘聚合管理器，支持网盘文件查看、媒体播放、阅读批注、图床直链等能力，更多玩法期待你的探索。"
+    "default": "A cloud-drive aggregation manager for SiYuan: mount 25+ cloud drives and disks, preview 300+ formats, work with SiYuan Reader/Media Player, share online, insert file links, and use cloud files as image/video beds without filling your workspace.",
+    "en_US": "A cloud-drive aggregation manager for SiYuan: mount 25+ cloud drives and disks, preview 300+ formats, work with SiYuan Reader/Media Player, share online, insert file links, and use cloud files as image/video beds without filling your workspace.",
+    "zh_CN": "思源网盘聚合管理器：支持 25+ 网盘和磁盘挂载、300+ 文件格式预览，联动思阅和思播，在线分享、文件链接插入文档、图床/视频文件床一站完成，让远程文件随时可用，思源空间 0 负担。"
   },
   "readme": {
     "default": "README.md",

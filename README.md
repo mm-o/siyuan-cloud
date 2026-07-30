@@ -1,11 +1,19 @@
 # Siyuan Cloud
 
-**Siyuan Cloud** is an OpenList-compatible file capability layer for SiYuan. It does not start or depend on the OpenList Go backend; it ports compatible routes, response shapes, mount dispatch, driver runtime, proxy playback, sharing, search, archive, torrent, WebDAV, and S3 behavior into a standalone SiYuan kernel plugin.
-
-> [!IMPORTANT]
-> Requires **SiYuan 3.7.0** or later.
+**Siyuan Cloud** is a cloud-drive aggregation manager for SiYuan. It mounts 25+ cloud drives and disks, previews 300+ file formats, works with SiYuan Reader and SiYuan Media Player, and brings remote files, media, reading, sharing, and document links into one SiYuan workflow. Keep files in the cloud, keep the workspace light, and browse or reuse remote files whenever you need them.
 
 ## Recent Updates
+
+### 0.7.1
+
+#### Improved
+
+- Refined preview-module categories: Open File Viewer stays lightweight, while Flyfish File Viewer now uses its independent full-category support matrix.
+- Moved `.xmind` support to Flyfish File Viewer and added clearer Lucide-style category icons for Office, diagrams, ebooks, and mail.
+
+#### Fixed
+
+- Fixed PDF/EPUB fallback opening when SiReader is not installed or loaded, allowing preview modules to handle those files.
 
 ### 0.7.0
 
@@ -26,49 +34,56 @@
 
 - Removed the old text-preview, archive-browser, and native media `Dialog` fallback paths in favor of the unified preview module.
 
-## What It Is
+For detailed release changes, open [CHANGELOG](https://my.feishu.cn/wiki/AZHFwEdnrij8sSk2JNfcLrOqnNg).
 
-- A SiYuan-native cloud-drive manager for browsing, mounting, uploading, downloading, sharing, and linking files.
-- An OpenList-compatible HTTP surface for companion plugins, local automation, WebDAV clients, and S3-compatible tools.
-- A bridge from cloud files into SiYuan workflows: documents, media notes, reading, image links, attachments, AI context, and future automation.
+## What It Does
 
-> [!TIP]
-> For detailed release changes, open [CHANGELOG](https://my.feishu.cn/wiki/AZHFwEdnrij8sSk2JNfcLrOqnNg). API docs are available in [Feishu API](https://my.feishu.cn/wiki/UOk4wIyQIimNjekD5LpcwO1Hnfd), while the Dock/About API entry opens the live `/api/public/api` route with the preview module.
-
-| Area | Status |
+| Capability | Details |
 | --- | --- |
-| File browsing and links | Available |
-| Runtime API discovery | [Feishu API](https://my.feishu.cn/wiki/UOk4wIyQIimNjekD5LpcwO1Hnfd) |
-| Driver guides | [Drivers](https://my.feishu.cn/wiki/BK8BwW7eSiRFzOkuLzoc4zbLnXe) |
-| OpenList/AList local mounting | [OpenList AList Local Mounting and Proxy](https://my.feishu.cn/wiki/LcGGwTSDji3TmgkR4XpcGjYgnZg) |
-| Local storage | [Local Storage](https://my.feishu.cn/wiki/PsdzwWqDbiUqAakFw1Ec1URVnYb) |
-| Release notes | [CHANGELOG](https://my.feishu.cn/wiki/AZHFwEdnrij8sSk2JNfcLrOqnNg) |
+| Drive aggregation | Mount 115, 123Pan, 189Cloud, Aliyundrive, Baidu Netdisk, Quark/UC, OneDrive, WPS, GitHub Releases, OpenList/AList, WebDAV, S3, local disks, SiYuan Workspace, and more |
+| File management | Browse, upload, download, copy, move, rename, and remove files from the Dock tree or top-bar file manager |
+| Rich preview | Install preview modules on demand for Office, PDF, Markdown, code, text, archives, email, engineering drawings, 3D/GIS, XMind, and 300+ formats |
+| Media and reading | Images use SiYuan image preview, audio/video prefer SiYuan Media Player, PDF/EPUB prefer SiYuan Reader, and preview modules act as fallback when companion plugins are unavailable |
+| Document links | Copy Markdown images, audio, video, download links, or `siyuan://plugins/siyuan-cloud/open?...`; insert file links with the `/` command |
+| Online sharing | Create `/sd/{id}` share links for quick file or folder sharing in trusted environments |
+| Image/video beds | Use cloud files as image, audio, and video resources in notes without filling the SiYuan workspace with attachments |
+| Compatible APIs | Expose OpenList-style file APIs, WebDAV, and S3-compatible surfaces for local tools, automation, and companion plugins |
 
----
+## Capability Overview
+
+Siyuan Cloud has grown from a file-manager entry into an OpenList-compatible runtime inside SiYuan:
+
+- **Mounts and drivers**: runtime-backed adapters for 115, 123Pan, 189Cloud, Aliyundrive, Baidu Netdisk, Quark/UC, OneDrive, WPS, GitHub Releases, S3/Doge, WebDAV, OpenList/AList, local disks, and SiYuan Workspace, with matching driver guides.
+- **Files and transfers**: list, get, link, upload, download, copy, move, remove, rename, batch download, Motrix Next handoff, drag-and-drop upload, and visible transfer states.
+- **Preview and playback**: images, audio, video, PDF, EPUB, Office, Markdown, code, archives, email, engineering drawings, 3D/GIS, XMind, and more open through native SiYuan viewers, SiYuan Reader/Media Player, or downloadable preview modules.
+- **Document workflow**: copy links from context menus, drag files into documents, or use the `/` command to insert file links; images, audio, and video can become directly previewable Markdown or HTML snippets.
+- **Sharing and permissions**: OpenList-style users, sessions, permissions, meta rules, share links, access control, passwords, expiry, access limits, and public-read rechecks.
+- **Search and tasks**: persisted local search indexes, build/stop/clear/progress routes, and OpenList-shaped task state, cancel, and retry foundations.
+- **Protocols and automation**: `/api/public/api`, `/api/public/routes`, status capability matrices, OpenList-style FS APIs, WebDAV, S3, and companion-plugin resource paths such as `/p` and `/d`.
+- **UI and experience**: Dock, file manager, tools, status, users, shares, tasks, and icons have been consolidated; SiYuan Workspace mounts now open faster and preserve user-created folders, dot-prefixed files, and stable file sizes.
 
 ## Quick Start
 
-> [!TIP]
-> Use <kbd>Dock</kbd> -> <kbd>Mounts</kbd> -> <kbd>Add</kbd>, then browse from the Dock file tree or the top-bar file manager.
+- Open the Dock panel and go to **Mounts**.
+- Add a mount with a runtime-backed driver.
+- Browse files from the Dock file tree or the top-bar file manager.
+- Right-click a file to preview, copy links, insert into documents, share, download, or manage it.
+- For Office, code, XMind, archives, and other enhanced previews, open **Tools -> Preview Modules** and install the module you need.
 
-- [ ] Open the Dock panel.
-- [ ] Add a mount with a runtime-backed driver.
-- [ ] Browse a file or folder.
-- [ ] Copy Markdown links, proxy links, download links, or share links from the context menu.
-- [ ] Use [Feishu API](https://my.feishu.cn/wiki/UOk4wIyQIimNjekD5LpcwO1Hnfd), or open the live `/api/public/api` from Dock/About when another plugin or local automation needs the runtime surface.
+## Documentation
 
-## Current Capabilities
+| Area | Link |
+| --- | --- |
+| Release notes | [CHANGELOG](https://my.feishu.cn/wiki/AZHFwEdnrij8sSk2JNfcLrOqnNg) |
+| API docs | [Feishu API](https://my.feishu.cn/wiki/UOk4wIyQIimNjekD5LpcwO1Hnfd) |
+| Driver guides | [Drivers](https://my.feishu.cn/wiki/BK8BwW7eSiRFzOkuLzoc4zbLnXe) |
+| OpenList/AList local mounting | [OpenList AList Local Mounting and Proxy](https://my.feishu.cn/wiki/LcGGwTSDji3TmgkR4XpcGjYgnZg) |
+| Baidu Netdisk | [Baidu Netdisk](https://my.feishu.cn/wiki/Jer8wZBafiFEqKktiabciX6anIc) |
+| Local storage | [Local Storage](https://my.feishu.cn/wiki/PsdzwWqDbiUqAakFw1Ec1URVnYb) |
 
-- File manager tab and Dock file tree for mounted storages.
-- OpenList-style FS routes for list/get/link/upload/manage operations.
-- Shared `/p` and `/d` playback/download paths using SiYuan kernel `body.proxy`.
-- User, permission, meta, share, task-shape, search-index, archive, torrent, WebDAV, and S3 compatibility surfaces.
-- Native SiYuan document links such as Markdown images, audio/video tags, download links, and `siyuan://plugins/siyuan-cloud/open?...`.
-- Local desktop storage through the frontend Electron runtime. The kernel HTTP layer keeps Local metadata only.
+The Dock/About API entry opens the live `/api/public/api` route with the preview module. README API links point to the Feishu documentation.
 
 ## Runtime Adapters
-
-Runtime adapters currently exposed in the Dock include:
 
 - [OpenList Compatible](https://my.feishu.cn/wiki/OvQSw8RuniGiEikeU7ecg3BZn8g)
 - [OpenList AList Local Mounting and Proxy](https://my.feishu.cn/wiki/LcGGwTSDji3TmgkR4XpcGjYgnZg)
@@ -85,35 +100,21 @@ Runtime adapters currently exposed in the Dock include:
 - [Aliyundrive Open](https://my.feishu.cn/wiki/S5iVwPw2ViXxRzkFgmfcE5yfn3c)
 - [189Cloud Series](https://my.feishu.cn/wiki/QKtzw9sY2icSakkyy2eciqtunrb)
 - [Quark UC Series](https://my.feishu.cn/wiki/T8sXwj0oDioIurk2eWmc1MbNnLg)
+- [WPS](https://my.feishu.cn/wiki/S5ovwL0bSiD7TNkwFmtcZwDqnXb)
 - [Local Storage](https://my.feishu.cn/wiki/PsdzwWqDbiUqAakFw1Ec1URVnYb)
 - [SiYuan Workspace](https://my.feishu.cn/wiki/LUo2wmM67ixlQ5k2RXLcecngnfe)
 - Built-in virtual storage
 
-> [!NOTE]
-> Other OpenList drivers may exist as metadata/config references, but drivers without real runtime behavior are not shown in the normal mount picker.
-
-## Recommended Use
-
-| Goal | Action |
-| --- | --- |
-| Browse cloud files | Use the Dock file tree or top-bar file manager |
-| Manage files | Upload, download, rename, copy, move, remove from the context menu |
-| Manage users | Built-in `admin` and `guest` users follow OpenList behavior and cannot be deleted, so Dock user management does not show a delete action for them |
-| Use in documents | Copy Markdown image/audio/video tags, download links, or `siyuan://` links |
-| Share files | Create `/sd/{id}` private-route share links |
-| Integrate plugins | Consume `raw_url`, `/p/<path>`, `/d/<path>`, or OpenList-compatible HTTP APIs |
+Other OpenList drivers may exist as metadata/config references, but drivers without real runtime behavior are not shown in the normal mount picker.
 
 ## Boundaries
 
-> [!WARNING]
-> `/plugin/private/siyuan-cloud/*` is protected by SiYuan private-route auth. It is not a public anonymous OpenList server.
-
-- `/sd/{id}` share links are still private-route links unless you build an external bridge.
+- `/plugin/private/siyuan-cloud/*` is protected by SiYuan private-route auth. It is not a public anonymous OpenList server.
+- `/sd/{id}` share links are still private-route links unless you provide a reverse proxy, tunnel, or external bridge.
 - Search uses a local persisted index; it is not the full OpenList search backend matrix yet.
 - Task routes follow OpenList shapes, but real async queues, cancellation propagation, retry scheduling, and progress reporting are still pending.
-- ZIP/tar/tgz archive support is available; RAR/7z/ISO remain placeholders until reader, license, packaging, and fixture coverage are settled.
+- ZIP/tar/tgz archive support is available; more complex archive formats such as RAR/7z/ISO are handled by preview modules or future reader work.
 - Archive-entry media through `/ae` is extraction-oriented and is not equivalent to normal seekable `/p` playback yet.
-- Offline download tools and real 189/189PC CAS rapid-upload still need deeper migration.
 
 ## Data And Sync
 
@@ -123,8 +124,7 @@ Kernel data is stored in SiYuan plugin storage:
 - `runtime.json`: virtual FS, tasks, messages, scan state, WebDAV locks, S3 multipart state.
 - `search-index.json`: local search nodes.
 
-> [!NOTE]
-> SiYuan normally syncs `data/storage/petal/<plugin>` unless the user excludes it with `.siyuan/syncignore`.
+SiYuan normally syncs `data/storage/petal/<plugin>` unless the user excludes it with `.siyuan/syncignore`.
 
 ## Credits And Licenses
 

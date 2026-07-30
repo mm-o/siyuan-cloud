@@ -30,19 +30,30 @@ const PREVIEW_MODULE_BASE = 'preview-modules'
 const PREVIEW_MODULE_DIR = `/data/public/${PREVIEW_MODULE_BASE}`
 const PREVIEW_MODULE_PUBLIC_BASE = `/public/${PREVIEW_MODULE_BASE}`
 const PREVIEW_MODULE_SETTINGS_KEY = 'siyuan-cloud-preview-module-categories'
-const makeCategories = (defs: Array<[string, string, string, string, string[], string, boolean?, string?]>) =>
+type PreviewModuleCategoryDef = [string, string, string, string, string[], string, boolean?, string?]
+
+const makeCategories = (defs: PreviewModuleCategoryDef[]) =>
   defs.map(([key, name, desc, icon, plugins, exts, defaultEnabled, group]) => ({ key, group, name, desc, icon, plugins, exts: exts.split(' '), defaultEnabled }))
 
-const openFileViewerCategoryDefs: Array<[string, string, string, string, string[], string, boolean?, string?]> = [
-  ['pdf-office', 'PDF / Office', 'PDF, Office, eBook, OFD', '#iconOpenListFileTextLine', ['officePlugin', 'pdfPlugin', 'epubPlugin', 'xpsPlugin', 'ofdPlugin'], 'pdf doc docx docm dot dotx dotm rtf odt fodt wps xls xlsx xlsm xlsb xlt xltx xltm ods fods numbers et csv tsv ppt pptx pptm pps ppsx ppsm potx potm odp fodp key dps epub xps oxps ofd'],
+const openFileViewerCategoryDefs: PreviewModuleCategoryDef[] = [
+  ['pdf-office', 'PDF / Office', 'PDF, Office, OFD, eBook, XPS', '#iconOpenListFileTextLine', ['officePlugin', 'pdfPlugin', 'epubPlugin', 'xpsPlugin', 'ofdPlugin'], 'pdf doc docx docm dot dotx dotm rtf odt fodt wps xls xlsx xlsm xlsb xlt xltx xltm ods fods numbers et csv tsv ppt pptx pptm pps ppsx ppsm potx potm odp fodp key dps epub xps oxps ofd'],
   ['image-media', 'Image / Media', 'Images, audio, video', '#iconOpenListImageLine', ['imagePlugin', 'videoPlugin', 'audioPlugin'], 'jpg jpeg jfif pjpe pjpeg png gif webp avif jxl svg bmp ico cur tif tiff apng heic heif mp4 mpg mpeg mpe mpv webm ogv mov m4v avi mkv flv wmv 3gp 3g2 m2ts m3u8 mp3 wav aif aiff aifc ogg oga aac m4a flac opus weba amr mid midi caf au snd wma'],
   ['text-code', 'Text / Code', 'Text, Markdown, source code', '#iconOpenListCode2', ['textPlugin'], 'txt log env gitignore dockerignore npmrc yarnrc pnpmrc editorconfig browserslistrc prettierrc eslintrc stylelintrc conf config properties lock json jsonc json5 ipynb jsonl ndjson xml yaml yml csv tsv md markdown mmd mermaid toml ini proto tf tfvars hcl tex latex bib gv http css scss less js mjs cjs ts tsx jsx html htm vue py java go rs rb swift kt kts scala lua r dart svelte astro elm ex exs clj cljs erl hrl fs fsx hs lhs php c cpp h hpp cs sql sh bash zsh fish ps1 bat cmd dockerfile nginxconf gradle graphql gql pem crt cer ics vcf diff patch sy', true],
   ['engineering', 'Engineering', 'CAD, 3D, GIS, diagrams', '#iconOpenListDraftingCompass', ['cadPlugin', 'model3dPlugin', 'gisPlugin', 'drawingPlugin'], 'dxf dwg dwf step stp iges igs ifc sat sab x_t x_b 3dm skp sldprt sldasm gds gdsii oas oasis gltf glb obj stl fbx dae ply 3mf 3ds usd usda usdc usdz wrl vrml geojson topojson kml kmz gpx shp drawio dio excalidraw tldraw'],
   ['archive-email', 'Archive / Email', 'Archives and mail', '#iconOpenListArchive', ['archivePlugin', 'emailPlugin'], 'zip rar 7z tar gz tgz bz2 xz eml msg mbox'],
   ['assets-data', 'Assets / Data', 'Design assets and data files', '#iconOpenListDatabaseLine', ['assetPlugin'], 'ttf otf woff woff2 eot psd psb ai eps ps webarchive sqlite sqlite3 db wasm parquet avro'],
 ]
-const fileViewerCategoryDefs: Array<[string, string, string, string, string[], string, boolean?, string?]> =
-  openFileViewerCategoryDefs.map(([key, name, desc, icon, plugins, exts]) => [`file-viewer-${key}`, name, desc, icon, [], exts, key === 'pdf-office', key])
+const fileViewerCategoryDefs: PreviewModuleCategoryDef[] = [
+  ['file-viewer-documents', 'Documents', 'PDF, OFD, Typst', '#iconOpenListFileTextLine', [], 'pdf ofd typ typst', true],
+  ['file-viewer-office', 'Office', 'Word, Excel, PowerPoint, OpenDocument', '#iconOpenListFileSpreadsheet', [], 'docx docm dotx dotm doc dot ppt pptx pptm potx potm ppsx ppsm rtf odt odp xlsx xltx xlsm xlsb xls xlt xltm csv tsv ods fods numbers', true],
+  ['file-viewer-engineering', 'Drawings / Models', 'CAD, 3D, GIS', '#iconOpenListDraftingCompass', [], 'dxf dwg dwf dwfx xps glb gltf obj stl ply fbx dae 3ds 3mf amf usd usda usdc usdz kmz step stp iges igs ifc 3dm brep pcd wrl vrml xyz vtk vtp geojson kml gpx shp'],
+  ['file-viewer-diagrams', 'Diagrams / Mind Maps', 'XMind, Mermaid, PlantUML, draw.io', '#iconOpenListGitBranch', [], 'xmind excalidraw drawio dio mermaid mmd plantuml puml'],
+  ['file-viewer-ebooks', 'eBooks', 'EPUB, UMD', '#iconOpenListBookOpen', [], 'epub umd'],
+  ['file-viewer-archives', 'Archives', 'ZIP, 7Z, RAR, TAR, ISO, APK, CBZ, CBR', '#iconOpenListArchive', [], 'zip zipx 7z rar tar gz gzip tgz bz2 bzip2 tbz tbz2 xz txz lzma zst tzst cab ar cpio iso xar lha lzh jar war ear apk cbz cbr'],
+  ['file-viewer-email-eda', 'Email / EDA', 'EML, MSG, MBOX, OrCAD, GDS, OASIS', '#iconOpenListMail', [], 'eml msg mbox olb dra gds oas oasis'],
+  ['file-viewer-text-code', 'Text / Code', 'Markdown, JSON, source code, patch, Git bundle', '#iconOpenListCode2', [], 'md markdown txt json js mjs cjs css java py html htm jsx ts tsx xml log vue yaml yml ini sh bash sql go rs php c cpp cc h hpp cs diff patch bundle bdl jsonc json5 ipynb toml proto hcl tex gv http react rb swift kt'],
+  ['file-viewer-media-assets', 'Media / Assets', 'Images, audio, video, fonts, PSD, SQLite, WASM', '#iconOpenListImageLine', [], 'gif jpg jpeg bmp tiff tif png svg webp avif ico heic heif jxl mp4 webm m3u8 mp3 mpeg wav ogg oga opus m4a aac flac weba midi mid ttf otf woff woff2 psd ai eps sqlite wasm parquet avro webarchive'],
+]
 const openFileViewerCategories = makeCategories(openFileViewerCategoryDefs)
 const fileViewerCategories = makeCategories(fileViewerCategoryDefs)
 
