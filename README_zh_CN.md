@@ -7,68 +7,24 @@
 
 ## 最近更新
 
-### 0.6.2
+### 0.7.0
 
 #### 新增
 
-- 新增网盘传输能力策略，不支持上传或直接下载的挂载会在开始前直接提示。
+- 新增可下载预览模块：可在工具页安装 `open-file-viewer` 和 Flyfish File Viewer 到 `/data/public/preview-modules`，插件只在需要时加载模块资源。
+- 新增通用预览页签，支持 Office、PDF、Markdown、代码、文本、压缩包、邮件、工程图、3D/GIS 等多类格式。
+- 新增思源空间 `.sy` 文档原生打开，文件名符合思源文档 ID 时直接打开思源页签。
 
 #### 优化
 
-- 首页网盘列表改为直接读取已配置挂载，避开较慢的存储列表接口，打开思盘和文件管理首页更快显示。
-- 网盘目录切换增加轻量加载动画，Dock 文件树会在正在打开的位置显示，文件管理页面加载列表时也会给出状态反馈。
+- 工具页改为入口式子页面，索引、配置、预览模块、外部预览和 Torrent 工具分开管理。
+- 统一文件打开逻辑：图片继续用思源图片查看器，音视频优先走思播，其他可预览文件走预览模块。
+- 思源空间挂载改用 `/api/file/readDir` 直接读取目录，打开更快，并能显示用户新建文件夹、点号开头文件和正确大小。
+- 预览模块样式接入思源主题变量，Dock 和工具页图标统一为 OpenList/Lucide 风格。
 
-#### 修复
+#### 移除
 
-- 修复挂载盘音视频点击播放被 companion 链路提前截获的问题，阅读类文件继续使用稳定预览链接。
-- 修复不支持上传或直接下载的挂载缺少前置提示的问题，下载入口会标注推荐 Motrix Next。
-
-- 修复 123Pan 下载双地址链路：当 `yun.123pan.com` 返回的解码跳转因 Referer 敏感响应 403/50001 失败时，会继续回退到配套的 `api.123278.com` / `www.123pan.com` 流程。
-
-### 0.6.0
-
-#### 新增
-
-- 新增 `/` 命令插入入口：在编辑器输入 `/` 后选择“思盘”，可搜索或浏览思盘文件树并插入文件链接。
-- `/` 插入复用右键菜单的复制链接逻辑：图片插入 Markdown 图片，音频插入 `<audio>`，视频插入 `<video>`，其它文件和文件夹插入稳定的 `siyuan://plugins/siyuan-cloud/open?path=...` 链接。
-- 新增索引建立入口：文件管理器“更多”菜单和 Dock 工具页都可触发建立索引；搜索无结果时会提示先建立索引，耗时取决于文件数量。
-- 新增 GitHub Releases 运行时驱动：支持按仓库结构浏览 Release 资产、README/LICENSE、源码包和全部版本，可配置 GitHub Token 与代理地址。
-- 新增中英文 GitHub Releases 驱动说明。
-- 新增飞书文档同步脚本 `pnpm docs:feishu` 和 `release:with-docs` 发布入口，README、API、更新日志和驱动说明可从本地 Markdown 同步到飞书。
-
-#### 优化
-
-- 精简搜索索引进度存储和执行路径：建立索引在后台执行，进度直接记录到运行时状态，并支持停止、清空和查询进度。
-- 优化预览与文档插入格式：图片、音频、视频保留可直接预览/播放的资源链接；PDF、EPUB、TXT、压缩包、普通文件和文件夹统一使用 `siyuan://` 打开思盘。
-- 明确 `/` 插入支持格式：图片包含 `jpg/tiff/jpeg/png/gif/bmp/svg/ico/swf/webp/avif`，音频包含 `mp3/wav/aac/m4a/flac/ogg`，视频包含 `mp4/mkv/avi/mov/rmvb/webm/flv/m3u8/m4v`，文本预览类包含 `txt/log/md/markdown/json/xml/yml/yaml/toml/ini/conf/js/ts/jsx/tsx/vue/css/scss/less/html/htm/go/py/java/rb/rs/php/c/cpp/h`；除图片、音频、视频外，插入文档时统一生成 `siyuan://` 链接。
-- 统一 FileTab、Dock、拖拽和 `/` 插入的链接生成入口，减少复制链接与插入链接之间的分叉。
-- Dock 状态页文档入口切换为飞书 Wiki 链接，说明文档、API、更新日志和驱动说明直接在浏览器打开。
-- 删除旧的打包文档清单和思源文档写入路径，运行时只读取生成的飞书文档链接，不再创建或更新思源笔记本文档。
-- 前端请求增加轻量重试，遇到限流提示时会短暂等待后重试，减少偶发 TooManyRequests 失败。
-- 内核状态读写增加限流重试，减少同步存储读写遇到 TooManyRequests 时的失败。
-- 状态页和能力矩阵补入 `github_releases` 适配器信息，驱动列表只展示已经接入运行时的 GitHub Releases。
-- 打包规则精简为只复制根目录中英文 README，不再把 `assets/docs` 整树打入插件包。
-
-#### 修复
-
-- 修复 Docker 部署下无法验证和创建云盘挂载的问题，避免驱动测试阶段直接返回 `Auth failed [session]`。
-- 修复搜索索引进度曾经写在 settings 字符串里的历史兼容问题，加载旧数据时会迁移到独立的 `index_progress` 运行时状态。
-
-### 0.5.5
-
-- 文档入口切换到飞书 Wiki 链接：Dock 状态页里的说明文档、API、更新日志和驱动说明现在都是直接打开浏览器的链接。
-- 删除旧的打包文档清单和思源文档写入路径，本地 Markdown 作为源文件，发版时同步到飞书。
-- 修复 Docker 部署下无法验证和创建云盘挂载的问题，避免驱动测试阶段直接返回 `Auth failed [session]`。
-
-### 0.5.4
-
-- 修复部分网络无法访问 123 网盘当前 `yun.123pan.com` B API 时的连接问题：失败后自动回退到 `api.123278.com`，并使用 `www.123pan.com` 网页请求头。
-- 合并 mm-o/siyuan-cloud#1，并将其中的兼容路径保留为回退方案，而不是替换默认的 123 网盘官方 API 域名。
-
-### 0.5.3
-
-- 修复 123Pan 的 PDF/EPUB/书籍类文件预览链接：`/api/fs/get` 现在按 OpenList 语义让 `PreferProxy`、`WebProxy` 和 `OnlyProxy` 挂载返回稳定的 `/p/<path>` 代理入口。
-- 修复 123Pan 文件行预览入口，统一使用稳定的 `/p` 代理链接，避免阅读类 companion 插件拿到脆弱的上游直链。
+- 删除旧的文本预览、压缩包浏览和原生音视频 `Dialog` 兜底，统一交给预览模块处理。
 
 ## 它是什么
 
@@ -77,16 +33,16 @@
 - **思源工作流底座**：把云盘文件接入文档、媒体笔记、阅读、图床、附件、AI 上下文和后续自动化。
 
 > [!TIP]
-> 详细版本变化请打开插件文档中的 [[更新日志]]。实时路由清单请在 Dock/关于页打开 [[API]]，它直接由正在运行的 `/api/public/api` 生成。
+> 详细版本变化请打开[更新日志](https://my.feishu.cn/wiki/Qvjjw63iMiVwBRkMREfcDuWDnrb)。API 文档可以查看[飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf)；Dock/关于页的 API 入口会用预览模块打开正在运行的插件实时生成的 `/api/public/api`。
 
 | 内容 | 入口 |
 | --- | --- |
-| 版本变化 | [[更新日志]] |
-| 实时 API | [[API]] |
-| 驱动教程 | [[驱动说明]] |
-| OpenList/AList 本地挂载 | [[OpenList AList 本地挂载与代理]] |
-| 百度网盘 | [[百度网盘挂载]] |
-| Local 本地存储 | [[Local 本地存储]] |
+| 版本变化 | [更新日志](https://my.feishu.cn/wiki/Qvjjw63iMiVwBRkMREfcDuWDnrb) |
+| 实时 API | [飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf) |
+| 驱动教程 | [驱动说明](https://my.feishu.cn/wiki/Y1gqwvRmwi9mEGk6AHGcGX4OnTg) |
+| OpenList/AList 本地挂载 | [OpenList AList 本地挂载与代理](https://my.feishu.cn/wiki/Np9wwXWi3irGOoknwl0cwK7Sn9c) |
+| 百度网盘 | [百度网盘挂载](https://my.feishu.cn/wiki/Gig1wzFKSi0pCbkn1XKcLr8rnvl) |
+| Local 本地存储 | [Local 本地存储](https://my.feishu.cn/wiki/Q6s7wW4LRi7CZLkeNZkcbAJjnth) |
 
 ---
 
@@ -99,7 +55,7 @@
 - [ ] 新增一个挂载，选择真实可用的运行时驱动。
 - [ ] 在文件树中打开文件或目录。
 - [ ] 右键复制 Markdown 链接、代理链接、下载链接或分享链接。
-- [ ] 需要自动化时调用 [[API]] 中的运行时接口。
+- [ ] 需要自动化时查看[飞书 API](https://my.feishu.cn/wiki/YCDlwD0qJioublkADxOcYVJpnOf)，或在 Dock/关于页打开实时 `/api/public/api`。
 
 ## 当前能力一览
 
@@ -116,23 +72,23 @@
 
 Dock 当前可见的运行时适配包括：
 
-- [[OpenList 兼容挂载]]
-- [[OpenList AList 本地挂载与代理]]
-- [[WebDAV 挂载]]
-- [[S3 兼容存储]]
-- [[DogeCloud 挂载]]
-- [[115 Cloud 挂载]]
-- [[115 Open 挂载]]
-- [[115 Share 挂载]]
-- [[OneDrive 挂载]]
-- [[123Pan 挂载]]
-- [[百度网盘挂载]]
-- [[GitHub Releases]]
-- [[阿里云盘开放平台]]
-- [[189Cloud 系列]]
-- [[Quark UC 系列]]
-- [[Local 本地存储]]
-- [[思源工作空间]]
+- [OpenList 兼容挂载](https://my.feishu.cn/wiki/UHWbwHFeGiXjGkkTW92cFxynnm3)
+- [OpenList AList 本地挂载与代理](https://my.feishu.cn/wiki/Np9wwXWi3irGOoknwl0cwK7Sn9c)
+- [WebDAV 挂载](https://my.feishu.cn/wiki/JJ4Pw3NRVi19AekGbY8cWFNcnmg)
+- [S3 兼容存储](https://my.feishu.cn/wiki/AlvawbjIuiU22mkDAfLcGdbSnKc)
+- [DogeCloud 挂载](https://my.feishu.cn/wiki/DUcmwbwxniEOLVkuUVUchknFnmb)
+- [115 Cloud 挂载](https://my.feishu.cn/wiki/XxXqwvlBcip8JJkdH8lcz2vpnuf)
+- [115 Open 挂载](https://my.feishu.cn/wiki/SEo2wAbOpi8TTukfLx4cnCw6nre)
+- [115 Share 挂载](https://my.feishu.cn/wiki/TY0FwQyeii2ql4kevuaccuFIn49)
+- [OneDrive 挂载](https://my.feishu.cn/wiki/MRpFwCZcQiOpVUkPjjCcdOAvnB2)
+- [123Pan 挂载](https://my.feishu.cn/wiki/IY7FwsKh7i0WU3kd0OLcoJIcnzd)
+- [百度网盘挂载](https://my.feishu.cn/wiki/Gig1wzFKSi0pCbkn1XKcLr8rnvl)
+- [GitHub Releases](https://my.feishu.cn/wiki/VFiCwOcoOiHKE0kLBJocS3vinIf)
+- [阿里云盘开放平台](https://my.feishu.cn/wiki/LQRHwC0BciZFjmkoA7ycwNTknre)
+- [189Cloud 系列](https://my.feishu.cn/wiki/HBCiwsGnPiEJAvkRD65cjYxLnPg)
+- [Quark UC 系列](https://my.feishu.cn/wiki/Gx06wqy5xiyH6jkENAxcDOxrn5F)
+- [Local 本地存储](https://my.feishu.cn/wiki/Q6s7wW4LRi7CZLkeNZkcbAJjnth)
+- [思源工作空间](https://my.feishu.cn/wiki/OpSrwXiUniBI7akO94ocSpqTnjc)
 - 内置虚拟存储
 
 > [!NOTE]
@@ -173,6 +129,16 @@ Dock 当前可见的运行时适配包括：
 
 > [!NOTE]
 > 思源默认会同步 `data/storage/petal/<plugin>`，用户可以通过 `.siyuan/syncignore` 排除。
+
+## 致谢与许可
+
+本项目以 MIT 许可证发布，并感谢这些上游项目：
+
+- [OpenList](https://github.com/OpenListTeam/OpenList)：兼容路由、响应形状和驱动行为的重要参考；OpenList 主项目为 AGPL-3.0，OpenList Frontend 为 MIT。
+- [open-file-viewer](https://github.com/xushanpei/open-file-viewer)：可选预览模块，MIT。
+- [Flyfish File Viewer](https://github.com/flyfish-dev/file-viewer)：可选 Office 预览模块，Apache-2.0；其按需加载的 worker、WASM、字体和 vendor 资产保留各自随包许可证。
+- [SiYuan plugin sample](https://github.com/siyuan-note/plugin-sample) 和思源插件生态中的 Monaco 编辑器类项目：插件结构、页签打开和编辑器集成参考，按各自上游许可证保留声明。
+- [zip.js](https://github.com/gildas-lormeau/zip.js)：压缩包能力参考与开发依赖，BSD-3-Clause。
 
 ## 开发
 

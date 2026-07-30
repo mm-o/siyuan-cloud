@@ -41,7 +41,7 @@ export interface OpenListUrlItem {
 export const openListFileKinds = {
   audio: new Set('mp3,wav,aac,m4a,flac,ogg'.split(',')),
   image: new Set('jpg,tiff,jpeg,png,gif,bmp,svg,ico,swf,webp,avif'.split(',')),
-  text: new Set('txt,log,md,markdown,json,xml,yml,yaml,toml,ini,conf,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,rb,rs,php,c,cpp,h'.split(',')),
+  text: new Set('txt,log,md,markdown,json,xml,yml,yaml,toml,ini,conf,sy,js,ts,jsx,tsx,vue,css,scss,less,html,htm,go,py,java,rb,rs,php,c,cpp,h,hpp,sh,bash,bat,cmd,ps1,sql'.split(',')),
   video: new Set('mp4,mkv,avi,mov,rmvb,webm,flv,m3u8,m4v'.split(',')),
 }
 const openListReaderExts = new Set('epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
@@ -199,23 +199,13 @@ async function tryOpenMedia(name: string, url: string) {
   return false
 }
 
-export async function openMediaPreview(name: string, url: string, kind: 'audio' | 'video') {
+export async function openMediaPreview(name: string, url: string) {
   const href = normalizeResourceUrl(url)
-  if (await tryOpenMedia(name, href))
-    return
-  new Dialog({
-    title: name,
-    width: 'min(860px, 92vw)',
-    content: `<div class="b3-dialog__content">
-  ${kind === 'audio'
-    ? `<audio controls autoplay style="width:100%;" src="${escapeHtml(href)}"></audio>`
-    : `<video controls autoplay playsinline style="width:100%;max-height:70vh;background:#000;" src="${escapeHtml(href)}"></video>`}
-</div>`,
-  })
+  return await tryOpenMedia(name, href)
 }
 
 export async function openOpenListMediaPreview(name: string, path: string, kind: MediaKind, resolveUrl: ResolveUrl) {
-  await openMediaPreview(name, await resolveMediaPreviewUrl(path, kind, resolveUrl), kind)
+  return await openMediaPreview(name, await resolveMediaPreviewUrl(path, kind, resolveUrl))
 }
 
 export function promptText(options: {

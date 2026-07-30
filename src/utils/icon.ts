@@ -126,6 +126,170 @@ const OPENLIST_ICONS = `
     <rect x="4" y="14" width="6" height="6" rx="1.5"/>
     <rect x="14" y="14" width="6" height="6" rx="1.5"/>
   </symbol>
+  <symbol id="iconOpenListUsers" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+  </symbol>
+  <symbol id="iconOpenListShare2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="18" cy="5" r="3"/>
+    <circle cx="6" cy="12" r="3"/>
+    <circle cx="18" cy="19" r="3"/>
+    <path d="m8.59 13.51 6.82 3.98"/>
+    <path d="m15.41 6.51-6.82 3.98"/>
+  </symbol>
+  <symbol id="iconOpenListListTodo" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M13 5h8"/>
+    <path d="M13 12h8"/>
+    <path d="M13 19h8"/>
+    <path d="m3 17 2 2 4-4"/>
+    <rect x="3" y="4" width="6" height="6" rx="1"/>
+  </symbol>
+  <symbol id="iconOpenListWrench" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/>
+  </symbol>
+  <symbol id="iconOpenListInfo" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M12 16v-4"/>
+    <path d="M12 8h.01"/>
+  </symbol>
+  <symbol id="iconOpenListFolderOpenLine" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6A2 2 0 0 1 18.46 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2A2 2 0 0 0 12.1 6H18a2 2 0 0 1 2 2v2"/>
+  </symbol>
+  <symbol id="iconOpenListDatabaseLine" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <ellipse cx="12" cy="5" rx="9" ry="3"/>
+    <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+    <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+  </symbol>
+  <symbol id="iconOpenListSearch" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="11" cy="11" r="8"/>
+    <path d="m21 21-4.3-4.3"/>
+  </symbol>
+  <symbol id="iconOpenListPackage" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m7.5 4.27 9 5.15"/>
+    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+    <path d="m3.3 7 8.7 5 8.7-5"/>
+    <path d="M12 22V12"/>
+  </symbol>
+  <symbol id="iconOpenListExternalLink" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M15 3h6v6"/>
+    <path d="M10 14 21 3"/>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+  </symbol>
+  <symbol id="iconOpenListRefreshCw" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M3 12a9 9 0 0 1 14.8-6.9L21 8"/>
+    <path d="M21 3v5h-5"/>
+    <path d="M21 12a9 9 0 0 1-14.8 6.9L3 16"/>
+    <path d="M3 21v-5h5"/>
+  </symbol>
+  <symbol id="iconOpenListFileCog" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h6"/>
+    <path d="M14 2v6h6"/>
+    <path d="m14.3 19.6.4 1.1"/>
+    <path d="m19.3 19.6-.4 1.1"/>
+    <path d="m21.7 16.5-1.1.4"/>
+    <path d="m13 16.9-1.1-.4"/>
+    <circle cx="16.8" cy="17.8" r="2.2"/>
+    <path d="M14 2l6 6v3"/>
+  </symbol>
+  <symbol id="iconOpenListCircleCheck" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="m9 12 2 2 4-4"/>
+  </symbol>
+  <symbol id="iconOpenListCircleX" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="m15 9-6 6"/>
+    <path d="m9 9 6 6"/>
+  </symbol>
+  <symbol id="iconOpenListArrowLeft" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m12 19-7-7 7-7"/>
+    <path d="M19 12H5"/>
+  </symbol>
+  <symbol id="iconOpenListPlus" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M5 12h14"/>
+    <path d="M12 5v14"/>
+  </symbol>
+  <symbol id="iconOpenListPencil" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M21.2 6.8 17.2 2.8a2.8 2.8 0 0 0-4 0L3 13v5h5z"/>
+    <path d="m12 4 8 8"/>
+  </symbol>
+  <symbol id="iconOpenListEye" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </symbol>
+  <symbol id="iconOpenListEyeOff" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m2 2 20 20"/>
+    <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/>
+    <path d="M5.5 5.5C3.3 7 2 12 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.7-1.2"/>
+    <path d="M14.1 5.3C19.3 6.2 22 12 22 12a16.8 16.8 0 0 1-3.1 4.2"/>
+  </symbol>
+  <symbol id="iconOpenListTrash2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M3 6h18"/>
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    <path d="M19 6 18 20a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+    <path d="M10 11v6"/>
+    <path d="M14 11v6"/>
+  </symbol>
+  <symbol id="iconOpenListCopy" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <rect x="8" y="8" width="12" height="12" rx="2"/>
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+  </symbol>
+  <symbol id="iconOpenListMoreHorizontal" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="1"/>
+    <circle cx="19" cy="12" r="1"/>
+    <circle cx="5" cy="12" r="1"/>
+  </symbol>
+  <symbol id="iconOpenListUpload" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <path d="m17 8-5-5-5 5"/>
+    <path d="M12 3v12"/>
+  </symbol>
+  <symbol id="iconOpenListDownload" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <path d="m7 10 5 5 5-5"/>
+    <path d="M12 15V3"/>
+  </symbol>
+  <symbol id="iconOpenListPlayLine" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m6 3 14 9-14 9z"/>
+  </symbol>
+  <symbol id="iconOpenListHelpCircle" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M9.1 9a3 3 0 1 1 5.2 2c-.8.8-1.3 1.2-1.3 2.5"/>
+    <path d="M12 17h.01"/>
+  </symbol>
+  <symbol id="iconOpenListChevronRight" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m9 18 6-6-6-6"/>
+  </symbol>
+  <symbol id="iconOpenListFileTextLine" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <path d="M14 2v6h6"/>
+    <path d="M16 13H8"/>
+    <path d="M16 17H8"/>
+    <path d="M10 9H8"/>
+  </symbol>
+  <symbol id="iconOpenListImageLine" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <circle cx="9" cy="9" r="2"/>
+    <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>
+  </symbol>
+  <symbol id="iconOpenListCode2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <path d="m18 16 4-4-4-4"/>
+    <path d="m6 8-4 4 4 4"/>
+    <path d="m14.5 4-5 16"/>
+  </symbol>
+  <symbol id="iconOpenListDraftingCompass" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="5" r="2"/>
+    <path d="m12 7-5 14"/>
+    <path d="m12 7 5 14"/>
+    <path d="M5 21h14"/>
+    <path d="m9 14 6-2"/>
+  </symbol>
+  <symbol id="iconOpenListArchive" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="4" rx="1"/>
+    <path d="M5 7v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7"/>
+    <path d="M10 12h4"/>
+  </symbol>
   <symbol id="iconOpenListMinus" fill="currentColor" viewBox="0 0 16 16">
     <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM6 8.5h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1z"/>
   </symbol>

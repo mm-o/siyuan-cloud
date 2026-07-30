@@ -1,6 +1,6 @@
 {
   "name": "siyuan-cloud",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "type": "module",
   "description": "Cloud-drive aggregation manager for SiYuan: file viewing, media playback, reading annotations, image-hosting links, and more.",
   "author": "mm-o",
@@ -18,7 +18,8 @@
     "release:with-docs": "pnpm docs:feishu && node ./release.js",
     "build": "vite build",
     "docs:feishu": "node ./scripts/feishu-doc-sync.mjs",
-    "test:kernel": "node ./scripts/kernel-route-smoke.mjs"
+    "test:kernel": "node ./scripts/kernel-route-smoke.mjs",
+    "test:preview-modules": "node --experimental-strip-types ./scripts/preview-modules-smoke.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
@@ -26,10 +27,10 @@
     "vue": "^3.3.8"
   },
   "devDependencies": {
-    "@zip.js/zip.js": "^2.8.26",
     "@antfu/eslint-config": "^4.8.1",
     "@types/node": "^20.2.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@zip.js/zip.js": "^2.8.26",
     "eslint": "^9.22.0",
     "eslint-plugin-format": "^1.0.1",
     "fast-glob": "^3.2.12",

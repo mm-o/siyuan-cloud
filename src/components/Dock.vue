@@ -54,29 +54,44 @@
               </select>
             </label>
           </div>
-          <DockRow v-if="!taskItems.length" icon="#iconList" :title="t('taskEmpty')" :desc="`${taskTypeLabel(taskType)} / ${taskDone === 'done' ? t('taskDone') : t('taskUndone')}`" />
-          <DockRow v-for="item in taskItems" :key="item.id" icon="#iconList" :title="item.name || item.id" :desc="taskDetail(item)" :tags="taskTags(item)" :actions="taskActions(item)" />
+          <DockRow v-if="!taskItems.length" icon="#iconOpenListListTodo" :title="t('taskEmpty')" :desc="`${taskTypeLabel(taskType)} / ${taskDone === 'done' ? t('taskDone') : t('taskUndone')}`" />
+          <DockRow v-for="item in taskItems" :key="item.id" icon="#iconOpenListListTodo" :title="item.name || item.id" :desc="taskDetail(item)" :tags="taskTags(item)" :actions="taskActions(item)" />
         </div>
       </template>
 
       <template v-else-if="currentTab === 'tools'">
-        <div class="ol-mount-list">
-          <div class="ol-mount-form">
-            <DockSectionHeader icon="#iconSearch" :title="t('indexTools')" :actions="sectionActions.tools" />
+        <div v-if="!activeTool" class="ol-mount-list">
+          <DockRow v-for="tool in toolLaunchers" :key="tool.key" :icon="tool.icon" :title="tool.title" :desc="tool.desc" :tags="tool.tags" :actions="tool.actions" :open="tool.open" />
+        </div>
+        <div v-else class="ol-mount-list">
+          <DockRow icon="#iconOpenListArrowLeft" :title="t('backToTools')" :desc="activeToolTitle" :open="closeTool" />
+
+          <div v-if="activeTool === 'index'" class="ol-mount-form">
+            <DockSectionHeader icon="#iconOpenListSearch" :title="t('indexTools')" :actions="sectionActions.tools" />
           </div>
 
-          <div class="ol-mount-form">
-            <DockSectionHeader icon="#iconSettings" :title="t('configImportExport')" :actions="sectionActions.config" />
+          <div v-else-if="activeTool === 'config'" class="ol-mount-form">
+            <DockSectionHeader icon="#iconOpenListWrench" :title="t('configImportExport')" :actions="sectionActions.config" />
             <textarea v-model="configText" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('configJsonPlaceholder')" />
           </div>
 
-          <div class="ol-mount-form">
-            <DockSectionHeader icon="#iconOpen" :title="t('externalPreviews')" :actions="sectionActions.external" />
+          <template v-else-if="activeTool === 'preview-modules'">
+            <div v-for="module in previewModules" :key="module.key" class="ol-mount-form">
+              <DockSectionHeader icon="#iconOpenListPackage" :title="module.name" />
+              <DockRow icon="#iconOpenListPackage" :title="module.name" :desc="previewModuleDescription(module, expandedPreviewModuleKeys.includes(module.key))" :tags="previewModuleTags(module)" :actions="previewModuleActions(module)" :open="() => togglePreviewModuleFeatures(module.key)" />
+              <template v-if="expandedPreviewModuleKeys.includes(module.key)">
+                <DockRow v-for="category in previewModuleFeatureRows(module)" :key="`${module.key}:${category.key}`" class="ol-mount-row--feature" :icon="category.icon" :title="category.name" :desc="category.desc" :tags="previewModuleCategoryTags(category)" :actions="previewModuleCategoryActions(category)" />
+              </template>
+            </div>
+          </template>
+
+          <div v-else-if="activeTool === 'external-previews'" class="ol-mount-form">
+            <DockSectionHeader icon="#iconOpenListExternalLink" :title="t('externalPreviews')" :actions="sectionActions.external" />
             <textarea v-model="externalPreviews" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('externalPreviewsHelp')" />
           </div>
 
-          <div class="ol-mount-form">
-            <DockSectionHeader icon="#iconList" :title="t('torrentTools')" :actions="sectionActions.torrent" />
+          <div v-else-if="activeTool === 'torrent'" class="ol-mount-form">
+            <DockSectionHeader icon="#iconOpenListListTodo" :title="t('torrentTools')" :actions="sectionActions.torrent" />
             <label class="ol-field">
               <span>{{ t('torrentPath') }}</span>
               <input v-model="torrentPath" class="b3-text-field" type="text" :placeholder="t('torrentPathPlaceholder')">
@@ -93,9 +108,9 @@
       <template v-else-if="currentTab === 'status'">
         <div class="ol-mount-list">
           <DockRow :icon="statusIcon" :title="statusTitle" :desc="statusDetail" />
-          <DockRow icon="#iconFile" :title="t('stateFile')" :desc="storageInfo.state_file || '/storage/petal/siyuan-cloud/config.json'" />
-          <DockRow icon="#iconRefresh" :title="t('sync')" :desc="storageSyncLabel" />
-          <DockRow v-for="item in docItems" :key="item.key" :icon="item.icon" :title="item.title" :desc="item.desc" :href="item.href" />
+          <DockRow icon="#iconOpenListFileCog" :title="t('stateFile')" :desc="storageInfo.state_file || '/storage/petal/siyuan-cloud/config.json'" />
+          <DockRow icon="#iconOpenListRefreshCw" :title="t('sync')" :desc="storageSyncLabel" />
+          <DockRow v-for="item in docItems" :key="item.key" :icon="item.icon" :title="item.title" :desc="item.desc" :href="item.href" :open="item.open" />
         </div>
       </template>
 
@@ -103,7 +118,7 @@
         <div class="ol-mount-list">
           <template v-for="entry in mountEntries" :key="entry.key">
             <DockRow v-if="entry.type === 'mount'" :icon="mountIcon(entry.item)" :title="mountPath(entry.item)" :desc="storageDescription(entry.item)" :tags="storageTags(entry.item)" :actions="mountActions(entry.item)" :open="() => openMount(entry.item)" />
-            <DockRow v-else-if="entry.type === 'add'" icon="#iconAdd" :title="t('mountAdd')" :desc="t('verifyStorageDriver')" :open="openAddMount" />
+            <DockRow v-else-if="entry.type === 'add'" icon="#iconOpenListPlus" :title="t('mountAdd')" :desc="t('verifyStorageDriver')" :open="openAddMount" />
             <div v-else class="ol-mount-form">
             <label class="ol-field">
               <span>{{ t('verifyMountPath') }}</span>
@@ -119,7 +134,7 @@
             <div v-if="driverInfo" class="ol-driver-note">
               <span class="ol-driver-note__heading">
                 <b>{{ driverDisplayName(driverInfo.config?.name || verifyDriver) }}</b>
-                <DockActionButton icon="#iconHelp" :label="t('openHelp')" @run="openDriverHelpDoc(driverInfo.config?.name || verifyDriver)" />
+                <DockActionButton icon="#iconOpenListHelpCircle" :label="t('openHelp')" @run="openDriverHelpDoc(driverInfo.config?.name || verifyDriver)" />
               </span>
               <span class="ol-driver-note__text">{{ driverNote(driverInfo.config?.name || verifyDriver, driverInfo.config?.note || t('driverMetadataOnly')) }}</span>
             </div>
@@ -143,7 +158,7 @@
                   <span class="b3-list-item__text">{{ t('optionalFields') }}</span>
                   <span class="b3-list-item__meta b3-list-item__meta--ellipsis">{{ t('additionJsonShort') }}</span>
                   <span class="b3-list-item__action ol-fold-action" :aria-label="mountMoreOpen ? t('collapse') : t('expand')">
-                    <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': mountMoreOpen }"><use xlink:href="#iconRight" /></svg>
+                    <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': mountMoreOpen }"><use xlink:href="#iconOpenListChevronRight" /></svg>
                   </span>
                 </button>
                 <label v-else-if="row.field" :class="row.field.type === 'bool' ? 'b3-list-item b3-list-item--narrow' : 'ol-field'">
@@ -164,7 +179,7 @@
                       :aria-label="secretVisible[row.field.name] ? t('hide') : t('show')"
                       @click.stop="toggleSecret(row.field.name)"
                     >
-                      <svg><use :xlink:href="secretVisible[row.field.name] ? '#iconEyeoff' : '#iconEye'" /></svg>
+                      <svg><use :xlink:href="secretVisible[row.field.name] ? '#iconOpenListEyeOff' : '#iconOpenListEye'" /></svg>
                     </button>
                   </span>
                   <input
@@ -197,12 +212,12 @@
 
       <template v-else-if="currentTab === 'users'">
         <div class="ol-mount-list">
-          <DockRow v-for="(item, index) in userItems" :key="item.id || item.username" :style="{ order: index * 2 }" icon="#iconAccount" :title="item.username" :desc="userDetail(item)" :tags="userTags(item)" :actions="userActions(item)">
+          <DockRow v-for="(item, index) in userItems" :key="item.id || item.username" :style="{ order: index * 2 }" icon="#iconOpenListUsers" :title="item.username" :desc="userDetail(item)" :tags="userTags(item)" :actions="userActions(item)">
               <template #tags>
                 <button v-if="item.otp" class="b3-chip b3-chip--small" type="button" @click.stop="cancelUser2fa(item)">{{ t('userCancel2fa') }}</button>
               </template>
           </DockRow>
-          <DockRow v-if="!userFormOpen" :style="{ order: userItems.length * 2 }" icon="#iconAdd" :title="t('userAdd')" :desc="t('userAddHelp')" :open="openAddUser" />
+          <DockRow v-if="!userFormOpen" :style="{ order: userItems.length * 2 }" icon="#iconOpenListPlus" :title="t('userAdd')" :desc="t('userAddHelp')" :open="openAddUser" />
           <div v-else class="ol-mount-form" :style="{ order: userFormOrder }">
               <label class="ol-field"><span>{{ t('verifyUsername') }}</span><input v-model="userForm.username" class="b3-text-field" type="text"></label>
               <label class="ol-field"><span>{{ t('verifyPassword') }}</span><input v-model="userForm.password" class="b3-text-field" type="password" :placeholder="t('userPasswordPlaceholder')"></label>
@@ -212,7 +227,7 @@
                   <span class="b3-list-item__text">{{ t('userPermission') }}</span>
                   <span class="b3-list-item__meta b3-list-item__meta--ellipsis ariaLabel" :aria-label="userPermissionFormSummary()">{{ userPermissionFormSummary() }}</span>
                   <span class="b3-list-item__action ol-fold-action" :aria-label="userPermissionOpen ? t('collapse') : t('expand')">
-                    <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': userPermissionOpen }"><use xlink:href="#iconRight" /></svg>
+                    <svg class="b3-list-item__arrow" :class="{ 'b3-list-item__arrow--open': userPermissionOpen }"><use xlink:href="#iconOpenListChevronRight" /></svg>
                   </span>
                 </button>
                 <div v-if="userPermissionOpen" class="ol-driver-fields">
@@ -228,13 +243,13 @@
                 <button class="b3-button" type="button" @click="saveUser">{{ t('confirmAction') }}</button>
               </div>
           </div>
-          <DockRow v-if="!userItems.length" icon="#iconAccount" :title="t('userEmpty')" />
+          <DockRow v-if="!userItems.length" icon="#iconOpenListUsers" :title="t('userEmpty')" />
         </div>
       </template>
 
       <template v-else>
         <div class="ol-mount-list">
-          <DockRow v-for="(item, index) in shareItems" :key="item.id || item.sid" :style="{ order: index * 2 }" icon="#iconLink" :title="item.remark || item.id" :desc="shareDescription(item)" :detail="shareDetail(item)" :tags="shareTags(item)" :actions="shareActions(item)" />
+          <DockRow v-for="(item, index) in shareItems" :key="item.id || item.sid" :style="{ order: index * 2 }" icon="#iconOpenListShare2" :title="item.remark || item.id" :desc="shareDescription(item)" :detail="shareDetail(item)" :tags="shareTags(item)" :actions="shareActions(item)" />
           <div v-if="shareFormOpen" class="ol-mount-form" :style="{ order: shareFormOrder }">
               <label class="ol-field"><span>{{ t('shareId') }}</span><input v-model="shareForm.new_id" class="b3-text-field" type="text"></label>
               <label class="ol-field"><span>{{ t('shareFiles') }}</span><textarea v-model="shareForm.files" class="b3-text-field ol-addition" spellcheck="false" :placeholder="t('shareFilesPlaceholder')" /></label>
@@ -251,7 +266,7 @@
                 <button class="b3-button" type="button" @click="saveShare">{{ t('confirmAction') }}</button>
               </div>
           </div>
-          <DockRow v-if="!shareItems.length" icon="#iconLink" :title="t('shareEmpty')" />
+          <DockRow v-if="!shareItems.length" icon="#iconOpenListShare2" :title="t('shareEmpty')" />
         </div>
       </template>
     </main>
@@ -277,10 +292,6 @@ import {
   resolveOpenListFile,
 } from '@/utils/api'
 import { useDock } from '@/utils/dock'
-import {
-  isArchiveFileName,
-  openArchiveBrowser,
-} from '@/utils/archive'
 import {
   copyOpenListItemLink,
   deleteOpenListSelection,
@@ -310,6 +321,10 @@ import {
   openOpenListMediaPreview,
   showErrorMessage,
 } from '@/utils/file_ui'
+import {
+  previewModuleForFile,
+  previewModuleForFileReady,
+} from '@/utils/preview_modules'
 
 interface DockAction {
   key: string
@@ -376,7 +391,7 @@ const DockSectionHeader = defineComponent({
   },
 })
 
-const DockRow = (props: any, { emit, slots }: any) => {
+const DockRow = (props: any, { attrs, slots }: any) => {
   const open = (event: MouseEvent | KeyboardEvent) => {
     if (!props.open)
       return
@@ -384,7 +399,8 @@ const DockRow = (props: any, { emit, slots }: any) => {
     props.open(event)
   }
   return h(props.href ? 'a' : 'div', {
-    class: 'ol-mount-row',
+    class: ['ol-mount-row', attrs.class],
+    style: attrs.style,
     href: props.href,
     rel: props.href ? 'noopener' : undefined,
     role: props.open && !props.href ? 'button' : undefined,
@@ -460,10 +476,17 @@ const {
   openEditShare,
   openShareMenu,
   openEditUser,
+  previewModuleActions,
+  previewModuleDescription,
+  previewModuleFeatureRows,
+  previewModules,
+  previewModuleTags,
   refreshDriverQrCode,
   submitDriverSmsCode,
   saveShare,
   saveUser,
+  previewModuleCategoryActions,
+  previewModuleCategoryTags,
   selectedStorageId,
   shareDescription,
   shareDetail,
@@ -511,6 +534,34 @@ const {
   verifyStorages,
 } = useDock(plugin)
 
+const activeTool = ref('')
+const expandedPreviewModuleKeys = ref<string[]>([])
+const closeTool = () => {
+  activeTool.value = ''
+}
+const openTool = (key: string) => {
+  activeTool.value = key
+  expandedPreviewModuleKeys.value = key === 'preview-modules' ? previewModules.value.slice(0, 1).map(module => module.key) : []
+}
+const previewModuleSummary = computed(() => {
+  const total = previewModules.value.length
+  const installed = previewModules.value.filter(module => module.installed).length
+  return total ? `${installed}/${total} ${t('installed')}` : t('previewModuleMissing')
+})
+const toolLaunchers = computed(() => [
+  { key: 'preview-modules', icon: '#iconOpenListPackage', title: t('previewModules'), desc: previewModuleSummary.value, tags: previewModules.value.length ? [{ key: 'count', text: String(previewModules.value.length) }] : [], open: () => openTool('preview-modules') },
+  { key: 'index', icon: '#iconOpenListSearch', title: t('indexTools'), desc: t('toolIndexDesc'), actions: sectionActions.value.tools, open: () => openTool('index') },
+  { key: 'config', icon: '#iconOpenListWrench', title: t('configImportExport'), desc: t('toolConfigDesc'), open: () => openTool('config') },
+  { key: 'external-previews', icon: '#iconOpenListExternalLink', title: t('externalPreviews'), desc: t('toolExternalPreviewDesc'), open: () => openTool('external-previews') },
+  { key: 'torrent', icon: '#iconOpenListListTodo', title: t('torrentTools'), desc: t('toolTorrentDesc'), open: () => openTool('torrent') },
+])
+const activeToolTitle = computed(() => toolLaunchers.value.find(tool => tool.key === activeTool.value)?.title || '')
+const togglePreviewModuleFeatures = (key: string) => {
+  expandedPreviewModuleKeys.value = expandedPreviewModuleKeys.value.includes(key)
+    ? []
+    : [key]
+}
+
 const onUserPermissionChange = (index: number, event: Event) => {
   toggleUserPermission(index, (event.target as HTMLInputElement | null)?.checked === true)
 }
@@ -534,7 +585,7 @@ const compactView = computed({
 const compactPage = computed(() => compactView.value && compactTabs.has(currentTab.value))
 const compactViewAction = computed<DockAction>(() => ({
   key: 'view',
-  icon: '#iconList',
+  icon: '#iconOpenListListTodo',
   label: t(compactView.value ? 'comfortView' : 'compactView'),
   run: () => {
     compactView.value = !compactView.value
@@ -543,11 +594,15 @@ const compactViewAction = computed<DockAction>(() => ({
 const currentPageActions = computed(() => {
   if (currentTab.value === 'files')
     return [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: refreshTree },
-      { key: 'open', icon: '#iconFolder', label: t('openFileManager'), run: openFileManager },
+      { key: 'refresh', icon: '#iconOpenListRefreshCw', label: t('refresh'), run: refreshTree },
+      { key: 'open', icon: '#iconOpenListFolderOpenLine', label: t('openFileManager'), run: openFileManager },
     ]
   const actions = sectionActions.value[pageActionMap[currentTab.value]] || []
   return compactTabs.has(currentTab.value) ? [compactViewAction.value, ...actions] : actions
+})
+watch(currentTab, (tab) => {
+  if (tab !== 'tools')
+    closeTool()
 })
 const driverFormRows = computed(() => {
   const primary = driverFields.value.filter(field => field.required)
@@ -574,9 +629,9 @@ const formOrder = (items: any[], selected: any, key: (item: any) => any) => {
 const userFormOrder = computed(() => formOrder(userItems.value, userForm.value.id, item => item.id || item.username))
 const shareFormOrder = computed(() => formOrder(shareItems.value, shareForm.value.id, item => item.id || item.sid))
 const openMount = (item: any) => openFileManager(mountPath(item))
-const mountActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('mountEdit'), run: () => openEditMount(item) }, { key: 'toggle', icon: item.disabled ? '#iconEye' : '#iconEyeoff', label: item.disabled ? t('mountEnable') : t('mountDisable'), run: () => toggleMount(item) }, { key: 'delete', icon: '#iconTrashcan', label: t('mountDelete'), run: () => deleteMount(item) }]
-const shareActions = (item: any) => [{ key: 'copy', icon: '#iconCopy', label: t('copyRoute'), run: () => copyShare(item) }, { key: 'more', icon: '#iconMore', label: t('more'), run: event => openShareMenu(item, event as MouseEvent | KeyboardEvent) }]
-const userActions = (item: any) => [{ key: 'edit', icon: '#iconEdit', label: t('userEdit'), run: () => openEditUser(item) }, { key: 'toggle', icon: item.disabled ? '#iconEye' : '#iconEyeoff', label: item.disabled ? t('userEnable') : t('userDisable'), run: () => toggleUser(item) }, ...(Number(item.role) === 1 || Number(item.role) === 2 ? [] : [{ key: 'delete', icon: '#iconTrashcan', label: t('userDelete'), run: () => deleteUser(item) }])]
+const mountActions = (item: any) => [{ key: 'edit', icon: '#iconOpenListPencil', label: t('mountEdit'), run: () => openEditMount(item) }, { key: 'toggle', icon: item.disabled ? '#iconOpenListEye' : '#iconOpenListEyeOff', label: item.disabled ? t('mountEnable') : t('mountDisable'), run: () => toggleMount(item) }, { key: 'delete', icon: '#iconOpenListTrash2', label: t('mountDelete'), run: () => deleteMount(item) }]
+const shareActions = (item: any) => [{ key: 'copy', icon: '#iconOpenListCopy', label: t('copyRoute'), run: () => copyShare(item) }, { key: 'more', icon: '#iconOpenListMoreHorizontal', label: t('more'), run: event => openShareMenu(item, event as MouseEvent | KeyboardEvent) }]
+const userActions = (item: any) => [{ key: 'edit', icon: '#iconOpenListPencil', label: t('userEdit'), run: () => openEditUser(item) }, { key: 'toggle', icon: item.disabled ? '#iconOpenListEye' : '#iconOpenListEyeOff', label: item.disabled ? t('userEnable') : t('userDisable'), run: () => toggleUser(item) }, ...(Number(item.role) === 1 || Number(item.role) === 2 ? [] : [{ key: 'delete', icon: '#iconOpenListTrash2', label: t('userDelete'), run: () => deleteUser(item) }])]
 
 const rootItems = ref<DockTreeItem[]>([])
 const childrenByPath = ref<Record<string, DockTreeItem[]>>({})
@@ -643,7 +698,7 @@ function renderNode(node: DockTreeItem, level: number): string {
     : []
   return `<li class="b3-list-item b3-list-item--hide-action" data-type="${level === 0 ? 'navigation-root' : 'navigation-file'}" data-path="${escapeAttr(node.path)}" draggable="true" style="--file-toggle-width:${paddingLeft + 18}px">
   <span style="padding-left:${paddingLeft}px" class="b3-list-item__toggle b3-list-item__toggle--hl${node.is_dir ? '' : ' fn__hidden'}">
-    <svg class="b3-list-item__arrow${expanded ? ' b3-list-item__arrow--open' : ''}"><use xlink:href="#iconRight"></use></svg>
+    <svg class="b3-list-item__arrow${expanded ? ' b3-list-item__arrow--open' : ''}"><use xlink:href="#iconOpenListChevronRight"></use></svg>
   </span>
   <svg class="b3-list-item__graphic ol-file-row__icon ol-file-row__icon--${iconName}"><use xlink:href="${openListFileIconHref(node.name, node.is_dir)}"></use></svg>
   <span class="b3-list-item__text ariaLabel" data-position="parentE"${href ? ` data-href="${escapeAttr(href)}"` : ''} aria-label="${escapeAttr(node.name)}">${escapeHtml(node.name)}</span>${!node.is_dir && node.size ? `
@@ -665,7 +720,6 @@ const mediaKind = (item: DockTreeItem) => {
   return kind === 'audio' || kind === 'video' ? kind : ''
 }
 const isCompanionFile = (item: DockTreeItem) => !!openListCompanionHref(item.name, item.path, item.is_dir)
-const isArchiveFile = (item: DockTreeItem) => !item.is_dir && isArchiveFileName(item.name)
 const itemOpenUrl = (item: DockTreeItem) => openListItemOpenUrl(item, node => node.path)
 const companionHref = (item: DockTreeItem) => openListCompanionHref(item.name, item.path, item.is_dir)
 const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ item, path })
@@ -730,13 +784,11 @@ async function openNode(node: DockTreeItem) {
     }
     const kind = mediaKind(node)
     if (kind) {
-      await openOpenListMediaPreview(node.name, node.path, kind, resolveDownloadUrl)
-      return
+      if (await openOpenListMediaPreview(node.name, node.path, kind, resolveDownloadUrl))
+        return
     }
-    if (isArchiveFile(node)) {
-      await browseTreeArchive(node)
+    if (await openPreviewModule(node, kind))
       return
-    }
     if (!isCompanionFile(node))
       openFileManager(node.path)
     return
@@ -800,16 +852,15 @@ async function downloadTreeItem(item: DockTreeItem) {
   }
 }
 
-async function browseTreeArchive(item: DockTreeItem) {
-  const tfLocal = (key: string, fallback: string) => {
-    const value = t(key)
-    return value === key ? fallback : value
-  }
-  await openArchiveBrowser({
-    archivePath: item.path,
-    tf: tfLocal,
-    title: `${tfLocal('browseArchive', 'Browse archive')} - ${item.name}`,
-  })
+async function openPreviewModule(item: DockTreeItem, kind = openListFileKind(item.name, item.is_dir)) {
+  const moduleInfo = previewModuleForFile(item.name, kind)
+  if (!moduleInfo)
+    return false
+  if (await previewModuleForFileReady(item.name, kind))
+    window._siyuan_cloud?.openPreviewModule?.(item.path, item.name)
+  else
+    showMessage(t('previewModuleMissingOpenTools'), 3000)
+  return true
 }
 
 async function copyTreeLink(item: DockTreeItem, path: string) {
@@ -842,7 +893,6 @@ function onTreeContextMenu(event: MouseEvent) {
   if (!node)
     return
   openOpenListFileItemMenu({
-    browseArchive: isArchiveFile(node) ? browseTreeArchive : undefined,
     copyLink: copyTreeLink,
     copySelection: openTreeInFileManager,
     deleteSelection: deleteTreeSelection,

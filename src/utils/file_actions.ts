@@ -453,7 +453,6 @@ export function openOpenListFileItemMenu(options: {
   isSelected: (item: OpenListFileItem) => boolean
   selectOnly: (item: OpenListFileItem) => void
   openFile: (item: OpenListFileItem) => void | Promise<void>
-  browseArchive?: (item: OpenListFileItem) => void | Promise<void>
   downloadItem: (item: OpenListFileItem) => void | Promise<void>
   sendToMotrixNext?: (item: OpenListFileItem) => void | Promise<void>
   copyLink: (item: OpenListFileItem, path: string) => void | Promise<void>
@@ -475,13 +474,6 @@ export function openOpenListFileItemMenu(options: {
     label: options.t('open'),
     click: () => options.openFile(options.item),
   })
-  if (options.browseArchive) {
-    menu.addItem({
-      icon: 'iconOpenListZip',
-      label: options.tf('browseArchive', 'Browse archive'),
-      click: () => options.browseArchive?.(options.item),
-    })
-  }
   if (!options.item.is_dir) {
     menu.addItem({
       icon: 'iconDownload',

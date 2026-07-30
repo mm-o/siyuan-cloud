@@ -1673,7 +1673,9 @@ globalThis.siyuan = {
         const req = JSON.parse(init.body || "{}");
         const dirs = {
           "": [
+            { name: ".siyuan", isDir: true, size: 0, updated: 1780000000 },
             { name: "data", isDir: true, size: 0, updated: 1780000000 },
+            { name: "conf.json", isDir: false, size: 2, updated: 1780000000 },
             { name: "search-root", isDir: true, size: 0, updated: 1780000000 },
           ],
           "data": [
@@ -3518,6 +3520,8 @@ const workspaceMountList = await json({
   path: "/api/fs/list",
 });
 assert.equal(workspaceMountList.code, 200);
+assert.equal(workspaceMountList.data.content.some((item) => item.name === ".siyuan" && item.is_dir), true);
+assert.equal(workspaceMountList.data.content.some((item) => item.name === "conf.json" && !item.is_dir), true);
 assert.equal(workspaceMountList.data.content.some((item) => item.name === "search-root"), true);
 const workspaceAssetGet = await json({
   body: { path: "/workspace-smoke/data/assets/workspace-hit.pdf" },
@@ -3538,6 +3542,7 @@ const workspaceGenericPublicGet = await json({
   path: "/api/fs/get",
 });
 assert.equal(workspaceGenericPublicGet.code, 200);
+assert.equal(workspaceGenericPublicGet.data.size, 4);
 assert.equal(workspaceGenericPublicGet.data.raw_url, "/widgets/workspace-widget.mp4");
 const workspaceGenericPublicPreview = await call({
   method: "GET",

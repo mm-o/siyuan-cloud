@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 0.7.0
+
+### Added
+
+- Added an optional downloadable preview-module architecture. The Tools page can install `open-file-viewer` into `/data/public/preview-modules`, so preview code is loaded only when the module is installed.
+- Added a dedicated preview tab powered by the installed module, covering Office, PDF, Markdown, code, text, archives, email, engineering, 3D, GIS, and related formats with loading, refresh, error, locale, and theme handling.
+- Added Tools entries for preview modules, including install/reinstall, public URL copy, install status, and feature-category toggles.
+- Added native SiYuan document opening for `.sy` files in SiYuan workspace mounts when the filename matches a valid SiYuan document ID.
+
+### Improved
+
+- Reworked the Tools page into launcher-style subpages for index tools, config import/export, preview modules, external previews, and torrent tools.
+- Unified file opening: images still use SiYuan's image viewer, audio/video still prefer the SiYuan media player path, and other supported formats open through the preview module. Old text-preview, archive-browser, and native media dialog fallbacks were removed.
+- SiYuan workspace mounts now prefer `/api/file/readDir` for direct directory listing, improving open speed and preserving user-created folders and dot-prefixed entries.
+- SiYuan workspace file sizes are normalized to numbers, and file-manager directory loading no longer applies the old 200-item page limit.
+- Preview-module styling now bridges to SiYuan theme variables for toolbar surfaces, search fields, text, borders, shadows, code fonts, and highlight colors.
+- Replaced Dock, Tools, Status, User, Share, Task, and file-action icons with a consistent built-in OpenList/Lucide-style icon set.
+
+### Removed
+
+- Removed the old frontend archive `Dialog` browser, its context-menu entry, and the now-unused frontend archive API wrappers.
+- Removed the old readonly text `Dialog` preview path; text, code, and Markdown previews now use the preview module.
+
+### Fixed
+
+- Fixed user-created folders not appearing in SiYuan workspace mounts.
+- Fixed SiYuan workspace file sizes showing as `0` or using unstable value types.
+- Fixed preview-module CDN import rewriting so dynamic dependencies such as `jszip` do not fail as bare module specifiers.
+- Fixed preview toolbar icons, search inputs, and buttons rendering with incorrect colors in dark themes.
+
 ## 0.6.2
 
 ### Added

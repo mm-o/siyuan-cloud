@@ -242,13 +242,14 @@ export async function copyOpenListDirect(srcDir: string, dstDir: string, names: 
   return transferDirect('/fs/copy', srcDir, dstDir, names)
 }
 
-export async function writeOpenListDirect(path: string, data: string | File | Blob = '') {
+export async function writeOpenListDirect(path: string, data: string | File | Blob = '', overwrite = false) {
   const mount = await resolveDirectMount(path)
   if (!mount)
     return null
   const headers: Record<string, string> = {
     'File-Path': encodeURIComponent(directPath(path, mount)),
     Password: String(mount.addition.meta_password || ''),
+    Overwrite: overwrite.toString(),
   }
   if (mount.addition.token || mount.addition.Token)
     headers.Authorization = String(mount.addition.token || mount.addition.Token)

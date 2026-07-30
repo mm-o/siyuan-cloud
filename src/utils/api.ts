@@ -25,6 +25,24 @@ import { usePlugin } from '@/main'
 
 export { clearLocalMountCache, clearOpenListDirectCache }
 
+const normalizeFsPath = (path: string) => {
+  const input = path === undefined || path === null || path === '' ? '/' : String(path)
+  const normalized = (input.startsWith('/') ? input : `/${input}`).replace(/\/+/g, '/')
+  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '')
+}
+
+interface StoredMount {
+  driver: string
+  mountPath: string
+  rootFolderPath: string
+}
+
+let cachedStoredMounts: StoredMount[] | null = null
+
+window.addEventListener('siyuan-cloud:changed', () => {
+  cachedStoredMounts = null
+})
+
 export const fsGet = (
   path: string = '/',
   password = '',
@@ -33,12 +51,18 @@ export const fsGet = (
 }
 
 async function fsGetLocalFirst(path: string, password = '') {
+  if (await shouldUseKernelFirst(path))
+    return fsGetKernel(path, password)
   const local = await getLocal(path)
   if (local)
     return local
   const direct = await getOpenListDirect(path)
   if (direct)
     return direct
+  return fsGetKernel(path, password)
+}
+
+function fsGetKernel(path: string, password = '') {
   return r.post('/fs/get', {
     path,
     password,
@@ -57,13 +81,26 @@ export const fsList = (
 
 async function fsListLocalFirst(path: string, password = '', page = 1, per_page = 0, refresh = false) {
   if (path === '/')
-    return await fsRootFromStoredConfig() || r.post('/fs/list', { path, password, page, per_page, refresh })
+    return await fsRootFromStoredConfig() || fsListKernel(path, password, page, per_page, refresh)
+  const mount = await storedMountForPath(path)
+  if (isSiyuanWorkspaceMount(mount)) {
+    if (!password) {
+      const direct = await fsListSiyuanWorkspaceDirect(path, mount, page, per_page)
+      if (direct)
+        return direct
+    }
+    return fsListKernel(path, password, page, per_page, refresh)
+  }
   const local = await listLocal(path, page, per_page)
   if (local)
     return local
   const direct = await listOpenListDirect(path, page, per_page, refresh)
   if (direct)
     return direct
+  return fsListKernel(path, password, page, per_page, refresh)
+}
+
+function fsListKernel(path: string, password = '', page = 1, per_page = 0, refresh = false) {
   return r.post('/fs/list', {
     path,
     password,
@@ -92,16 +129,23 @@ export const fsSearch = (
 }
 
 async function fsRootFromStoredConfig(): Promise<OpenListResp | null> {
+  const storages = await storedConfigStorages()
+  const root = storageRootResp(storages)
+  if (root)
+    return root
+  return null
+}
+
+async function storedConfigStorages(): Promise<any[]> {
   for (const name of ['config.json', 'siyuan-cloud/state.json']) {
     try {
       const value = await usePlugin().loadData(name)
       const config = value && typeof value === 'object' ? value : value ? JSON.parse(String(value)) : null
-      const root = storageRootResp(config?.storages)
-      if (root)
-        return root
+      if (Array.isArray(config?.storages))
+        return config.storages
     } catch {}
   }
-  return null
+  return []
 }
 
 function storageRootResp(storages: any[] = []): OpenListResp | null {
@@ -119,6 +163,122 @@ function storageRootResp(storages: any[] = []): OpenListResp | null {
   return content.length ? { code: 200, message: 'success', data: { content, total: content.length, readme: '', header: '', write: false, write_content_bypass: false, provider: 'mount', direct_upload_tools: [] } } : null
 }
 
+async function storedMounts(): Promise<StoredMount[]> {
+  if (cachedStoredMounts)
+    return cachedStoredMounts
+  cachedStoredMounts = (await storedConfigStorages())
+    .filter((storage: any) => !storage?.disabled)
+    .map(storageMount)
+    .filter((mount: StoredMount) => mount.mountPath !== '/')
+    .sort((a: StoredMount, b: StoredMount) => b.mountPath.length - a.mountPath.length)
+  return cachedStoredMounts
+}
+
+async function storedMountForPath(path: string) {
+  const clean = normalizeFsPath(path || '/')
+  return (await storedMounts()).find(mount => clean === mount.mountPath || clean.startsWith(`${mount.mountPath}/`)) || null
+}
+
+async function shouldUseKernelFirst(path: string) {
+  return isSiyuanWorkspaceMount(await storedMountForPath(path))
+}
+
+function isSiyuanWorkspaceMount(mount: StoredMount | null) {
+  return String(mount?.driver || '').toLowerCase() === 'siyuanworkspace'
+}
+
+function storageMount(storage: any): StoredMount {
+  const addition = storageAddition(storage)
+  return {
+    driver: String(storage?.driver || ''),
+    mountPath: normalizeFsPath(storage?.mount_path || storage?.mountPath || '/'),
+    rootFolderPath: String(addition.root_folder_path || addition.rootFolderPath || '/@workspace'),
+  }
+}
+
+function storageAddition(storage: any) {
+  const addition = storage?.addition_json || storage?.addition || {}
+  if (addition && typeof addition === 'object')
+    return addition
+  try {
+    return JSON.parse(String(addition || '{}'))
+  } catch {
+    return {}
+  }
+}
+
+async function fsListSiyuanWorkspaceDirect(path: string, mount: StoredMount, page = 1, per_page = 0): Promise<OpenListResp | null> {
+  try {
+    const apiPath = siyuanWorkspaceReadDirPath(path, mount)
+    const response = await fetch('/api/file/readDir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: apiPath }),
+    })
+    if (!response.ok)
+      return null
+    const payload = await response.json()
+    if (payload?.code !== 0 || !Array.isArray(payload?.data))
+      return null
+    const content = payload.data
+      .filter((item: any) => item && item.name)
+      .map((item: any) => siyuanWorkspaceDirectObj(path, apiPath, item))
+    return {
+      code: 200,
+      message: 'success',
+      data: {
+        content: pageItems(content, page, per_page),
+        total: content.length,
+        readme: '',
+        header: '',
+        write: true,
+        write_content_bypass: false,
+        provider: 'siyuan-workspace',
+        direct_upload_tools: [],
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+function siyuanWorkspaceReadDirPath(path: string, mount: StoredMount) {
+  const clean = normalizeFsPath(path || '/')
+  const rel = clean === mount.mountPath
+    ? ''
+    : clean.slice(mount.mountPath.length).replace(/^\/+/, '')
+  const root = normalizeFsPath(mount.rootFolderPath || '/@workspace').replace(/^\/@workspace\/?/, '').replace(/^\/+/, '')
+  return [root, rel].filter(Boolean).join('/')
+}
+
+function siyuanWorkspaceDirectObj(dirPath: string, apiDirPath: string, item: any) {
+  const isDir = !!(item.isDir || item.is_dir)
+  const path = normalizeFsPath(`${dirPath}/${item.name}`)
+  const updated = Number(item.updated || 0)
+  const modified = new Date((updated > 1e12 ? updated : updated * 1000) || Date.now()).toISOString()
+  const rawUrl = isDir ? '' : siyuanWorkspacePublicUrl(`${apiDirPath}/${item.name}`) || openListDownloadRoute(path)
+  return {
+    name: item.name,
+    path,
+    size: Number(item.size || 0),
+    is_dir: isDir,
+    modified,
+    created: modified,
+    sign: '',
+    thumb: '',
+    raw_url: rawUrl,
+    provider: 'siyuan-workspace',
+  }
+}
+
+function pageItems<T>(items: T[], page = 1, per_page = 0) {
+  const size = Number(per_page || 0)
+  if (size <= 0)
+    return items
+  const current = Math.max(1, Number(page || 1))
+  return items.slice((current - 1) * size, current * size)
+}
+
 export const indexBuild = (): Promise<OpenListResp> => r.post('/admin/index/build')
 
 export const indexProgress = (): Promise<OpenListResp> => r.get('/admin/index/progress')
@@ -130,40 +290,6 @@ export const fsOther = (body: {
   password?: string
 }): Promise<OpenListResp> => {
   return r.post('/fs/other', body)
-}
-
-export const fsArchiveList = (
-  path: string,
-  inner_path = '/',
-  page = 1,
-  per_page = 200,
-  refresh = false,
-  archive_pass = '',
-  password = '',
-): Promise<OpenListResp> => {
-  return r.post('/fs/archive/list', {
-    archive_pass,
-    inner_path,
-    page,
-    password,
-    path,
-    per_page,
-    refresh,
-  })
-}
-
-export const fsArchiveMeta = (
-  path: string,
-  refresh = false,
-  archive_pass = '',
-  password = '',
-): Promise<OpenListResp> => {
-  return r.post('/fs/archive/meta', {
-    archive_pass,
-    password,
-    path,
-    refresh,
-  })
 }
 
 export const fsMkdir = (path: string): Promise<OpenListResp> => {
@@ -208,6 +334,45 @@ export const fsUploadFile = async (
   if (payload.code === 200)
     onProgress?.(100)
   return payload
+}
+
+export const fsPutText = async (path: string, content: string): Promise<OpenListResp> => {
+  const mount = await storedMountForPath(path)
+  if (isSiyuanWorkspaceMount(mount))
+    return putSiyuanWorkspaceText(path, mount, content)
+  const local = await writeLocal(path, content)
+  if (local)
+    return local
+  const direct = await writeOpenListDirect(path, content, true)
+  if (direct)
+    return direct
+  return r.put('/fs/put', {
+    path,
+    content,
+    mime: 'text/plain;charset=utf-8',
+    size: new TextEncoder().encode(content).byteLength,
+  }, {
+    headers: { Overwrite: 'true' },
+  })
+}
+
+async function putSiyuanWorkspaceText(path: string, mount: StoredMount, content: string): Promise<OpenListResp> {
+  try {
+    const form = new FormData()
+    const name = path.split('/').filter(Boolean).pop() || 'file.txt'
+    form.append('path', siyuanWorkspaceReadDirPath(path, mount))
+    form.append('file', new Blob([content], { type: 'text/plain;charset=utf-8' }), name)
+    const response = await fetch('/api/file/putFile', {
+      method: 'POST',
+      body: form,
+    })
+    const payload = await response.json().catch(() => null)
+    if (response.ok && payload?.code === 0)
+      return { code: 200, message: 'success', data: { path } }
+    return { code: payload?.code || response.status || -1, message: payload?.msg || payload?.message || `HTTP ${response.status}`, data: null }
+  } catch (error) {
+    return { code: -1, message: error instanceof Error ? error.message : String(error), data: null }
+  }
 }
 
 async function tryDirectUpload(path: string, file: File, onProgress?: (progress: number) => void): Promise<OpenListResp | null> {
@@ -405,6 +570,8 @@ function openListDownloadRoute(path: string, data: Record<string, any> = {}) {
 }
 
 export async function resolveOpenListFile(path: string, password = '') {
+  if (await shouldUseKernelFirst(path))
+    return resolveOpenListFileKernel(path, password)
   const local = await getLocal(path)
   if (local?.code === 200) {
     const data = local.data || {}
@@ -429,6 +596,10 @@ export async function resolveOpenListFile(path: string, password = '') {
       url: normalizeResourceUrl(url),
     }
   }
+  return resolveOpenListFileKernel(path, password)
+}
+
+async function resolveOpenListFileKernel(path: string, password = '') {
   const payload = await fsGet(path, password)
   if (payload.code !== 200)
     throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)

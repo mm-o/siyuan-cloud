@@ -7,10 +7,12 @@ import { openTab } from 'siyuan'
 import { createApp, onMounted } from 'vue'
 import Dock from '@/components/Dock.vue'
 import FileTab from '@/components/FileTab.vue'
+import PreviewTab from '@/components/PreviewTab.vue'
 import TreePicker from '@/components/TreePicker.vue'
 import { usePlugin } from '@/main'
 import { FEISHU_DOCS } from '@/utils/feishuDocs.generated'
 import { OPENLIST_APP_ICON_SVG, OPENLIST_ICON_ID_APP, registerOpenListIcons } from '@/utils/icon'
+import { privateBase, withOpenListAuthQuery } from '@/utils/request'
 
 const plugin = usePlugin()
 let dockApp: ReturnType<typeof createApp> | null = null
@@ -19,6 +21,7 @@ let fileTabVm: { openPath?: (path: string) => void } | null = null
 let pendingFilePath: string | undefined
 let pickerApp: ReturnType<typeof createApp> | null = null
 let pickerElement: HTMLElement | null = null
+const previewModuleTabs = new WeakMap<Element, ReturnType<typeof createApp>>()
 
 function t(key: string) {
   return String((plugin.i18n as Record<string, string>)?.[key] || key)
@@ -50,9 +53,10 @@ function normalizeDriverName(value: string) {
 function loadDocList() {
   const locale = docLang()
   const roots = FEISHU_DOCS.roots[locale]
+  const apiHref = withOpenListAuthQuery(new URL(`${privateBase}/api/public/api`, location.href).href)
   window._siyuan_cloud_docs = [
     { key: '/README', icon: '#iconHelp', title: t('openHelp'), desc: t('pluginHelp'), href: roots.readme },
-    { key: '/API', icon: '#iconOpen', title: t('openApi'), desc: roots.api, href: roots.api },
+    { key: '/API', icon: '#iconOpen', title: t('openApi'), desc: '/api/public/api', open: () => openPreviewModule('/api/public/api', 'api.json', apiHref) },
     ...FEISHU_DOCS.items[locale],
   ]
 }
@@ -88,6 +92,29 @@ function openFileManager(path?: string) {
       },
     },
     afterOpen: openPendingFilePath,
+  })
+}
+
+function openPreviewModule(path: string, name = '', url = '') {
+  const title = name || path.split('/').pop() || path
+  openTab({
+    app: plugin.app,
+    custom: {
+      id: `${plugin.name}preview-module`,
+      icon: 'iconFile',
+      title,
+      data: { name: title, path, url },
+    },
+  })
+}
+
+function openSiyuanDoc(id: string) {
+  openTab({
+    app: plugin.app,
+    doc: {
+      id,
+      action: ['cb-get-focus', 'cb-get-hl'],
+    },
   })
 }
 
@@ -173,6 +200,29 @@ onMounted(async () => {
     },
   })
 
+  plugin.addTab({
+    type: 'preview-module',
+    init(this: { element: Element; data?: { name?: string; path?: string; url?: string } }) {
+      this.element.innerHTML = ''
+      const mount = document.createElement('div')
+      mount.className = 'siyuan-cloud-preview-tab'
+      this.element.appendChild(mount)
+      const data = this.data || {}
+      const app = createApp(PreviewTab, {
+        name: String(data.name || data.path || ''),
+        path: String(data.path || ''),
+        url: String(data.url || ''),
+      })
+      app.mount(mount)
+      previewModuleTabs.set(this.element, app)
+    },
+    destroy(this: { element: Element }) {
+      previewModuleTabs.get(this.element)?.unmount()
+      previewModuleTabs.delete(this.element)
+      this.element.innerHTML = ''
+    },
+  })
+
   plugin.addDock({
     type: 'cloud',
     data: {},
@@ -212,6 +262,8 @@ onMounted(async () => {
     openDock,
     openFileManager,
     openPicker,
+    openPreviewModule,
+    openSiyuanDoc,
   }
 })
 </script>

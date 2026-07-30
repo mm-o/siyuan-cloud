@@ -15,6 +15,16 @@ import {
 } from '@/utils/api'
 import { testOpenListDirect } from '@/utils/openlist_direct'
 import { fetchKernelStatus } from '@/utils/status'
+import {
+  installPreviewModule,
+  PREVIEW_MODULES,
+  previewModuleEnabledCategoryKeys,
+  previewModuleInstalledMap,
+  previewModulePublicUrl,
+  setPreviewModuleEnabledCategoryKeys,
+  type PreviewModule,
+  type PreviewModuleCategory,
+} from '@/utils/preview_modules'
 
 type Status = 'checking' | 'online' | 'offline'
 
@@ -46,6 +56,16 @@ interface DockSettings {
   compactViews?: Record<string, boolean>
 }
 
+interface PreviewModuleRow extends PreviewModule {
+  installed: boolean
+  installing: boolean
+}
+
+interface PreviewModuleCategoryRow extends PreviewModuleCategory {
+  moduleKey: string
+  enabled: boolean
+}
+
 const DOCK_SETTINGS = 'siyuan-cloud-dock-settings.json'
 const USER_PERMISSION_KEYS = [
   'see_hides',
@@ -73,13 +93,13 @@ const humanizeOption = (option: string) => option.replace(/_/g, ' ').replace(/\b
 
 export function useDock(plugin: Plugin) {
   const tabs = [
-    { key: 'files', labelKey: 'fileManagerTitle', icon: '#iconFolder' },
-    { key: 'mounts', labelKey: 'tabMounts', icon: '#iconDatabase' },
-    { key: 'users', labelKey: 'tabUsers', icon: '#iconAccount' },
-    { key: 'shares', labelKey: 'tabShares', icon: '#iconLink' },
-    { key: 'tasks', labelKey: 'tabTask', icon: '#iconList' },
-    { key: 'tools', labelKey: 'tabTools', icon: '#iconSettings' },
-    { key: 'status', labelKey: 'tabStatus', icon: '#iconInfo' },
+    { key: 'files', labelKey: 'fileManagerTitle', icon: '#iconOpenListFolderOpenLine' },
+    { key: 'mounts', labelKey: 'tabMounts', icon: '#iconOpenListDatabaseLine' },
+    { key: 'users', labelKey: 'tabUsers', icon: '#iconOpenListUsers' },
+    { key: 'shares', labelKey: 'tabShares', icon: '#iconOpenListShare2' },
+    { key: 'tasks', labelKey: 'tabTask', icon: '#iconOpenListListTodo' },
+    { key: 'tools', labelKey: 'tabTools', icon: '#iconOpenListWrench' },
+    { key: 'status', labelKey: 'tabStatus', icon: '#iconOpenListInfo' },
   ]
   const currentTab = ref('files')
   const dockCompactViews = ref<Record<string, boolean>>({})
@@ -113,6 +133,10 @@ export function useDock(plugin: Plugin) {
   const driverVerifySmsRequired = ref(false)
   const configText = ref('')
   const externalPreviews = ref('')
+  const previewModules = ref<PreviewModuleRow[]>(PREVIEW_MODULES.map(module => ({ ...module, installed: false, installing: false })))
+  const previewModuleCategories = ref<PreviewModuleCategoryRow[]>(PREVIEW_MODULES.flatMap(module =>
+    module.categories.map(category => ({ ...category, moduleKey: module.key, enabled: previewModuleEnabledCategoryKeys(module.key).includes(category.key) })),
+  ))
   const shareItems = ref<any[]>([])
   const shareFormOpen = ref(false)
   const selectedShareId = ref('')
@@ -218,9 +242,12 @@ export function useDock(plugin: Plugin) {
     return t('checking')
   })
 
-  const docItems = computed(() => window._siyuan_cloud_docs || [])
+  const docItems = computed(() => (window._siyuan_cloud_docs || []).map(item => ({
+    ...item,
+    icon: item.icon === '#iconFolder' ? '#iconOpenListFolderOpenLine' : '#iconOpenListFileCog',
+  })))
 
-  const statusIcon = computed(() => (status.value === 'offline' ? '#iconClose' : '#iconCheck'))
+  const statusIcon = computed(() => (status.value === 'offline' ? '#iconOpenListCircleX' : '#iconOpenListCircleCheck'))
 
   const driverFields = computed(() => {
     const info = driverInfo.value
@@ -876,6 +903,92 @@ export function useDock(plugin: Plugin) {
     }
   }
 
+  async function refreshPreviewModules() {
+    const installed = await previewModuleInstalledMap()
+    previewModules.value = previewModules.value.map(module => ({
+      ...module,
+      installed: !!installed[module.key],
+    }))
+  }
+
+  async function installPreviewModuleRow(module: PreviewModuleRow) {
+    if (module.installing)
+      return
+    module.installing = true
+    try {
+      const payload = await installPreviewModule(module)
+      if (payload.code !== 200)
+        throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
+      module.installed = true
+      showMessage(t('previewModuleInstalled'))
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : String(error), 4000, 'error')
+    } finally {
+      module.installing = false
+    }
+  }
+
+  function previewModuleDescription(module: PreviewModuleRow, expanded = false) {
+    const status = module.installing ? t('previewModuleInstalling') : module.installed ? t('previewModuleReady') : t('previewModuleMissing')
+    const rows = previewModuleCategories.value.filter(category => category.moduleKey === module.key)
+    return `${status} / ${rows.filter(category => category.enabled).length}/${rows.length} / ${t(expanded ? 'collapse' : 'expand')}`
+  }
+
+  function previewModuleTags(module: PreviewModuleRow) {
+    return [
+      ...(module.key === 'open-file-viewer' ? [{ key: 'recommended', text: t('previewModuleRecommended'), className: 'b3-chip--green' }] : []),
+      ...(module.key === 'file-viewer-office' ? [{ key: 'large', text: t('previewModuleLarge'), className: 'b3-chip--info' }] : []),
+      { key: 'version', text: module.version },
+      { key: 'status', text: module.installed ? t('installed') : t('notInstalled'), className: module.installed ? 'b3-chip--green' : '' },
+    ]
+  }
+
+  function previewModuleActions(module: PreviewModuleRow) {
+    return [
+      { key: 'install', icon: module.installed ? '#iconOpenListRefreshCw' : '#iconOpenListDownload', label: module.installed ? t('previewModuleReinstall') : t('previewModuleInstall'), run: () => installPreviewModuleRow(module) },
+      { key: 'copy', icon: '#iconOpenListCopy', label: t('copyRoute'), run: () => copyPreviewModuleUrl(module) },
+    ]
+  }
+
+  function previewModuleFeatureRows(module: PreviewModuleRow) {
+    return previewModuleCategories.value.filter(category => category.moduleKey === module.key)
+  }
+
+  function previewModuleCategoryTags(category: PreviewModuleCategoryRow) {
+    return [
+      { key: 'status', text: category.enabled ? t('previewModuleFeatureEnabled') : t('previewModuleFeatureDisabled'), className: category.enabled ? 'b3-chip--success' : 'b3-chip--warning' },
+      { key: 'count', text: String(category.exts.length), className: 'b3-chip--info' },
+    ]
+  }
+
+  function previewModuleCategoryActions(category: PreviewModuleCategoryRow) {
+    return [{ key: 'toggle', icon: category.enabled ? '#iconOpenListEyeOff' : '#iconOpenListEye', label: category.enabled ? t('disable') : t('enable'), run: () => togglePreviewModuleCategory(category) }]
+  }
+
+  function togglePreviewModuleCategory(category: PreviewModuleCategoryRow) {
+    const enabled = !category.enabled
+    const group = category.group || category.key
+    previewModuleCategories.value = previewModuleCategories.value.map(item =>
+      item.key === category.key
+        ? { ...item, enabled: item.moduleKey === category.moduleKey && enabled }
+        : enabled && item.moduleKey !== category.moduleKey && (item.group || item.key) === group
+          ? { ...item, enabled: false }
+        : item,
+    )
+    for (const module of previewModules.value)
+      setPreviewModuleEnabledCategoryKeys(module.key, previewModuleCategories.value.filter(item => item.moduleKey === module.key && item.enabled).map(item => item.key))
+  }
+
+  async function copyPreviewModuleUrl(module: PreviewModuleRow) {
+    const url = previewModulePublicUrl(module)
+    try {
+      await navigator.clipboard.writeText(url)
+      showMessage(t('routeCopied'))
+    } catch {
+      showMessage(url, 3000, 'info')
+    }
+  }
+
   async function generateTorrent() {
     if (!torrentPath.value.trim()) {
       showMessage(t('torrentPathPlaceholder'), 3000, 'error')
@@ -1204,11 +1317,11 @@ export function useDock(plugin: Plugin) {
 
   function taskActions(task: any) {
     if (taskDone.value === 'undone')
-      return [{ key: 'cancel', icon: '#iconClose', label: t('taskCancel'), run: () => taskPost('cancel', task.id) }]
+      return [{ key: 'cancel', icon: '#iconOpenListCircleX', label: t('taskCancel'), run: () => taskPost('cancel', task.id) }]
     const actions = []
     if (['failed', 'canceled'].includes(String(task?.state || '')))
-      actions.push({ key: 'retry', icon: '#iconRefresh', label: t('taskRetry'), run: () => taskPost('retry', task.id) })
-    actions.push({ key: 'delete', icon: '#iconTrashcan', label: t('deleteFile'), run: () => taskPost('delete', task.id) })
+      actions.push({ key: 'retry', icon: '#iconOpenListRefreshCw', label: t('taskRetry'), run: () => taskPost('retry', task.id) })
+    actions.push({ key: 'delete', icon: '#iconOpenListTrash2', label: t('deleteFile'), run: () => taskPost('delete', task.id) })
     return actions
   }
 
@@ -1285,41 +1398,41 @@ export function useDock(plugin: Plugin) {
 
   const sectionActions = computed(() => ({
     tools: [
-      { key: 'buildIndex', icon: '#iconSearch', label: t('buildIndex'), run: buildIndex },
+      { key: 'buildIndex', icon: '#iconOpenListSearch', label: t('buildIndex'), run: buildIndex },
     ],
     config: [
-      { key: 'export', icon: '#iconUpload', label: t('exportConfig'), run: exportConfig },
-      { key: 'import', icon: '#iconDownload', label: t('importConfig'), run: importConfig },
+      { key: 'export', icon: '#iconOpenListUpload', label: t('exportConfig'), run: exportConfig },
+      { key: 'import', icon: '#iconOpenListDownload', label: t('importConfig'), run: importConfig },
     ],
     external: [
-      { key: 'save', icon: '#iconCheck', label: t('saveExternalPreviews'), run: saveExternalPreviews },
+      { key: 'save', icon: '#iconOpenListCircleCheck', label: t('saveExternalPreviews'), run: saveExternalPreviews },
     ],
     torrent: [
-      { key: 'generate', icon: '#iconUpload', label: t('torrentGenerate'), run: generateTorrent },
-      { key: 'parse', icon: '#iconList', label: t('torrentParse'), run: parseTorrent },
+      { key: 'generate', icon: '#iconOpenListUpload', label: t('torrentGenerate'), run: generateTorrent },
+      { key: 'parse', icon: '#iconOpenListListTodo', label: t('torrentParse'), run: parseTorrent },
     ],
     tasks: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadTaskList) },
+      { key: 'refresh', icon: '#iconOpenListRefreshCw', label: t('refresh'), run: () => notifyLoad(loadTaskList) },
       ...(taskDone.value === 'done'
         ? [
-            { key: 'retry', icon: '#iconPlay', label: t('taskRetryFailed'), run: () => notifyLoad(() => taskPost('retry_failed')) },
-            { key: 'clear', icon: '#iconTrashcan', label: t('taskClearDone'), run: () => notifyLoad(() => taskPost('clear_done')) },
+            { key: 'retry', icon: '#iconOpenListPlayLine', label: t('taskRetryFailed'), run: () => notifyLoad(() => taskPost('retry_failed')) },
+            { key: 'clear', icon: '#iconOpenListTrash2', label: t('taskClearDone'), run: () => notifyLoad(() => taskPost('clear_done')) },
           ]
         : []),
     ],
     shares: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadShareList) },
+      { key: 'refresh', icon: '#iconOpenListRefreshCw', label: t('refresh'), run: () => notifyLoad(loadShareList) },
     ],
     mounts: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadStorageList) },
-      { key: 'help', icon: '#iconHelp', label: t('mountHelp'), run: openMountHelpDoc },
+      { key: 'refresh', icon: '#iconOpenListRefreshCw', label: t('refresh'), run: () => notifyLoad(loadStorageList) },
+      { key: 'help', icon: '#iconOpenListHelpCircle', label: t('mountHelp'), run: openMountHelpDoc },
     ],
     users: [
-      { key: 'refresh', icon: '#iconRefresh', label: t('refresh'), run: () => notifyLoad(loadUserList) },
-      { key: 'add', icon: '#iconAdd', label: t('userAdd'), run: openAddUser },
+      { key: 'refresh', icon: '#iconOpenListRefreshCw', label: t('refresh'), run: () => notifyLoad(loadUserList) },
+      { key: 'add', icon: '#iconOpenListPlus', label: t('userAdd'), run: openAddUser },
     ],
     about: [
-      { key: 'copy', icon: '#iconCopy', label: t('copyRoute'), run: copyRoute },
+      { key: 'copy', icon: '#iconOpenListCopy', label: t('copyRoute'), run: copyRoute },
     ],
   }))
 
@@ -1336,7 +1449,10 @@ export function useDock(plugin: Plugin) {
     else if (tab === 'tasks')
       await quietLoad(loadTaskList)
     else if (tab === 'tools')
-      await quietLoad(loadExternalPreviews)
+      await quietLoad(async () => {
+        await loadExternalPreviews()
+        await refreshPreviewModules()
+      })
   })
   watch([taskType, taskDone], () => {
     if (currentTab.value === 'tasks')
@@ -1393,6 +1509,14 @@ export function useDock(plugin: Plugin) {
     openAddMount,
     openEditMount,
     refreshDriverQrCode,
+    previewModuleActions,
+    previewModuleCategories,
+    previewModuleCategoryActions,
+    previewModuleCategoryTags,
+    previewModuleDescription,
+    previewModuleFeatureRows,
+    previewModules,
+    previewModuleTags,
     submitDriverSmsCode,
     refreshAll,
     selectedStorageId,

@@ -274,7 +274,6 @@
 
 <script setup lang="ts">
 import {
-  Dialog,
   Menu,
   showMessage,
 } from 'siyuan'
@@ -289,7 +288,6 @@ import { ensureDriveTransfer } from '@/config/drive_policy'
 import { usePlugin } from '@/main'
 import {
   fsCopy,
-  fsGet,
   indexBuild,
   indexProgress,
   fsList,
@@ -302,10 +300,6 @@ import {
   resolveOpenListFile,
 } from '@/utils/api'
 import { handleResp, handleRespWithNotifySuccess } from '@/utils/handle_resp'
-import {
-  isArchiveFileName,
-  openArchiveBrowser,
-} from '@/utils/archive'
 import {
   copyOpenListItemLink,
   deleteOpenListSelection,
@@ -326,6 +320,10 @@ import {
   openListFileIconHref,
   openListFileIconName,
 } from '@/utils/icon'
+import {
+  previewModuleForFile,
+  previewModuleForFileReady,
+} from '@/utils/preview_modules'
 import {
   itemOpenUrl as openListItemOpenUrl,
   formatSize,
@@ -609,13 +607,19 @@ function fileKind(item: FsItem) {
 }
 
 const isImageFile = (item: FsItem) => fileKind(item) === 'image'
-const isArchiveFile = (item: FsItem) => !item.is_dir && isArchiveFileName(item.name)
 
 const itemOpenUrl = (item: FsItem) => openListItemOpenUrl(item, itemPath)
 const companionHref = (item: FsItem) => openListCompanionHref(item.name, itemPath(item), item.is_dir)
 const companionDataHref = (item: FsItem) => shortcutSelecting.value ? undefined : companionHref(item)
 const documentLink = (item: FsItem, path: string) => openListDocumentLink({ item, path })
 const showLoading = () => (loading.value = true, nextTick())
+const SIYUAN_DOC_ID = /^\d{14}-[0-9a-z]{7}$/i
+
+function siyuanDocIdFromPath(path: string) {
+  const name = String(path || '').split('/').pop() || ''
+  const id = name.replace(/\.sy$/i, '')
+  return name.toLowerCase().endsWith('.sy') && SIYUAN_DOC_ID.test(id) ? id : ''
+}
 
 async function resolveDownloadUrl(path: string, preferFresh = false) {
   const local = items.value.find(item => itemPath(item) === path)
@@ -690,7 +694,7 @@ async function refresh() {
   }
   const seq = ++refreshSeq
   await showLoading()
-  const payload = await fsList(currentPath.value, '', 1, 200)
+  const payload = await fsList(currentPath.value, '', 1, 0)
   if (seq !== refreshSeq)
     return
   handleResp(payload, (data: any) => {
@@ -767,7 +771,7 @@ async function goPath(path: string) {
   const nextPath = normalizePath(path || '/')
   searchInputOpen.value = false
   await showLoading()
-  const payload = await fsList(nextPath, '', 1, 200)
+  const payload = await fsList(nextPath, '', 1, 0)
   loading.value = false
   if (payload.code !== 200) {
     handleResp(payload)
@@ -839,8 +843,10 @@ async function openFile(item: FsItem) {
     await goPath(itemPath(item))
     return
   }
-  if (isArchiveFile(item)) {
-    await browseArchive(item)
+  const path = itemPath(item)
+  const docId = currentProvider.value === 'siyuan-workspace' ? siyuanDocIdFromPath(path) : ''
+  if (docId && window._siyuan_cloud?.openSiyuanDoc) {
+    window._siyuan_cloud.openSiyuanDoc(docId)
     return
   }
   const kind = fileKind(item)
@@ -849,41 +855,27 @@ async function openFile(item: FsItem) {
     return
   }
   if (kind === 'audio' || kind === 'video') {
-    await openOpenListMediaPreview(item.name, itemPath(item), kind, resolveDownloadUrl)
+    if (await openOpenListMediaPreview(item.name, path, kind, resolveDownloadUrl))
+      return
+  }
+  await openPreviewModule(item, kind)
+}
+
+async function openPreviewModule(item: FsItem, kind = fileKind(item)) {
+  const path = itemPath(item)
+  const moduleInfo = previewModuleForFile(item.name, kind)
+  if (moduleInfo) {
+    if (await previewModuleForFileReady(item.name, kind))
+      window._siyuan_cloud?.openPreviewModule?.(path, item.name)
+    else
+      showMessage(tf('previewModuleMissingOpenTools', 'Install the preview module from Tools first.'), 3000)
     return
   }
   if (kind !== 'text') {
     showMessage(tf('useDownloadAction', 'Use the toolbar or context menu to download this file.'), 3000)
     return
   }
-  let content = ''
-  try {
-    const url = await resolveDownloadUrl(itemPath(item))
-    const response = await fetch(url, { method: 'GET' })
-    content = await response.text()
-  } catch (error) {
-    const payload = await fsGet(itemPath(item))
-    content = payload.data?.content || (error instanceof Error ? error.message : String(error))
-  }
-  showTextPreview(item.name, content)
-}
-
-async function browseArchive(item: FsItem) {
-  await openArchiveBrowser({
-    archivePath: itemPath(item),
-    tf,
-    title: `${tf('browseArchive', 'Browse archive')} - ${item.name}`,
-  })
-}
-
-function showTextPreview(name: string, content: string) {
-  new Dialog({
-    title: `${t('filePreview')} - ${name}`,
-    width: '720px',
-    content: `<div class="b3-dialog__content">
-  <textarea class="b3-text-field fn__block" rows="24" readonly>${escapeHtml(content)}</textarea>
-</div>`,
-  })
+  showMessage(tf('previewModuleMissingOpenTools', 'Install the preview module from Tools first.'), 3000)
 }
 
 async function deleteSelection() {
@@ -1146,7 +1138,6 @@ function openBackgroundMenu(event: MouseEvent) {
 
 function openItemMenu(event: MouseEvent, item: FsItem) {
   openOpenListFileItemMenu({
-    browseArchive: isArchiveFile(item) ? browseArchive : undefined,
     copyLink,
     copySelection,
     deleteSelection,

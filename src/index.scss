@@ -14,8 +14,10 @@
 
 .siyuan-cloud-dock,
 .siyuan-cloud-file-tab,
+.siyuan-cloud-preview-tab,
 .siyuan-cloud-dock .ol-dock,
-.siyuan-cloud-file-tab .ol-file-tab {
+.siyuan-cloud-file-tab .ol-file-tab,
+.siyuan-cloud-preview-tab .ol-preview-module {
   height: 100%;
   min-width: 0;
 }
@@ -29,7 +31,7 @@
   }
 }
 
-:is(.siyuan-cloud-dock, .siyuan-cloud-file-tab, .siyuan-cloud-archive) {
+:is(.siyuan-cloud-dock, .siyuan-cloud-file-tab, .siyuan-cloud-preview-tab) {
   .ol-loading {
     display: inline-block;
     width: 16px;
@@ -65,6 +67,92 @@
 
   .ol-file-row__icon--pdf {
     color: var(--b3-theme-error);
+  }
+}
+
+.siyuan-cloud-preview-tab {
+  .ol-preview-module {
+    min-height: 0;
+    overflow: hidden;
+    background: var(--b3-theme-background);
+  }
+
+  .ol-preview-module__state,
+  .ol-preview-module__viewer {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .ol-preview-module__viewer {
+    overflow: hidden;
+  }
+
+  .ol-preview-module__state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ol-preview-module__viewer,
+  .ol-preview-module__viewer .file-viewer-web-shell {
+    --file-viewer-bg: var(--b3-theme-background);
+    --file-viewer-content-bg: var(--b3-theme-background);
+    --file-viewer-render-surface-background: var(--b3-theme-background);
+    --file-viewer-text: var(--b3-theme-on-background, var(--b3-theme-on-surface));
+    --file-viewer-muted: var(--b3-theme-on-surface-variant);
+    --file-viewer-font: var(--b3-font-family);
+    --file-viewer-border: var(--b3-border-color);
+    --file-viewer-focus-ring: var(--b3-theme-primary);
+    --file-viewer-group-bg: var(--b3-theme-surface);
+    --file-viewer-group-border: var(--b3-border-color);
+    --file-viewer-toolbar-bg: var(--b3-theme-surface);
+    --file-viewer-toolbar-border: var(--b3-border-color);
+    --file-viewer-toolbar-shadow: var(--b3-point-shadow);
+    --file-viewer-button-color: var(--b3-theme-primary);
+    --file-viewer-button-disabled-color: var(--b3-theme-on-surface-variant);
+    --file-viewer-button-hover-color: var(--b3-theme-primary);
+    --file-viewer-button-hover-bg: var(--b3-list-hover);
+    --file-viewer-input-bg: var(--b3-theme-background);
+    --file-viewer-input-color: var(--b3-theme-on-background, var(--b3-theme-on-surface));
+  }
+
+  .ofv-root {
+    --ofv-bg: var(--b3-theme-background);
+    --ofv-surface: var(--b3-theme-surface);
+    --ofv-surface-muted: var(--b3-theme-surface-lighter);
+    --ofv-text: var(--b3-theme-on-surface);
+    --ofv-text-muted: var(--b3-theme-on-surface-variant);
+    --ofv-border: var(--b3-border-color);
+    --ofv-button-hover: var(--b3-list-hover);
+    --ofv-highlight: color-mix(in srgb, var(--b3-theme-primary) 28%, transparent);
+    --ofv-accent: var(--b3-theme-primary);
+    --ofv-accent-soft: color-mix(in srgb, var(--b3-theme-primary) 22%, transparent);
+    --ofv-toolbar-bg: var(--b3-theme-surface);
+    --ofv-shadow: var(--b3-point-shadow);
+    --ofv-font-mono: var(--b3-font-family-code);
+  }
+
+  .ofv-toolbar-icon svg,
+  .ofv-toolbar-search-icon svg,
+  .ofv-toolbar-icon svg *,
+  .ofv-toolbar-search-icon svg * {
+    fill: none !important;
+    stroke: currentColor;
+  }
+
+  .ol-preview-module__error {
+    flex: 1;
+    min-height: 0;
+    box-sizing: border-box;
+    margin: 0;
+    overflow: auto;
+    padding: 12px;
+    color: var(--b3-theme-error);
+    font-family: var(--b3-font-family-code);
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 }
 
@@ -285,6 +373,11 @@
       height: 50%;
       color: var(--b3-theme-primary);
     }
+  }
+
+  .ol-mount-row--feature {
+    width: calc(100% - 16px);
+    margin-left: 16px;
   }
 
   .ol-mount-row__desc {

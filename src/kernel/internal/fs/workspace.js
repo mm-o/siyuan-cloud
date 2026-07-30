@@ -42,7 +42,7 @@ export const createWorkspaceAdapter = ({
 
   const workspaceObjResp = (item) => ({
     name: item.name,
-    size: item.size || 0,
+    size: Number(item.size || 0),
     is_dir: !!(item.isDir || item.is_dir),
     modified: new Date(Number(item.updated || 0) * 1000 || Date.now()).toISOString(),
     created: new Date(Number(item.updated || 0) * 1000 || Date.now()).toISOString(),
@@ -59,7 +59,7 @@ export const createWorkspaceAdapter = ({
     const payload = await siyuanApiJson("/api/file/readDir", { path: rel });
     if (payload.code !== 0) return { error: failure(payload.msg || "readDir failed", payload.code || 500) };
     const content = (payload.data || [])
-      .filter((item) => item && item.name && !String(item.name).startsWith("."))
+      .filter((item) => item && item.name)
       .map(workspaceObjResp);
     return {
       data: {

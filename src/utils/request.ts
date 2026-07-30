@@ -54,7 +54,7 @@ export function openListCurrentUrl(path: string) {
   return normalizeResourceUrl(`${location.origin}${route}`)
 }
 
-export async function openListShareUrl(path: string) {
+export function openListShareUrl(path: string) {
   return openListCurrentUrl(path)
 }
 
