@@ -16,6 +16,7 @@ const LOGIN_API = "https://login.123pan.com/api";
 const SIGN_IN = LOGIN_API + "/user/sign_in";
 const USER_INFO = B_API + "/user/info";
 const FILE_LIST = B_API + "/file/list/new";
+const DOWNLOAD_INFO_V2 = B_API + "/v2/file/download_info";
 const DOWNLOAD_INFO = B_API + "/file/download_info";
 const MKDIR = B_API + "/file/upload_request";
 const UPLOAD_REQUEST = B_API + "/file/upload_request";
@@ -388,6 +389,22 @@ const decodeDownloadCandidate = (raw) => {
   }
 };
 
+const v2DownloadUrl = (payload) => {
+  const data = payload?.data || payload?.Data || {};
+  const dispatchList = data.dispatchList || data.DispatchList || [];
+  const downloadPath = String(data.downloadPath || data.DownloadPath || "");
+  const route = dispatchList.find((item) => item?.prefix || item?.Prefix);
+  const prefix = String(route?.prefix || route?.Prefix || "");
+  if (!prefix || !downloadPath) return "";
+  const joined = /^https?:\/\//i.test(downloadPath) ? downloadPath : `${prefix}${downloadPath}`;
+  try {
+    const url = new URL(joined);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch (_) {
+    return "";
+  }
+};
+
 const resolveDownloadRedirect = async (client, candidate, referer) => {
   const resolved = await forwardProxy(client, candidate, {
     allowErrorStatus: true,
@@ -407,7 +424,7 @@ const resolveDownloadRedirect = async (client, candidate, referer) => {
   const redirect = data?.data?.redirect_url || data?.data?.redirectUrl || "";
   const code = Number(data?.code ?? 0);
   const message = String(data?.message || data?.msg || "");
-  if (code === 1010 || message.includes("50001") || (!redirect && code !== 0 && code !== 200)) {
+  if (code === 1010 || message.includes("50001") || message.includes("50002") || (!redirect && code !== 0 && code !== 200)) {
     throw new Error(message || `123Pan download redirect code ${code}`);
   }
   return redirect || candidate;
@@ -424,6 +441,16 @@ const downloadUrlFor = async (client, storage, file) => {
     type: Number(file?.Type ?? file?.type ?? 0),
   };
   let lastError;
+  for (const target of requestTargets(DOWNLOAD_INFO_V2)) {
+    try {
+      const payload = await request123At(client, storage, target.url, target.origin, { body, method: "POST" });
+      const url = v2DownloadUrl(payload);
+      if (!url) throw new Error("get v2 download url failed");
+      return { url, referer: `${target.origin}/` };
+    } catch (error) {
+      lastError = error;
+    }
+  }
   for (const target of requestTargets(DOWNLOAD_INFO)) {
     try {
       const payload = await request123At(client, storage, target.url, target.origin, { body, method: "POST" });

@@ -43,6 +43,7 @@ let pan123S3AuthBody = null;
 let pan123UploadCompleteBody = null;
 let pan123UploadedBody = "";
 const pan123DownloadHosts = [];
+const pan123V2DownloadHosts = [];
 const pan123RedirectReferers = [];
 const aliOpenCreateBodies = [];
 const aliOpenCompleteBodies = [];
@@ -403,7 +404,7 @@ globalThis.siyuan = {
             message: "success",
             data: {
               Next: "-1",
-              Total: 1,
+              Total: 2,
               InfoList: [{
                 FileName: "pan123.txt",
                 Size: 10,
@@ -412,9 +413,35 @@ globalThis.siyuan = {
                 Type: 0,
                 Etag: "123pan-md5",
                 S3KeyFlag: "flag",
+              }, {
+                FileName: "pan123-legacy.txt",
+                Size: 11,
+                UpdateAt: "2026-01-01T00:00:00.000Z",
+                FileId: 12302,
+                Type: 0,
+                Etag: "123pan-legacy-md5",
+                S3KeyFlag: "legacy-flag",
               }],
             },
           };
+        } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/v2/file/download_info")) {
+          pan123V2DownloadHosts.push(url.hostname);
+          assert.equal(forwardedHeader("origin"), "https://yun.123pan.com");
+          assert.equal(forwardedHeader("referer"), "https://yun.123pan.com/");
+          body = req.payload?.fileId === 12302
+            ? { code: 500, message: "v2 unavailable", data: null }
+            : {
+                code: 0,
+                message: "success",
+                data: {
+                  dispatchList: [{ prefix: "https://download123-v2.example.test" }],
+                  downloadPath: "/pan123.txt?token=v2",
+                  fileId: 12301,
+                },
+              };
+        } else if (url.hostname === "api.123278.com" && url.pathname.endsWith("/b/api/v2/file/download_info")) {
+          pan123V2DownloadHosts.push(url.hostname);
+          body = { code: 500, message: "v2 unavailable", data: null };
         } else if (url.hostname === "yun.123pan.com" && url.pathname.endsWith("/b/api/file/download_info")) {
           pan123DownloadHosts.push(url.hostname);
           assert.equal(forwardedHeader("origin"), "https://yun.123pan.com");
@@ -4834,17 +4861,27 @@ const remote123Read = await call({
   method: "GET",
   path: "/d/remote-123/pan123.txt",
 });
-assert.equal(remote123Read.body.proxy.url, "https://download123.example.test/pan123.txt");
-assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://www.123pan.com/");
+assert.equal(remote123Read.body.proxy.url, "https://download123-v2.example.test/pan123.txt?token=v2");
+assert.equal(remote123Read.body.proxy.headers.Referer[0], "https://yun.123pan.com/");
 assert.equal(remote123Read.body.proxy.method, "GET");
-assert.deepEqual(pan123DownloadHosts.slice(0, 2), ["yun.123pan.com", "api.123278.com"]);
-assert.deepEqual(pan123RedirectReferers.slice(0, 2), ["https://yun.123pan.com/", "https://www.123pan.com/"]);
+assert.deepEqual(pan123V2DownloadHosts, ["yun.123pan.com"]);
+assert.deepEqual(pan123DownloadHosts, []);
+assert.deepEqual(pan123RedirectReferers, []);
 const remote123Preview = await call({
   method: "GET",
   path: "/p/remote-123/pan123.txt",
 });
-assert.equal(remote123Preview.body.proxy.url, "https://download123.example.test/pan123.txt");
-assert.equal(remote123Preview.body.proxy.headers.Referer[0], "https://www.123pan.com/");
+assert.equal(remote123Preview.body.proxy.url, "https://download123-v2.example.test/pan123.txt?token=v2");
+assert.equal(remote123Preview.body.proxy.headers.Referer[0], "https://yun.123pan.com/");
+const remote123LegacyRead = await call({
+  method: "GET",
+  path: "/d/remote-123/pan123-legacy.txt",
+});
+assert.equal(remote123LegacyRead.body.proxy.url, "https://download123.example.test/pan123.txt");
+assert.equal(remote123LegacyRead.body.proxy.headers.Referer[0], "https://www.123pan.com/");
+assert.deepEqual(pan123V2DownloadHosts.slice(-2), ["yun.123pan.com", "api.123278.com"]);
+assert.deepEqual(pan123DownloadHosts.slice(-2), ["yun.123pan.com", "api.123278.com"]);
+assert.deepEqual(pan123RedirectReferers.slice(-2), ["https://yun.123pan.com/", "https://www.123pan.com/"]);
 const remote123ShareCreate = await json({
   body: { files: ["/remote-123/pan123.txt"], id: "share-remote-123", pwd: "rpw" },
   method: "POST",
@@ -4865,7 +4902,7 @@ const remote123ShareRead = await call({
   path: "/sd/share-remote-123",
   query: "download=1&pwd=rpw",
 });
-assert.equal(remote123ShareRead.body.proxy.url, "https://download123.example.test/pan123.txt");
+assert.equal(remote123ShareRead.body.proxy.url, "https://download123-v2.example.test/pan123.txt?token=v2");
 const remote123Put = await json({
   body: "hello 123",
   headers: {
