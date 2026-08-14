@@ -1,6 +1,6 @@
 {
   "name": "siyuan-cloud",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "type": "module",
   "description": "A cloud-drive aggregation manager for SiYuan: mount 25+ cloud drives and disks, preview 300+ formats, work with SiYuan Reader/Media Player, share online, insert file links, and use cloud files as image/video beds without filling your workspace.",
   "author": "mm-o",
