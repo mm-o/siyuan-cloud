@@ -4,14 +4,16 @@
 
 ## Recent Updates
 
-### 0.7.2
+### 0.7.3
+
+#### Improved
+- Improved directory and file loading by routing requests directly to the mounted driver's Local, OpenList/AList, or kernel path, caching mount configuration, avoiding duplicate file-detail routing, and retrying only on actual rate-limit errors.
+- Updated 123Pan downloads to prefer the current v2 download API while retaining the legacy dual-host fallback for older or unavailable environments.
 
 #### Fixed
 
 - Updated direct SiYuan workspace file writes for SiYuan 3.8.3 by including the active frontend `appId` in `putFile` requests, reducing false overwrite notifications and repeated refreshes.
 - Unified workspace and preview-module file writes through one request path while preserving the existing POST `/api/file/putFile` behavior.
-- Improved directory and file loading by routing requests directly to the mounted driver's Local, OpenList/AList, or kernel path, caching mount configuration, avoiding duplicate file-detail routing, and retrying only on actual rate-limit errors.
-- Updated 123Pan downloads to prefer the current v2 download API while retaining the legacy dual-host fallback for older or unavailable environments.
 
 ### 0.7.1
 
