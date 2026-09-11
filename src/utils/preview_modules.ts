@@ -1,4 +1,4 @@
-import type { OpenListResp } from './request'
+import { putSiyuanFile, type OpenListResp } from './request.ts'
 
 export interface PreviewModule {
   adapter: 'open-file-viewer' | 'file-viewer'
@@ -274,19 +274,16 @@ export async function installPreviewModule(module: PreviewModule): Promise<OpenL
 }
 
 async function installPreviewModuleAsset(asset: PreviewModuleAsset) {
-  const form = new FormData()
-  form.append('path', previewModuleAssetInstallPath(asset))
   const file = asset.content
     ? new Blob([asset.content], { type: 'text/javascript;charset=utf-8' })
     : await previewModuleAssetBlob(asset)
-  form.append('file', file, asset.target)
-  const saved = await fetch('/api/file/putFile', {
-    method: 'POST',
-    body: form,
-  })
-  const payload = await saved.json().catch(() => null)
-  if (!saved.ok || payload?.code !== 0)
-    throw new Error(payload?.msg || payload?.message || `${asset.target}: HTTP ${saved.status}`)
+  const { response, payload } = await putSiyuanFile(
+    previewModuleAssetInstallPath(asset),
+    file,
+    asset.target,
+  )
+  if (!response.ok || payload?.code !== 0)
+    throw new Error(payload?.msg || payload?.message || `${asset.target}: HTTP ${response.status}`)
 }
 
 async function previewModuleAssetBlob(asset: PreviewModuleAsset) {

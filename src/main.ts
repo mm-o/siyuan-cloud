@@ -1,6 +1,7 @@
 import { Plugin } from 'siyuan'
 import { createApp } from 'vue'
 import App from './App.vue'
+import { setSiyuanAppId } from './utils/request'
 
 let plugin: Plugin | null = null
 export function usePlugin(pluginProps?: Plugin): Plugin {
@@ -17,6 +18,7 @@ let app: ReturnType<typeof createApp> | null = null
 let container: HTMLDivElement | null = null
 export function init(plugin: Plugin) {
   usePlugin(plugin)
+  setSiyuanAppId(plugin.app.appId)
 
   container = document.createElement('div')
   container.className = 'siyuan-cloud-app'
@@ -31,4 +33,5 @@ export function destroy() {
   app = null
   container?.remove()
   container = null
+  setSiyuanAppId()
 }

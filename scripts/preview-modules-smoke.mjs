@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { putSiyuanFile, setSiyuanAppId } from "../src/utils/request.ts";
 import {
   previewModuleAssetInstallPath,
   previewModuleEntryAsset,
@@ -115,5 +116,24 @@ assert.equal(
   rewritePreviewModuleScript('import"/node/buffer.mjs";export * from"/@file-viewer/web@2.2.4/es2022/web.bundle.mjs"'),
   'import"https://esm.sh/node/buffer.mjs";export * from"https://esm.sh/@file-viewer/web@2.2.4/es2022/web.bundle.mjs"',
 );
+
+setSiyuanAppId("app-123");
+let putFileRequest;
+globalThis.fetch = async (url, options) => {
+  putFileRequest = { url, options };
+  return new Response(JSON.stringify({ code: 0 }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+};
+const putFileResult = await putSiyuanFile("/data/example.json", new Blob(["{}"]), "example.json");
+assert.equal(putFileRequest.url, "/api/file/putFile");
+assert.equal(putFileRequest.options.method, "POST");
+assert.equal(putFileRequest.options.body.get("path"), "/data/example.json");
+assert.equal(putFileRequest.options.body.get("app"), "app-123");
+assert.equal(putFileRequest.options.body.get("file").name, "example.json");
+assert.equal(putFileResult.payload.code, 0);
+setSiyuanAppId();
+delete globalThis.fetch;
 
 console.log("preview modules smoke ok");

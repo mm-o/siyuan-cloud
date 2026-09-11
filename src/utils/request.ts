@@ -1,6 +1,26 @@
 export const privateBase = '/plugin/private/siyuan-cloud'
 const openListAuthHeader = 'X-Siyuan-Cloud-Authorization'
 let openListAuthToken = 'siyuan-cloud-token'
+let siyuanAppId = ''
+
+export function setSiyuanAppId(appId = '') {
+  siyuanAppId = String(appId || '')
+}
+
+export async function putSiyuanFile(path: string, file: Blob, fileName: string) {
+  const form = new FormData()
+  form.append('path', path)
+  form.append('file', file, fileName)
+  form.append('app', siyuanAppId)
+  const response = await fetch('/api/file/putFile', {
+    method: 'POST',
+    body: form,
+  })
+  return {
+    response,
+    payload: await response.json().catch(() => null),
+  }
+}
 
 export function setOpenListAuthToken(token = '') {
   openListAuthToken = String(token || '')
@@ -88,7 +108,7 @@ export interface OpenListResp<T = any> {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 function rateLimitDelay(text: string, status = 0) {
-  if (status !== 429 && !/TooManyRequests|Requests?/i.test(text))
+  if (status !== 429 && !/TooManyRequests|RateLimit|rate[- ]limit|throttl(?:ed|ing)/i.test(text))
     return 0
   const match = text.match(/(\d{3,6})/)
   return Math.max(1000, Number(match?.[1] || 3000) + 200)

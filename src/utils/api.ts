@@ -1,4 +1,4 @@
-import { normalizeResourceUrl, privateBase, r, type OpenListResp } from './request'
+import { normalizeResourceUrl, privateBase, putSiyuanFile, r, type OpenListResp } from './request'
 import {
   clearLocalMountCache,
   getLocal,
@@ -37,10 +37,14 @@ interface StoredMount {
   rootFolderPath: string
 }
 
+const DIRECT_MOUNT_DRIVERS = new Set(['openlist', 'alist', 'alistv3', 'alist v3'])
+
 let cachedStoredMounts: StoredMount[] | null = null
+let cachedStoredConfig: any[] | null = null
 
 window.addEventListener('siyuan-cloud:changed', () => {
   cachedStoredMounts = null
+  cachedStoredConfig = null
 })
 
 export const fsGet = (
@@ -51,14 +55,19 @@ export const fsGet = (
 }
 
 async function fsGetLocalFirst(path: string, password = '') {
-  if (await shouldUseKernelFirst(path))
+  const mount = await storedMountForPath(path)
+  if (isSiyuanWorkspaceMount(mount))
     return fsGetKernel(path, password)
-  const local = await getLocal(path)
-  if (local)
-    return local
-  const direct = await getOpenListDirect(path)
-  if (direct)
-    return direct
+  if (isLocalMount(mount)) {
+    const local = await getLocal(path)
+    if (local)
+      return local
+  }
+  if (isDirectMount(mount)) {
+    const direct = await getOpenListDirect(path)
+    if (direct)
+      return direct
+  }
   return fsGetKernel(path, password)
 }
 
@@ -80,8 +89,12 @@ export const fsList = (
 }
 
 async function fsListLocalFirst(path: string, password = '', page = 1, per_page = 0, refresh = false) {
-  if (path === '/')
-    return await fsRootFromStoredConfig() || fsListKernel(path, password, page, per_page, refresh)
+  if (path === '/') {
+    const root = await fsRootFromStoredConfig()
+    if (root)
+      return root
+    return fsListKernel(path, password, page, per_page, refresh)
+  }
   const mount = await storedMountForPath(path)
   if (isSiyuanWorkspaceMount(mount)) {
     if (!password) {
@@ -91,12 +104,16 @@ async function fsListLocalFirst(path: string, password = '', page = 1, per_page 
     }
     return fsListKernel(path, password, page, per_page, refresh)
   }
-  const local = await listLocal(path, page, per_page)
-  if (local)
-    return local
-  const direct = await listOpenListDirect(path, page, per_page, refresh)
-  if (direct)
-    return direct
+  if (isLocalMount(mount)) {
+    const local = await listLocal(path, page, per_page)
+    if (local)
+      return local
+  }
+  if (isDirectMount(mount)) {
+    const direct = await listOpenListDirect(path, page, per_page, refresh)
+    if (direct)
+      return direct
+  }
   return fsListKernel(path, password, page, per_page, refresh)
 }
 
@@ -129,23 +146,22 @@ export const fsSearch = (
 }
 
 async function fsRootFromStoredConfig(): Promise<OpenListResp | null> {
-  const storages = await storedConfigStorages()
-  const root = storageRootResp(storages)
-  if (root)
-    return root
-  return null
+  return storageRootResp(await storedConfigStorages())
 }
 
 async function storedConfigStorages(): Promise<any[]> {
+  if (cachedStoredConfig)
+    return cachedStoredConfig
   for (const name of ['config.json', 'siyuan-cloud/state.json']) {
     try {
       const value = await usePlugin().loadData(name)
       const config = value && typeof value === 'object' ? value : value ? JSON.parse(String(value)) : null
-      if (Array.isArray(config?.storages))
-        return config.storages
+      if (Array.isArray(config?.storages)) {
+        return cachedStoredConfig = config.storages
+      }
     } catch {}
   }
-  return []
+  return cachedStoredConfig = []
 }
 
 function storageRootResp(storages: any[] = []): OpenListResp | null {
@@ -179,12 +195,16 @@ async function storedMountForPath(path: string) {
   return (await storedMounts()).find(mount => clean === mount.mountPath || clean.startsWith(`${mount.mountPath}/`)) || null
 }
 
-async function shouldUseKernelFirst(path: string) {
-  return isSiyuanWorkspaceMount(await storedMountForPath(path))
-}
-
 function isSiyuanWorkspaceMount(mount: StoredMount | null) {
   return String(mount?.driver || '').toLowerCase() === 'siyuanworkspace'
+}
+
+function isLocalMount(mount: StoredMount | null) {
+  return String(mount?.driver || '').toLowerCase() === 'local'
+}
+
+function isDirectMount(mount: StoredMount | null) {
+  return DIRECT_MOUNT_DRIVERS.has(String(mount?.driver || '').toLowerCase())
 }
 
 function storageMount(storage: any): StoredMount {
@@ -358,15 +378,12 @@ export const fsPutText = async (path: string, content: string): Promise<OpenList
 
 async function putSiyuanWorkspaceText(path: string, mount: StoredMount, content: string): Promise<OpenListResp> {
   try {
-    const form = new FormData()
     const name = path.split('/').filter(Boolean).pop() || 'file.txt'
-    form.append('path', siyuanWorkspaceReadDirPath(path, mount))
-    form.append('file', new Blob([content], { type: 'text/plain;charset=utf-8' }), name)
-    const response = await fetch('/api/file/putFile', {
-      method: 'POST',
-      body: form,
-    })
-    const payload = await response.json().catch(() => null)
+    const { response, payload } = await putSiyuanFile(
+      siyuanWorkspaceReadDirPath(path, mount),
+      new Blob([content], { type: 'text/plain;charset=utf-8' }),
+      name,
+    )
     if (response.ok && payload?.code === 0)
       return { code: 200, message: 'success', data: { path } }
     return { code: payload?.code || response.status || -1, message: payload?.msg || payload?.message || `HTTP ${response.status}`, data: null }
@@ -570,37 +587,40 @@ function openListDownloadRoute(path: string, data: Record<string, any> = {}) {
 }
 
 export async function resolveOpenListFile(path: string, password = '') {
-  if (await shouldUseKernelFirst(path))
-    return resolveOpenListFileKernel(path, password)
-  const local = await getLocal(path)
-  if (local?.code === 200) {
-    const data = local.data || {}
-    const url = String(data.raw_url || data.url || '')
-    return {
-      ...data,
-      path,
-      raw_url: url,
-      d_url: normalizeResourceUrl(url),
-      url: normalizeResourceUrl(url),
+  const mount = await storedMountForPath(path)
+  if (isLocalMount(mount)) {
+    const local = await getLocal(path)
+    if (local?.code === 200) {
+      const data = local.data || {}
+      const url = String(data.raw_url || data.url || '')
+      return {
+        ...data,
+        path,
+        raw_url: url,
+        d_url: normalizeResourceUrl(url),
+        url: normalizeResourceUrl(url),
+      }
     }
   }
-  const direct = await getOpenListDirect(path)
-  if (direct?.code === 200) {
-    const data = direct.data || {}
-    const url = String(data.raw_url || data.url || '')
-    return {
-      ...data,
-      path,
-      raw_url: url,
-      d_url: normalizeResourceUrl(url),
-      url: normalizeResourceUrl(url),
+  if (isDirectMount(mount)) {
+    const direct = await getOpenListDirect(path)
+    if (direct?.code === 200) {
+      const data = direct.data || {}
+      const url = String(data.raw_url || data.url || '')
+      return {
+        ...data,
+        path,
+        raw_url: url,
+        d_url: normalizeResourceUrl(url),
+        url: normalizeResourceUrl(url),
+      }
     }
   }
   return resolveOpenListFileKernel(path, password)
 }
 
 async function resolveOpenListFileKernel(path: string, password = '') {
-  const payload = await fsGet(path, password)
+  const payload = await fsGetKernel(path, password)
   if (payload.code !== 200)
     throw new Error(payload.message || `Siyuan Cloud code ${payload.code}`)
   const data = payload.data || {}
