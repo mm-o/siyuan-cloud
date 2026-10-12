@@ -783,7 +783,7 @@ async function openNode(node: DockTreeItem) {
     }
     const kind = mediaKind(node)
     if (kind) {
-      if (await openOpenListMediaPreview(node.name, node.path, kind, resolveDownloadUrl))
+      if (await openOpenListMediaPreview(node.name, node.path))
         return
     }
     if (await openPreviewModule(node, kind))

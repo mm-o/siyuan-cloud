@@ -524,6 +524,12 @@ export const createQuarkDriver = ({ client }) => ({
     };
   },
 
+  async getById(storage, fileId) {
+    const file = { fid: String(fileId || "") };
+    const link = await downloadLink(client, storage, file);
+    return { raw_url: link.url, url: link.url };
+  },
+
   async read(storage, relPath, options = {}) {
     const file = await resolveFile(client, storage, relPath);
     if (!file.file) throw new Error("not file");

@@ -855,7 +855,7 @@ async function openFile(item: FsItem) {
     return
   }
   if (kind === 'audio' || kind === 'video') {
-    if (await openOpenListMediaPreview(item.name, path, kind, resolveDownloadUrl))
+    if (await openOpenListMediaPreview(item.name, path))
       return
   }
   await openPreviewModule(item, kind)

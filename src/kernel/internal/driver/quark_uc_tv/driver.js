@@ -413,6 +413,15 @@ export const createQuarkUCTVDriver = ({ client }) => ({
     };
   },
 
+  async getById(storage, fileId) {
+    await ensureLogin(client, storage);
+    const file = { fid: String(fileId || "") };
+    const link = storage.addition_json.link_method === "streaming"
+      ? await getTranscodingLink(client, storage, file)
+      : await getDownloadLink(client, storage, file);
+    return { raw_url: link.url, url: link.url };
+  },
+
   async read(storage, relPath, options = {}) {
     await ensureLogin(client, storage);
     const file = await resolveFile(client, storage, relPath);

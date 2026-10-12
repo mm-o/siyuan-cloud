@@ -405,6 +405,13 @@ export const createAliyundriveOpenDriver = ({ client }) => ({
     };
   },
 
+  async getById(storage, fileId) {
+    await initDrive(client, storage);
+    const file = { file_id: String(fileId || "") };
+    const url = await linkFor(client, storage, file);
+    return { raw_url: url, url };
+  },
+
   async read(storage, relPath, options = {}) {
     const file = await resolveFile(client, storage, relPath);
     if (file.type === "folder") throw new Error("not file");

@@ -8,6 +8,7 @@ import { fsRemove, resolveOpenListFile } from '@/utils/api'
 import {
   escapeHtml,
   itemStableUrl,
+  mediaProtocolUrl,
   openListFileKind,
   openListPluginOpenUrl,
   promptText,
@@ -434,7 +435,7 @@ export function openListDocumentLink<T extends OpenListUrlItem & { name: string;
   if (kind === 'image')
     return `![${name}](${itemStableUrl(options.item, options.path)})`
   if (kind === 'audio' || kind === 'video')
-    return `<${kind} controls src="${escapeHtml(itemStableUrl(options.item, options.path))}"></${kind}>`
+    return `<${kind} controls src="${escapeHtml(mediaProtocolUrl(options.path))}"></${kind}>`
   return `[${name}](${openListPluginOpenUrl(options.path)})`
 }
 

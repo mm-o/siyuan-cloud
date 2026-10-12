@@ -4,6 +4,13 @@
 
 ## Recent Updates
 
+### 0.7.4
+
+#### Fixed
+- Fixed legacy cloud links that use file IDs instead of paths.
+- Fixed cloud media links resolving to temporary paths.
+- Fixed percent-encoded SiYuan Cloud links being difficult to read or recognize.
+
 ### 0.7.3
 
 #### Improved
@@ -67,7 +74,7 @@ Siyuan Cloud has grown from a file-manager entry into an OpenList-compatible run
 - **Mounts and drivers**: runtime-backed adapters for 115, 123Pan, 189Cloud, Aliyundrive, Baidu Netdisk, Quark/UC, OneDrive, WPS, GitHub Releases, S3/Doge, WebDAV, OpenList/AList, local disks, and SiYuan Workspace, with matching driver guides.
 - **Files and transfers**: list, get, link, upload, download, copy, move, remove, rename, batch download, Motrix Next handoff, drag-and-drop upload, and visible transfer states.
 - **Preview and playback**: images, audio, video, PDF, EPUB, Office, Markdown, code, archives, email, engineering drawings, 3D/GIS, XMind, and more open through native SiYuan viewers, SiYuan Reader/Media Player, or downloadable preview modules.
-- **Document workflow**: copy links from context menus, drag files into documents, or use the `/` command to insert file links; images, audio, and video can become directly previewable Markdown or HTML snippets.
+- **Document workflow**: copy links from context menus, drag files into documents, or use the `/` command to insert file links; images, audio, and video can become directly previewable Markdown or HTML snippets with readable cloud paths instead of opaque percent-encoded URLs.
 - **Sharing and permissions**: OpenList-style users, sessions, permissions, meta rules, share links, access control, passwords, expiry, access limits, and public-read rechecks.
 - **Search and tasks**: persisted local search indexes, build/stop/clear/progress routes, and OpenList-shaped task state, cancel, and retry foundations.
 - **Protocols and automation**: `/api/public/api`, `/api/public/routes`, status capability matrices, OpenList-style FS APIs, WebDAV, S3, and companion-plugin resource paths such as `/p` and `/d`.

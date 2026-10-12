@@ -51,7 +51,7 @@ OpenList-compatible JSON 响应统一使用：
 - `/api/fs/copy` 和 `/api/fs/move` 的 `skip_existing` 行为对齐 OpenList：冲突项可跳过，后续 names 继续处理；copy 的 `merge` 只在目标为目录时继续。
 - `/api/fs/search` 查询持久 `search_nodes`，字段和分页对齐 OpenList `server/handles/search.go` / `model.SearchNode`：`parent`、`name`、`is_dir`、`size`、`type`，关键词、scope 和 parent 过滤对齐 `internal/db/searchnode.go` 的非全文搜索形态。搜索不实时扫描目录；需要先通过 `/api/admin/index/build` 全量构建，或用 `/api/admin/index/update` 指定 `paths` 局部构建。`parent="/"` 是全局搜索，`parent="/mount"` 搜该路径整棵子树。`/@workspace` 仍可被显式访问和局部索引；若要显示在文件管理首页，需要手动添加 `SiYuanWorkspace` 挂载。索引构建已按 OpenList `internal/search/build.go` 跳过 `ignore_paths` 和 storage `disable_index`。它仍不是 OpenList `internal/search` 的完整多后端实现，后续还需补异步构建、停止取消、auto update 和 Bleve/Meilisearch/database 配置边界。
 - `/api/fs/torrent/parse` 和 `/api/fs/torrent/upload_parse` 已按 OpenList `server/handles/torrent.go` / `pkg/torrent` 迁移 JS bencode reader，返回 `name/total_size/piece_length/piece_count/info_hash/files/has_cas/cas`；`/api/fs/torrent/generate` 可为本端可读单文件生成真实 torrent，并在 `with_cas=true` 时注入 OpenList 189 `x-cas` 扩展；`/api/fs/torrent/rapid_upload` 已保留 driver `rapidUploadFromTorrent` 边界，等待 189/189PC runtime 接入远端 CAS 秒传。
-- `/api/fs/get` 负责返回 OpenList object data；媒体播放优先使用 `raw_url`。需要代理的 storage 返回 `/plugin/private/siyuan-cloud/p/<path>`，非代理 storage 可以保留 driver `Link()` URL。
+- `/api/fs/get` 负责返回 OpenList object data；媒体播放优先使用 `raw_url`。思盘前端复制、阅读器和 companion 链接统一使用 `/plugin/private/siyuan-cloud/p/<path>` 稳定路径；实际播放/下载解析仍可按需使用 driver `Link()` URL。
 - `/d/<path>` 和 `/p/<path>` 走 `fs.Link -> common.Proxy -> body.proxy`，不要恢复 per-driver 播放补丁。
 
 ## 非完整能力面

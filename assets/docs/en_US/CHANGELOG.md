@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 0.7.4
+
+### Fixed
+
+- Fixed playback of legacy cloud links that use file IDs instead of paths.
+- Fixed cloud media playback resolving to temporary service paths; file IDs and cloud paths now resolve to the actual playback URL consistently.
+- Fixed percent-encoded SiYuan Cloud links being difficult to read or recognize.
+
 ## 0.7.2
 
 ### Fixed

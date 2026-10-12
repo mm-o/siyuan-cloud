@@ -70,6 +70,18 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
     UCTV: createQuarkUCTVDriver({ client }),
     WPS: createWpsDriver({ client }),
   };
+  const runtimeStorage = (storage) => {
+    const addition = parseAddition(storage);
+    return {
+      ...storage,
+      addition_json: addition,
+      mount_path: normalizePath(storage.mount_path || "/"),
+      settings: getSettings ? getSettings() : {},
+      saveDriverStorage: async (updatedAddition = addition) => {
+        if (saveStorageAddition) await saveStorageAddition(storage, updatedAddition);
+      },
+    };
+  };
 
   const runtime = {
     drivers,
@@ -101,18 +113,7 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
       const current = normalizePath(path || "/");
       const candidates = (storages || [])
         .filter((storage) => !storage.disabled && runtime.canHandle(storage))
-        .map((storage) => {
-          const addition = parseAddition(storage);
-          return {
-            ...storage,
-            addition_json: addition,
-            mount_path: normalizePath(storage.mount_path || "/"),
-            settings: getSettings ? getSettings() : {},
-            saveDriverStorage: async (updatedAddition = addition) => {
-              if (saveStorageAddition) await saveStorageAddition(storage, updatedAddition);
-            },
-          };
-        })
+        .map(runtimeStorage)
         .filter((storage) => storage.mount_path !== "/" && (current === storage.mount_path || current.startsWith(storage.mount_path + "/")))
         .sort((a, b) => b.mount_path.length - a.mount_path.length);
       const storage = candidates[0];
@@ -122,6 +123,30 @@ export const createDriverRuntime = ({ client, getSettings, saveStorageAddition, 
         driver: drivers[storage.driver],
         relPath: relPathForMount(storage.mount_path, current),
       };
+    },
+    async resolveById(storages, protocol, fileId) {
+      const aliases = {
+        quarktv: ["QuarkTV", "UCTV", "Quark", "UC", "QuarkOpen"],
+        quark: ["Quark", "UC", "QuarkOpen", "QuarkTV", "UCTV"],
+        alipan: ["AliyundriveOpen", "AliyunDriveOpen"],
+        aliyun: ["AliyundriveOpen", "AliyunDriveOpen"],
+      };
+      const names = aliases[String(protocol || "").toLowerCase()] || [];
+      for (const name of names) {
+        const driver = drivers[name];
+        const candidates = (storages || []).filter((storage) => !storage.disabled && storage.driver === name);
+        for (const storage of candidates) {
+          const current = runtimeStorage(storage);
+          if (driver?.getById) {
+            try {
+              return { storage: current, data: await driver.getById(current, String(fileId || "")) };
+            } catch {
+              // Try the next configured account or provider.
+            }
+          }
+        }
+      }
+      return { error: "file not found" };
     },
     async test(driverName, addition, verify) {
       const driver = drivers[driverName];

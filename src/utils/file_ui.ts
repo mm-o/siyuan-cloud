@@ -1,8 +1,6 @@
 import { Dialog, showMessage } from 'siyuan'
 import {
-  fsOther,
   openListAbsoluteUrl,
-  openListStableUrl,
   siyuanWorkspacePublicUrl,
 } from '@/utils/api'
 import { normalizeResourceUrl, privateBase } from '@/utils/request'
@@ -47,8 +45,6 @@ export const openListFileKinds = {
 const openListReaderExts = new Set('epub,pdf,mobi,azw3,azw,fb2,cbz,txt'.split(','))
 
 type PathInput<T> = string | ((item: T) => string)
-type MediaKind = 'audio' | 'video'
-type ResolveUrl = (path: string, preferFresh?: boolean) => Promise<string>
 
 const pathOf = <T>(item: T, path: PathInput<T>) =>
   typeof path === 'function' ? path(item) : path
@@ -65,8 +61,15 @@ export function openListFileKind(name: string, isDir = false) {
 }
 
 export function proxyPreviewUrl(path: string, absolute = true) {
-  const toUrl = absolute ? openListAbsoluteUrl : openListStableUrl
-  return toUrl(`${privateBase}/p${path}`, { escapeHash: true, escapeQuestion: true })
+  const route = `${privateBase}/p${String(path || '/').startsWith('/') ? path : `/${path}`}`
+    .replace(/#/g, '%23')
+    .replace(/\?/g, '%3F')
+  return absolute ? openListAbsoluteUrl(route) : route
+}
+
+export function mediaProtocolUrl(path: string) {
+  const normalized = normalizeOpenListPath(path)
+  return `siyuan-cloud://${normalized}`
 }
 
 function normalizeOpenListPath(path: string) {
@@ -88,7 +91,10 @@ export function itemOpenUrl<T extends OpenListUrlItem>(item: T, path: PathInput<
 
 export function itemStableUrl<T extends OpenListUrlItem>(item: T, path: PathInput<T>) {
   const resolvedPath = pathOf(item, path)
-  return siyuanWorkspacePublicUrl(resolvedPath) || String(item.raw_url || item.url || '') || proxyPreviewUrl(resolvedPath, false)
+  const raw = String(item.raw_url || item.url || '')
+  if (/^(?:file|data):/i.test(raw))
+    return normalizeResourceUrl(raw)
+  return siyuanWorkspacePublicUrl(resolvedPath) || proxyPreviewUrl(resolvedPath, false)
 }
 
 export function openListCompanionHref(name: string, path: string, isDir = false) {
@@ -145,35 +151,8 @@ export async function selectSavePath(filename?: string, labels: {
   })
 }
 
-const videoPreviewTemplateOrder = ['FHD', 'HD', 'SD', 'LD', 'QHD', '4K']
-
-function videoPreviewTaskUrl(data: any) {
-  const tasks = data?.video_preview_play_info?.live_transcoding_task_list
-    || data?.live_transcoding_task_list
-    || []
-  if (!Array.isArray(tasks))
-    return ''
-  const finished = tasks
-    .filter(task => task?.url && (!task?.status || String(task.status).toLowerCase() === 'finished'))
-    .sort((a, b) => {
-      const ai = videoPreviewTemplateOrder.indexOf(String(a?.template_id || '').toUpperCase())
-      const bi = videoPreviewTemplateOrder.indexOf(String(b?.template_id || '').toUpperCase())
-      return (ai < 0 ? videoPreviewTemplateOrder.length : ai) - (bi < 0 ? videoPreviewTemplateOrder.length : bi)
-    })
-  return String(finished[0]?.url || '')
-}
-
-export async function resolveVideoPreviewUrl(path: string) {
-  const payload = await fsOther({ path, method: 'video_preview' })
-  if (payload.code !== 200)
-    return ''
-  return videoPreviewTaskUrl(payload.data)
-}
-
-export async function resolveMediaPreviewUrl(path: string, kind: MediaKind, resolveUrl: ResolveUrl) {
-  if (kind !== 'video')
-    return resolveUrl(path, true)
-  return await resolveVideoPreviewUrl(path) || await resolveUrl(path, true)
+export function resolveMediaPreviewUrl(path: string) {
+  return mediaProtocolUrl(path)
 }
 
 async function tryOpenMedia(name: string, url: string) {
@@ -205,8 +184,8 @@ export async function openMediaPreview(name: string, url: string) {
   return await tryOpenMedia(name, href)
 }
 
-export async function openOpenListMediaPreview(name: string, path: string, kind: MediaKind, resolveUrl: ResolveUrl) {
-  return await openMediaPreview(name, await resolveMediaPreviewUrl(path, kind, resolveUrl))
+export async function openOpenListMediaPreview(name: string, path: string) {
+  return await tryOpenMedia(name, resolveMediaPreviewUrl(path))
 }
 
 export function promptText(options: {

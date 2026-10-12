@@ -514,6 +514,7 @@ export const createFsHandlers = ({
     return 0;
   };
   const driverObjResp = (item) => ({
+    id: String(item.id || item.file_id || item.fid || ""),
     name: item.name || "",
     size: Number(item.size || 0),
     is_dir: !!item.is_dir,
@@ -635,6 +636,22 @@ export const createFsHandlers = ({
         ...toFsGetResp(entry, path),
         readme: metaReadme(meta, path),
         header: metaHeader(meta, path),
+      }));
+    },
+    "ANY /api/fs/get_by_id": async (request) => {
+      const req = await parseJson(request);
+      const protocol = String(req.protocol || req.source || "").replace(/:.*$/, "").toLowerCase();
+      const fileId = String(req.file_id || req.fileId || req.id || "").trim();
+      if (!protocol || !fileId) return jsonResponse(failure("protocol and file_id are required", 400));
+      const resolved = await driverRuntime.resolveById(state.storages, protocol, fileId);
+      if (!resolved || resolved.error) return jsonResponse(failure(resolved?.error || "file not found", 404));
+      const data = resolved.data || {};
+      return jsonResponse(success({
+        ...driverObjResp(data),
+        id: fileId,
+        raw_url: data.raw_url || data.url || "",
+        url: data.url || data.raw_url || "",
+        provider: resolved.storage.driver,
       }));
     },
     "ANY /api/fs/dirs": async (request) => {

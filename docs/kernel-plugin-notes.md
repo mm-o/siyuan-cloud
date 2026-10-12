@@ -243,7 +243,7 @@ The long-form migration plan is kept in `docs/siyuan-cloud-migration-plan.md`.
 - `src/kernel/server/common/proxy.js` is the plugin-side mirror of OpenList `server/common/proxy.go`: it merges incoming browser/player request headers with driver `model.Link` headers, deduplicates header names case-insensitively, filters hop-by-hop headers and browser-origin `Cookie`, and returns `body.proxy`.
 - SiYuan `/api/network/forwardProxy` now accepts `redirect: false` so drivers can do OpenList-style no-redirect link probes. BaiduNetdisk official downloads use this to `HEAD` the first `d.pcs.baidu.com` dlink, read its `Location`, and pass the final `appall*.baidupcs.com` URL to `body.proxy` instead of surfacing a 302 to the browser.
 - `/d` and `/p` are now the shared playback/download surface for runtime drivers. Drivers should return `model.Link`-style data from `read()` rather than downloading media through `/api/network/forwardProxy`.
-- `/api/fs/get.raw_url` and `/api/fs/link.raw_url` now follow OpenList proxy selection: proxy-required storages return `/plugin/private/siyuan-cloud/p/<path>`, while non-proxied storages can return the driver link URL.
+- `/api/fs/get.raw_url` and `/api/fs/link.raw_url` preserve OpenList proxy selection for API compatibility, while all frontend-generated copy, reader, and companion links use the stable `/plugin/private/siyuan-cloud/p/<path>` path; historical direct links remain readable.
 
 Frontend UI settings should use the regular SiYuan plugin API `plugin.loadData/saveData`. The kernel runtime cannot access the frontend `Plugin` instance; it uses the kernel plugin API `siyuan.storage.get/put/list/remove`, which is scoped to the kernel plugin storage directory. Keep these two layers separate:
 
