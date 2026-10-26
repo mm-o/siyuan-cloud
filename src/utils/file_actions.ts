@@ -9,6 +9,7 @@ import {
   escapeHtml,
   itemStableUrl,
   mediaProtocolUrl,
+  normalizeOpenListPath,
   openListFileKind,
   openListPluginOpenUrl,
   promptText,
@@ -20,6 +21,8 @@ import { handleResp } from '@/utils/handle_resp'
 import { usePlugin } from '@/main'
 import { openListJson, withOpenListAuthQuery, withOpenListHeaders } from '@/utils/request'
 import { createShareForPaths } from '@/utils/share'
+
+export { normalizeOpenListPath } from '@/utils/file_ui'
 
 export interface OpenListFileItem {
   name: string
@@ -39,13 +42,6 @@ const MOTRIX_NEXT_DEFAULT_API = `http://127.0.0.1:${MOTRIX_NEXT_PORT}`
 const MOTRIX_NEXT_SETTINGS = 'siyuan-cloud-motrix-next.json'
 let activeDownloads = 0
 const queuedDownloads: Array<() => void> = []
-
-export const normalizeOpenListPath = (path: string) => {
-  const input = path === undefined || path === null || path === '' ? '/' : String(path)
-  const slash = input.startsWith('/') ? input : `/${input}`
-  const normalized = slash.replace(/\/+/g, '/')
-  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '')
-}
 
 export const joinOpenListPath = (dir: string, name: string) =>
   normalizeOpenListPath(`${normalizeOpenListPath(dir)}/${String(name || '').replace(/^\/+/, '')}`)

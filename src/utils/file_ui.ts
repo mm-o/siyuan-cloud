@@ -27,6 +27,13 @@ export function formatSize(size = 0, emptyZero = false) {
   return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
+export function formatModified(value?: string) {
+  if (!value)
+    return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
+}
+
 export function showErrorMessage(error: unknown, timeout = 4000) {
   showMessage(error instanceof Error ? error.message : String(error), timeout, 'error')
 }
@@ -72,7 +79,7 @@ export function mediaProtocolUrl(path: string) {
   return `siyuan-cloud://${normalized}`
 }
 
-function normalizeOpenListPath(path: string) {
+export function normalizeOpenListPath(path: string) {
   const input = path ? String(path) : '/'
   const slash = input.startsWith('/') ? input : `/${input}`
   const normalized = slash.replace(/\/+/g, '/')
@@ -80,7 +87,12 @@ function normalizeOpenListPath(path: string) {
 }
 
 export function openListPluginOpenUrl(path: string) {
-  return `siyuan://plugins/siyuan-cloud/open?path=${encodeURIComponent(normalizeOpenListPath(path))}`
+  const readablePath = normalizeOpenListPath(path).replace(/[\x00-\x7F]/g, (character) =>
+    /^[\w./~-]$/.test(character)
+      ? character
+      : `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`,
+  )
+  return `siyuan://plugins/siyuan-cloud/open?path=${readablePath}`
 }
 
 export function itemOpenUrl<T extends OpenListUrlItem>(item: T, path: PathInput<T>) {
@@ -164,19 +176,14 @@ async function tryOpenMedia(name: string, url: string) {
     type: 'media',
     url,
   }
-  const target = (window as any).siyuanMediaPlayer || (window as any).siyuanMedia || (window as any).sibo
-  if (typeof target === 'function') {
-    await target(payload)
-    return true
-  }
-  for (const method of ['open', 'play', 'playMediaItem', 'add', 'load']) {
-    if (typeof target?.[method] === 'function') {
-      await target[method](payload)
-      return true
-    }
-  }
-  window.dispatchEvent(new CustomEvent('playMediaItem', { detail: payload }))
-  return false
+  const player = (window as any).siyuanMediaPlayer
+  if (player?.integration?.media?.playItem)
+    await player.integration.media.playItem(payload)
+  else if (player?.playMediaItem)
+    await player.playMediaItem(payload)
+  else
+    return false
+  return true
 }
 
 export async function openMediaPreview(name: string, url: string) {
@@ -224,13 +231,6 @@ export function promptText(options: {
 const viewerScriptId = 'protyleViewerScript'
 const viewerScriptSrc = '/stage/protyle/js/viewerjs/viewer.js?v=1.11.7'
 const imagePlaceholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E'
-
-declare global {
-  interface Window {
-    Viewer: any
-    siyuan: any
-  }
-}
 
 function loadViewerScript() {
   if (document.getElementById(viewerScriptId))

@@ -4,6 +4,16 @@
 
 ## Recent Updates
 
+### 0.8.0（2026/10/26）
+
+#### Added
+
+- Combined cloud-drive insertion into one `/思盘` slash command: select a file for a link, click a folder for a browsable dynamic directory block, or Shift-click a folder for a folder link.
+
+#### Fixed
+
+- Fixed unreadable percent-encoded paths in SiYuan Cloud links. Chinese path segments remain readable while special characters stay safely encoded.
+
 ### 0.7.4
 
 #### Fixed
@@ -62,7 +72,7 @@ For detailed release changes, open [CHANGELOG](https://my.feishu.cn/wiki/AZHFwEd
 | File management | Browse, upload, download, copy, move, rename, and remove files from the Dock tree or top-bar file manager |
 | Rich preview | Install preview modules on demand for Office, PDF, Markdown, code, text, archives, email, engineering drawings, 3D/GIS, XMind, and 300+ formats |
 | Media and reading | Images use SiYuan image preview, audio/video prefer SiYuan Media Player, PDF/EPUB prefer SiYuan Reader, and preview modules act as fallback when companion plugins are unavailable |
-| Document links | Copy Markdown images, audio, video, download links, or `siyuan://plugins/siyuan-cloud/open?...`; insert file links with the `/` command |
+| Document links | Copy Markdown images, audio, video, download links, or `siyuan://plugins/siyuan-cloud/open?...`; use `/思盘` to select a file for a link, click a folder for a dynamic directory block, or Shift-click a folder for a folder link |
 | Online sharing | Create `/sd/{id}` share links for quick file or folder sharing in trusted environments |
 | Image/video beds | Use cloud files as image, audio, and video resources in notes without filling the SiYuan workspace with attachments |
 | Compatible APIs | Expose OpenList-style file APIs, WebDAV, and S3-compatible surfaces for local tools, automation, and companion plugins |
@@ -86,6 +96,7 @@ Siyuan Cloud has grown from a file-manager entry into an OpenList-compatible run
 - Add a mount with a runtime-backed driver.
 - Browse files from the Dock file tree or the top-bar file manager.
 - Right-click a file to preview, copy links, insert into documents, share, download, or manage it.
+- In a document, type `/思盘`: choose a file to insert a link, click a folder for a browsable dynamic directory block, or Shift-click a folder to insert a folder link.
 - For Office, code, XMind, archives, and other enhanced previews, open **Tools -> Preview Modules** and install the module you need.
 
 ## Documentation

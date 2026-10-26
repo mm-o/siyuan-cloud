@@ -325,11 +325,12 @@ import {
   previewModuleForFileReady,
 } from '@/utils/preview_modules'
 import {
-  itemOpenUrl as openListItemOpenUrl,
+  formatModified,
   formatSize,
   openLazyImageViewer,
   openListCompanionHref,
   openListFileKind,
+  itemOpenUrl as openListItemOpenUrl,
   openOpenListMediaPreview,
   promptText,
   selectSavePath,
@@ -591,15 +592,6 @@ function onContentClick(event: MouseEvent) {
   if ((event.target as HTMLElement).closest('[data-path], input'))
     return
   clearSelectionMode()
-}
-
-function formatModified(value?: string) {
-  if (!value)
-    return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime()))
-    return ''
-  return date.toLocaleString()
 }
 
 function fileKind(item: FsItem) {

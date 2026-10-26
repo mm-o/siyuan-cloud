@@ -8,7 +8,6 @@ import { createApp, onMounted } from 'vue'
 import Dock from '@/components/Dock.vue'
 import FileTab from '@/components/FileTab.vue'
 import PreviewTab from '@/components/PreviewTab.vue'
-import TreePicker from '@/components/TreePicker.vue'
 import { usePlugin } from '@/main'
 import { FEISHU_DOCS } from '@/utils/feishuDocs.generated'
 import { OPENLIST_APP_ICON_SVG, OPENLIST_ICON_ID_APP, registerOpenListIcons } from '@/utils/icon'
@@ -19,8 +18,6 @@ let dockApp: ReturnType<typeof createApp> | null = null
 let fileTabApp: ReturnType<typeof createApp> | null = null
 let fileTabVm: { openPath?: (path: string) => void } | null = null
 let pendingFilePath: string | undefined
-let pickerApp: ReturnType<typeof createApp> | null = null
-let pickerElement: HTMLElement | null = null
 const previewModuleTabs = new WeakMap<Element, ReturnType<typeof createApp>>()
 
 function t(key: string) {
@@ -118,66 +115,6 @@ function openSiyuanDoc(id: string) {
   })
 }
 
-function closePicker() {
-  pickerApp?.unmount()
-  pickerApp = null
-  if (pickerElement) {
-    pickerElement.innerHTML = ''
-    pickerElement.classList.add('fn__none')
-  }
-  pickerElement = null
-  document.removeEventListener('mousedown', closePickerByOutside)
-}
-
-function closePickerByOutside(event: MouseEvent) {
-  if (pickerElement?.contains(event.target as Node))
-    return
-  closePicker()
-}
-
-function openPicker(options: {
-  targetElement: HTMLElement
-  onSelect: (item: { name: string; path: string; is_dir?: boolean }) => void
-}) {
-  closePicker()
-  pickerElement = options.targetElement
-  const left = parseFloat(pickerElement.style.left || '0')
-  const top = parseFloat(pickerElement.style.top || '0')
-  const fit = () => {
-    if (!pickerElement)
-      return
-    const minTop = document.getElementById('sidebar') ? 0 : (document.getElementById('toolbar')?.clientHeight || document.querySelector<HTMLElement>('.layout-tab-bar')?.clientHeight || 0)
-    pickerElement.style.left = `${left}px`
-    pickerElement.style.top = `${top}px`
-    let rect = pickerElement.getBoundingClientRect()
-    if (rect.top < minTop) {
-      pickerElement.style.top = `${minTop}px`
-    } else if (rect.bottom > window.innerHeight) {
-      const above = top - rect.height - 30
-      pickerElement.style.top = above > minTop && above + rect.height < window.innerHeight
-        ? `${above}px`
-        : `${Math.max(minTop, window.innerHeight - rect.height)}px`
-    }
-    rect = pickerElement.getBoundingClientRect()
-    if (rect.right > window.innerWidth)
-      pickerElement.style.left = `${window.innerWidth - rect.width}px`
-    else if (rect.left < 0)
-      pickerElement.style.left = '0'
-  }
-  pickerElement.innerHTML = ''
-  pickerElement.classList.remove('fn__none')
-  pickerApp = createApp(TreePicker, {
-    onLayout: () => requestAnimationFrame(fit),
-    onSelect: (item: { name: string; path: string; is_dir?: boolean }) => {
-      options.onSelect(item)
-      closePicker()
-    },
-  })
-  pickerApp.mount(pickerElement)
-  requestAnimationFrame(fit)
-  window.setTimeout(() => document.addEventListener('mousedown', closePickerByOutside), 0)
-}
-
 onMounted(async () => {
   registerOpenListIcons(plugin)
   loadDocList()
@@ -243,7 +180,6 @@ onMounted(async () => {
       dockApp.mount(mount)
     },
     destroy() {
-      closePicker()
       dockApp?.unmount()
       dockApp = null
     },
@@ -261,7 +197,6 @@ onMounted(async () => {
     openDriverDoc,
     openDock,
     openFileManager,
-    openPicker,
     openPreviewModule,
     openSiyuanDoc,
   }

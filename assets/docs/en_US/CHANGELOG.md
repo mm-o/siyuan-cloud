@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 0.8.0（2026/10/26）
+
+### Added
+
+- Combined cloud-drive insertion into one `/思盘` slash command: select a file for a link, click a folder for a browsable dynamic directory block, or Shift-click a folder for a folder link.
+
+### Fixed
+
+- Fixed unreadable percent-encoded paths in SiYuan Cloud links. Chinese path segments remain readable while special characters stay safely encoded.
+
 ## 0.7.4
 
 ### Fixed
