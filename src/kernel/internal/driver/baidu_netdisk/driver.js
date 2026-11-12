@@ -462,18 +462,26 @@ const headerValue = (headers = {}, name) => {
   return "";
 };
 
-const resolveHeadLocation = async (client, url, headers) => {
+const requestHead = async (client, url, headers) => {
   try {
-    const resp = await forwardProxy(client, url, {
-      allowErrorStatus: true,
-      contentType: "application/octet-stream",
-      headers,
-      method: "HEAD",
-      redirect: false,
-      responseEncoding: "text",
-      timeout: 30000,
-    });
-    return headerValue(resp.headers, "Location") || headerValue(resp.headers, "location");
+    const resp = await forwardProxy(client, url, { allowErrorStatus: true, headers, method: "HEAD", redirect: false, timeout: 30000 });
+    return headerValue(resp.headers, "Location");
+  } catch (_) {
+    return "";
+  }
+};
+
+// 百度 CDN 把视频统一标成 video/mp4（转码流也不改），Content-Type 不可信，以真实字节为准。
+// 只取前 16 字节：非 FLV 一律回落 mp4，避免再交给 flv.js。
+const probeMediaType = async (client, url, headers, file) => {
+  if (!isStreamMediaFile(file)) return "";
+  try {
+    const resp = await forwardProxy(client, url, { allowErrorStatus: true, headers: { ...headers, Range: "bytes=0-15" }, timeout: 30000 });
+    const body = String(resp.body || "");
+    if (body.startsWith("#EXTM3U")) return "m3u8";
+    if (body.startsWith("FLV")) return "flv";
+    if (body.charCodeAt(0) === 0x47) return "mpegts";
+    return body ? "mp4" : "";
   } catch (_) {
     return "";
   }
@@ -489,11 +497,11 @@ const linkOfficial = async (client, storage, file) => {
   if (!dlink) throw new Error("get baidu dlink failed");
   const headers = { "User-Agent": "pan.baidu.com" };
   const url = `${dlink}&access_token=${encodeURIComponent(storage.addition_json.access_token || "")}`;
-  const location = await resolveHeadLocation(client, url, headers);
-  return {
-    headers,
-    url: location || url,
-  };
+  const [location, media_type] = await Promise.all([
+    requestHead(client, url, headers),
+    probeMediaType(client, url, headers, file),
+  ]);
+  return { headers, url: location || url, media_type };
 };
 
 const linkCrack = async (client, storage, file) => {
@@ -508,10 +516,8 @@ const linkCrack = async (client, storage, file) => {
   });
   const url = payload?.info?.[0]?.dlink || "";
   if (!url) throw new Error("get baidu crack dlink failed");
-  return {
-    headers: { "User-Agent": storage.addition_json.custom_crack_ua || "netdisk" },
-    url,
-  };
+  const headers = { "User-Agent": storage.addition_json.custom_crack_ua || "netdisk" };
+  return { headers, url, media_type: await probeMediaType(client, url, headers, file) };
 };
 
 const linkCrackVideo = async (client, storage, file) => {
@@ -533,10 +539,8 @@ const linkCrackVideo = async (client, storage, file) => {
   });
   const url = payload?.info?.dlink || payload?.info?.[0]?.dlink || "";
   if (!url) throw new Error("get baidu video dlink failed");
-  return {
-    headers: { "User-Agent": storage.addition_json.custom_crack_ua || "netdisk" },
-    url,
-  };
+  const headers = { "User-Agent": storage.addition_json.custom_crack_ua || "netdisk" };
+  return { headers, url, media_type: await probeMediaType(client, url, headers, file) };
 };
 
 const linkFor = async (client, storage, file) => {
@@ -608,10 +612,14 @@ export const createBaiduNetdiskDriver = ({ client }) => ({
       };
     }
     const obj = fileToObj(target.file, relPath, storage);
-    if (!obj.is_dir && !options.skipLink) {
-      const link = await linkFor(client, storage, target.file);
-      obj.raw_url = link.url;
-      obj.url = link.url;
+    // 播放链路(withMediaType)即使走 /p/ 代理也只解析类型；link 有 10 分钟缓存。
+    if (!obj.is_dir && (!options.skipLink || options.withMediaType)) {
+      const link = await linkFor(client, storage, target.file).catch(() => null);
+      obj.media_type = link?.media_type || "";
+      if (link && !options.skipLink) {
+        obj.raw_url = link.url;
+        obj.url = link.url;
+      }
     }
     return {
       ...obj,

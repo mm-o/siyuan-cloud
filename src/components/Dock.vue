@@ -358,9 +358,10 @@ const DockActionButton = defineComponent({
     return () => h('span', {
       class: props.bar
         ? ['block__icon block__icon--show fn__flex-center ariaLabel', { 'block__icon--active': props.active }]
-        : 'b3-list-item__action b3-tooltips b3-tooltips__w',
+        : 'b3-list-item__action ariaLabel',
       'aria-label': props.label,
-      'data-position': props.bar ? 'west' : undefined,
+      'data-position': 'west',
+      'data-tooltip-encoding': 'none',
       role: 'button',
       tabindex: 0,
       onClick: run,

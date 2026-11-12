@@ -4,6 +4,17 @@
 
 ## Recent Updates
 
+### 0.8.1（2026/11/12）
+
+#### Added
+
+- Added a context menu to file rows in the dynamic directory block (file-list block) with "Open" and "Copy Link", matching the file manager tab behavior.
+
+#### Fixed
+
+- Fixed Baidu Netdisk videos whose filename says `.flv` but whose real content is an HLS transcode or MP4, which made SiYuan Media Player and other players pick the wrong decoder and fail to play. The Baidu driver now detects FLV / HLS / MPEG-TS / MP4 from the actual bytes and returns it as `media_type` to callers.
+- Fixed media type detection being misled by the Baidu CDN `Content-Type`, which reports `video/mp4` for every video regardless of the real container. Detection reads only the first 16 bytes and is cached, so listing stays fast.
+
 ### 0.8.0（2026/10/26）
 
 #### Added

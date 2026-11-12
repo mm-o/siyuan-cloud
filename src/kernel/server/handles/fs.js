@@ -542,6 +542,7 @@ export const createFsHandlers = ({
   const driverGetResp = (data, rawUrl = "") => ({
     ...driverObjResp(data),
     raw_url: rawUrl || data.raw_url || "",
+    media_type: data.media_type || "",
     readme: data.readme || "",
     header: data.header || "",
     provider: data.provider || "unknown",
@@ -617,7 +618,7 @@ export const createFsHandlers = ({
       if (mount) {
         try {
           const shouldProxy = storageShouldProxy(mount.storage);
-          const data = await mount.driver.get(mount.storage, mount.relPath, { skipLink: shouldProxy });
+          const data = await mount.driver.get(mount.storage, mount.relPath, { skipLink: shouldProxy, withMediaType: true });
           const rawUrl = data && !data.is_dir && shouldProxy && mount.storage.driver !== "SiYuanWorkspace"
             ? rawUrlForStorage(mount.storage, path)
             : data.raw_url || "";
@@ -651,6 +652,7 @@ export const createFsHandlers = ({
         id: fileId,
         raw_url: data.raw_url || data.url || "",
         url: data.url || data.raw_url || "",
+        media_type: data.media_type || "",
         provider: resolved.storage.driver,
       }));
     },

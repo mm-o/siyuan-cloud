@@ -1,10 +1,11 @@
-import type { Plugin } from 'siyuan'
+import { Menu, type Plugin } from 'siyuan'
 import type { OpenListFileItem } from '@/utils/file_actions'
 import {
   fsList,
   fsSearch,
 } from '@/utils/api'
 import {
+  copyOpenListItemLink,
   itemOpenListPath,
   joinOpenListPath,
   normalizeOpenListPath,
@@ -330,7 +331,7 @@ function renderFolder(plugin: Plugin, content: string) {
           make('span', 'b3-list-item__meta', item.is_dir ? '' : formatSize(item.size)),
           make('span', 'b3-list-item__meta', formatModified(item.modified)),
         )
-        row.onclick = async () => {
+        const openItem = async () => {
           if (companionHref)
             return
           if (item.is_dir) {
@@ -346,6 +347,14 @@ function renderFolder(plugin: Plugin, content: string) {
           catch (error) {
             showErrorMessage(error)
           }
+        }
+        row.onclick = openItem
+        row.oncontextmenu = (event) => {
+          event.preventDefault()
+          const menu = new Menu('siyuan-cloud-file-block-item')
+          menu.addItem({ icon: item.is_dir ? 'iconFolder' : 'iconOpen', label: text('open'), click: openItem })
+          menu.addItem({ icon: 'iconLink', label: text('copyLink'), click: () => copyOpenListItemLink({ item, path, t: text }) })
+          menu.open({ x: event.clientX, y: event.clientY })
         }
         list.append(row)
       }
