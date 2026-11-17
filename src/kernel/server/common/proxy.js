@@ -75,8 +75,13 @@ export const requestHeader = (request) => {
   return requestMeta.headers || requestMeta.Headers || {};
 };
 
+const PROXY_ACCEPT_ENCODING = "identity";
+
 export const proxy = (_ctx, link, file, _proxyRange) => {
-  return proxyResponse(link.url, processHeader(file?.request_header || {}, link.header), link.method || "GET");
+  const override = PROXY_ACCEPT_ENCODING
+    ? { ...(link.header || {}), "Accept-Encoding": PROXY_ACCEPT_ENCODING }
+    : link.header;
+  return proxyResponse(link.url, processHeader(file?.request_header || {}, override), link.method || "GET");
 };
 
 export const proxyReadOptions = (request) => {

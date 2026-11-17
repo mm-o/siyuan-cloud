@@ -16,6 +16,7 @@ import {
   formatSize,
   openListCompanionHref,
   openListFileKind,
+  openListReaderHref,
   openOpenListMediaPreview,
   showErrorMessage,
 } from '@/utils/file_ui'
@@ -325,6 +326,9 @@ function renderFolder(plugin: Plugin, content: string) {
         const companionHref = openListCompanionHref(item.name, path, item.is_dir)
         if (companionHref)
           row.dataset.href = companionHref
+        const readerHref = openListReaderHref(item.name, path, item.is_dir)
+        if (readerHref)
+          row.dataset.readerHref = readerHref
         label.append(name)
         row.append(
           label,

@@ -318,6 +318,7 @@ import {
   openLazyImageViewer,
   openListCompanionHref,
   openListFileKind,
+  openListReaderHref,
   openOpenListMediaPreview,
   showErrorMessage,
 } from '@/utils/file_ui'
@@ -691,6 +692,7 @@ function renderNode(node: DockTreeItem, level: number): string {
   const paddingLeft = level * 18
   const iconName = openListFileIconName(node.name, node.is_dir)
   const href = companionHref(node)
+  const readerLink = readerHref(node)
   const expanded = expandedPaths.value.includes(node.path)
   const pending = loadingPath.value === node.path
   const children = node.is_dir && expanded
@@ -701,7 +703,7 @@ function renderNode(node: DockTreeItem, level: number): string {
     <svg class="b3-list-item__arrow${expanded ? ' b3-list-item__arrow--open' : ''}"><use xlink:href="#iconOpenListChevronRight"></use></svg>
   </span>
   <svg class="b3-list-item__graphic ol-file-row__icon ol-file-row__icon--${iconName}"><use xlink:href="${openListFileIconHref(node.name, node.is_dir)}"></use></svg>
-  <span class="b3-list-item__text ariaLabel" data-position="parentE"${href ? ` data-href="${escapeAttr(href)}"` : ''} aria-label="${escapeAttr(node.name)}">${escapeHtml(node.name)}</span>${!node.is_dir && node.size ? `
+  <span class="b3-list-item__text ariaLabel" data-position="parentE"${href ? ` data-href="${escapeAttr(href)}"` : ''}${readerLink ? ` data-reader-href="${escapeAttr(readerLink)}"` : ''} aria-label="${escapeAttr(node.name)}">${escapeHtml(node.name)}</span>${!node.is_dir && node.size ? `
   <span class="b3-list-item__meta">${formatSize(node.size)}</span>` : ''}
 </li>${children.length || pending ? `<ul style="--QYL-indent-1:${paddingLeft + 12}px">${pending ? LOADING_ROW : children.map(child => renderNode(child, level + 1)).join('')}</ul>` : ''}`
 }
@@ -722,6 +724,7 @@ const mediaKind = (item: DockTreeItem) => {
 const isCompanionFile = (item: DockTreeItem) => !!openListCompanionHref(item.name, item.path, item.is_dir)
 const itemOpenUrl = (item: DockTreeItem) => openListItemOpenUrl(item, node => node.path)
 const companionHref = (item: DockTreeItem) => openListCompanionHref(item.name, item.path, item.is_dir)
+const readerHref = (item: DockTreeItem) => openListReaderHref(item.name, item.path, item.is_dir)
 const documentLink = (item: DockTreeItem, path: string) => openListDocumentLink({ item, path })
 
 function toTreeItem(item: any, dir: string): DockTreeItem {

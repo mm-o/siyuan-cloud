@@ -53,3 +53,5 @@
 | 认证失败 | 检查用户名、密码和 WebDAV 权限 |
 | 证书错误 | 配置可信证书或开启 `tls_insecure_skip_verify` |
 | 路径重复 | 检查 `address` 是否已经包含子目录 |
+| 文件能预览但阅读器打不开（EPUB 报不支持格式） | 上游把文件 gzip 压缩了。`/d`、`/p` 代理现在固定 `Accept-Encoding: identity`，若仍复现，用 `curl -sI -H 'Accept-Encoding: gzip' <文件地址> \| grep -i content-encoding` 确认服务端是否强制压缩，并检查反代是否剥离了 `Content-Encoding` |
+| 下载得到 HTML/登录页而非文件 | 下载路由回源时丢了 `Authorization`。WebDAV 已被强制走服务端代理；自建反代请确认 302 后仍带 Basic 认证 |

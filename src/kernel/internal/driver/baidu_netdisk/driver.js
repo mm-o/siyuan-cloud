@@ -395,6 +395,7 @@ const fileToObj = (file, relPath, storage) => {
     path: normalizePath(relPath),
     is_dir: dir,
     size: Number(file?.size || 0),
+    duration: Number(file?.duration || file?.media_info?.duration || 0) || undefined,
     modified: baiduTime(file?.server_mtime || file?.mtime),
     created: baiduTime(file?.server_ctime || file?.ctime),
     sign: "",
@@ -501,7 +502,12 @@ const linkOfficial = async (client, storage, file) => {
     requestHead(client, url, headers),
     probeMediaType(client, url, headers, file),
   ]);
-  return { headers, url: location || url, media_type };
+  return {
+    headers,
+    url: location || url,
+    media_type,
+    duration: Number(payload?.list?.[0]?.duration || 0) || undefined,
+  };
 };
 
 const linkCrack = async (client, storage, file) => {
@@ -517,7 +523,12 @@ const linkCrack = async (client, storage, file) => {
   const url = payload?.info?.[0]?.dlink || "";
   if (!url) throw new Error("get baidu crack dlink failed");
   const headers = { "User-Agent": storage.addition_json.custom_crack_ua || "netdisk" };
-  return { headers, url, media_type: await probeMediaType(client, url, headers, file) };
+  return {
+    headers,
+    url,
+    media_type: await probeMediaType(client, url, headers, file),
+    duration: Number(payload?.info?.[0]?.duration || 0) || undefined,
+  };
 };
 
 const linkCrackVideo = async (client, storage, file) => {
@@ -537,10 +548,16 @@ const linkCrackVideo = async (client, storage, file) => {
       origin: "dlna",
     },
   });
-  const url = payload?.info?.dlink || payload?.info?.[0]?.dlink || "";
+  const info = payload?.info?.[0] || payload?.info || {};
+  const url = info.dlink || "";
   if (!url) throw new Error("get baidu video dlink failed");
   const headers = { "User-Agent": storage.addition_json.custom_crack_ua || "netdisk" };
-  return { headers, url, media_type: await probeMediaType(client, url, headers, file) };
+  return {
+    headers,
+    url,
+    media_type: await probeMediaType(client, url, headers, file),
+    duration: Number(info.duration || info.media_info?.duration || 0) || undefined,
+  };
 };
 
 const linkFor = async (client, storage, file) => {
@@ -616,6 +633,7 @@ export const createBaiduNetdiskDriver = ({ client }) => ({
     if (!obj.is_dir && (!options.skipLink || options.withMediaType)) {
       const link = await linkFor(client, storage, target.file).catch(() => null);
       obj.media_type = link?.media_type || "";
+      obj.duration = link?.duration || obj.duration;
       if (link && !options.skipLink) {
         obj.raw_url = link.url;
         obj.url = link.url;

@@ -4,6 +4,19 @@
 
 ## 最近更新
 
+### 0.8.5（2026/11/17）
+
+#### 新增
+
+- 文件树、文件管理器和动态目录块中的阅读类文件新增阅读器专用链接 `data-reader-href`（`siyuan://plugins/siyuan-cloud/open?path=…`），与文档内插入、复制的链接同源。
+
+#### 修复
+
+- 修复网盘 PDF 交给阅读器后提示 `is not an asset path`、无法打开的问题。
+- 修复 WebDAV 等需要 Basic 认证的挂载经下载路由（`/d/`）取文件时，302 跳转上游直链会丢掉 `Authorization`、拿回错误页的问题；这类驱动现在强制由服务端代理转发。
+- 修复代理读取文件时透传浏览器 `Accept-Encoding`、上游改用 gzip 返回而响应头缺少 `Content-Encoding` 时，客户端只能拿到压缩字节、EPUB 等文件打不开的问题；代理现在固定 `Accept-Encoding: identity`。
+- 点击仍保留 `/p` 预览链接，旧版本阅读器与媒体链路行为不变；含 `%`、`#`、空格的文件名按规范转义。
+
 ### 0.8.1（2026/11/12）
 
 #### 新增
@@ -14,6 +27,7 @@
 
 - 修复百度网盘部分视频文件名为 `.flv`、实际却下发 m3u8 转码流或 mp4，导致思播等播放器按扩展名选错解码器而无法播放的问题；百度网盘驱动现在按真实字节识别 FLV / HLS / MPEG-TS / MP4，并通过 `media_type` 返回给调用方。
 - 修复百度 CDN 把视频统一标记为 `video/mp4` 时，媒体类型判断偏离真实内容的问题；类型探测只取前 16 字节，且有缓存，不影响列表加载速度。
+- 修复百度网盘 MPEG-TS 视频因缺少总时长导致进度条无法拖动、时间戳跳转回到 0 秒的问题；现在从文件信息与 `mediainfo` 中提取时长，并通过 `duration` 返回给调用方。
 
 ### 0.8.0（2026/10/26）
 
@@ -146,6 +160,20 @@ Dock/关于页的 API 入口会用预览模块打开正在运行的 `/api/public
 - 内置虚拟存储
 
 其它 OpenList 驱动可能保留 metadata/config 参考；没有真实运行时的驱动不会出现在常规挂载列表里。
+
+## 网盘文件读取与压缩
+
+`/d/`（下载）与 `/p/`（预览）都由思源内核按 `ResponseProxy` 描述符代为转发：插件只决定"请求哪个地址、带哪些请求头"，响应头是否原样到达浏览器取决于内核版本与上游反代。为保证客户端拿到的永远是原始字节：
+
+- 代理请求固定 `Accept-Encoding: identity`，客户端的压缩偏好不会外传，上游不会把文件压成 gzip。
+- 若上游仍然压缩，思源内核（≥ 3.7.0）会把 `Content-Encoding` 透传给客户端，浏览器自动解压。
+- 要切回"请求压缩 + 透传压缩体"的完全透明代理，把 `src/kernel/server/common/proxy.js` 里的 `PROXY_ACCEPT_ENCODING` 改成 `null`；前提是确认响应头 `Content-Encoding` 确实能到达浏览器。
+
+文件打不开时，看响应体前 4 个字节即可判断：`50 4b 03 04` 是正常 EPUB（zip）、`25 50 44 46` 是正常 PDF、`1f 8b 08` 说明取到的是 gzip 压缩体。确认上游是否压缩：
+
+```bash
+curl -sI -H 'Accept-Encoding: gzip' 'https://your-dav/books/a.epub' | grep -i content-encoding
+```
 
 ## 边界
 

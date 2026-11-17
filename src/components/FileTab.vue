@@ -130,6 +130,7 @@
               class="b3-list-item__text"
               :title="item.name"
               :data-href="companionDataHref(item)"
+              :data-reader-href="companionReaderHref(item)"
             >
               <svg
                 class="ol-file-row__icon"
@@ -181,6 +182,7 @@
                 class="ol-file-card__thumb"
                 :style="imageThumbStyle(item)"
                 :data-href="companionDataHref(item)"
+                :data-reader-href="companionReaderHref(item)"
               >
                 <svg
                   class="ol-file-row__icon"
@@ -330,6 +332,7 @@ import {
   openLazyImageViewer,
   openListCompanionHref,
   openListFileKind,
+  openListReaderHref,
   itemOpenUrl as openListItemOpenUrl,
   openOpenListMediaPreview,
   promptText,
@@ -603,6 +606,7 @@ const isImageFile = (item: FsItem) => fileKind(item) === 'image'
 const itemOpenUrl = (item: FsItem) => openListItemOpenUrl(item, itemPath)
 const companionHref = (item: FsItem) => openListCompanionHref(item.name, itemPath(item), item.is_dir)
 const companionDataHref = (item: FsItem) => shortcutSelecting.value ? undefined : companionHref(item)
+const companionReaderHref = (item: FsItem) => shortcutSelecting.value ? undefined : openListReaderHref(item.name, itemPath(item), item.is_dir)
 const documentLink = (item: FsItem, path: string) => openListDocumentLink({ item, path })
 const showLoading = () => (loading.value = true, nextTick())
 const SIYUAN_DOC_ID = /^\d{14}-[0-9a-z]{7}$/i

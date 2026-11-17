@@ -17,6 +17,7 @@ import { createAliyundriveOpenDriver } from "../src/kernel/internal/driver/aliyu
 import { createOneDriveDriver } from "../src/kernel/internal/driver/onedrive/driver.js";
 import { staticPasswordHash } from "../src/kernel/internal/auth/token.js";
 import { signAwsV4 } from "../src/kernel/internal/driver/aws4.js";
+import { proxy } from "../src/kernel/server/common/proxy.js";
 
 configureZipJs({ useWebWorkers: false });
 
@@ -5797,5 +5798,21 @@ await json({
   method: "POST",
   path: "/api/admin/setting/save",
 });
+
+// 文件代理固定 identity：不接受客户端的 Accept-Encoding，Auth/UA 保留、Cookie 不外传
+{
+  const proxied = proxy(null, {
+    url: "https://dav.example.test/books/a.epub",
+    header: { Authorization: "Basic abc" },
+  }, {
+    request_header: { "accept-encoding": "gzip, deflate, br", "user-agent": "UA", cookie: "session=1" },
+  });
+  const headers = proxied.body.proxy.headers;
+  assert.deepEqual(headers["Accept-Encoding"], ["identity"]);
+  assert.equal(Object.keys(headers).filter((key) => key.toLowerCase() === "accept-encoding").length, 1);
+  assert.deepEqual(headers.Authorization, ["Basic abc"]);
+  assert.deepEqual(headers["user-agent"], ["UA"]);
+  assert.equal(headers.cookie, undefined);
+}
 
 console.log("kernel route smoke ok");

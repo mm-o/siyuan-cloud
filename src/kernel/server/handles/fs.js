@@ -517,6 +517,7 @@ export const createFsHandlers = ({
     id: String(item.id || item.file_id || item.fid || ""),
     name: item.name || "",
     size: Number(item.size || 0),
+    duration: Number(item.duration || 0) || undefined,
     is_dir: !!item.is_dir,
     modified: item.modified || new Date().toISOString(),
     created: item.created || item.modified || new Date().toISOString(),

@@ -53,3 +53,5 @@ This guide applies to the `WebDav` driver.
 | Auth fails | Check username, password, and WebDAV permissions |
 | Certificate error | Install a trusted certificate or enable `tls_insecure_skip_verify` |
 | Duplicated path | Check whether `address` already includes a subdirectory |
+| File previews fine but the reader refuses it (EPUB "unsupported format") | Upstream gzipped the file. The `/d` and `/p` proxies now pin `Accept-Encoding: identity`; if it still happens, run `curl -sI -H 'Accept-Encoding: gzip' <file-url> \| grep -i content-encoding` to see whether the server forces compression, and check whether your reverse proxy strips `Content-Encoding` |
+| Download returns HTML/start page instead of the file | The download route lost `Authorization` on redirect. WebDAV is forced through the server-side proxy; for your own reverse proxy, keep Basic auth across the 302 |

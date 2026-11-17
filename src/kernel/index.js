@@ -561,6 +561,7 @@ import { createWebDavServer } from "./server/webdav.js";
 
   const shareDownloadShouldProxy = (mount, filePath) => {
     const config = driverInfoMap()[mount?.storage?.driver]?.config || {};
+    if (/^webdav$/i.test(String(mount?.storage?.driver || ""))) return true;
     return shouldProxy(mount?.storage, config, basename(filePath));
   };
 

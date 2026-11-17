@@ -109,11 +109,24 @@ export function itemStableUrl<T extends OpenListUrlItem>(item: T, path: PathInpu
   return siyuanWorkspacePublicUrl(resolvedPath) || proxyPreviewUrl(resolvedPath, false)
 }
 
-export function openListCompanionHref(name: string, path: string, isDir = false) {
+const isReaderFile = (name: string, isDir: boolean) => !isDir && openListReaderExts.has(extensionOfName(name))
+
+const readerLinkPath = (name: string, path: string, isDir: boolean) => {
   const plugins = (window as any).siyuan?.ws?.app?.plugins || []
-  if (isDir || !openListReaderExts.has(extensionOfName(name)) || (!(window as any).sireader && !plugins.some((plugin: any) => plugin?.name === 'siyuan-sireader')))
-    return undefined
-  return proxyPreviewUrl(path, false)
+  const hasReader = !!(window as any).sireader || plugins.some((plugin: any) => plugin?.name === 'siyuan-sireader')
+  return isReaderFile(name, isDir) && hasReader ? path : undefined
+}
+
+// 点击属性保持 /p（老版本思阅与媒体链路依赖它）
+export function openListCompanionHref(name: string, path: string, isDir = false) {
+  const base = readerLinkPath(name, path, isDir)
+  return base ? proxyPreviewUrl(base, false) : undefined
+}
+
+// 阅读器私链，与文档内插入/复制的链接同一生成源
+export function openListReaderHref(name: string, path: string, isDir = false) {
+  const base = readerLinkPath(name, path, isDir)
+  return base ? openListPluginOpenUrl(base) : undefined
 }
 
 export function requireModule(id: string) {
