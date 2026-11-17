@@ -74,9 +74,20 @@ export function proxyPreviewUrl(path: string, absolute = true) {
   return absolute ? openListAbsoluteUrl(route) : route
 }
 
+const CLOUD_SCHEME = 'siyuan-cloud://'
+
 export function mediaProtocolUrl(path: string) {
-  const normalized = normalizeOpenListPath(path)
-  return `siyuan-cloud://${normalized}`
+  return `${CLOUD_SCHEME}${normalizeOpenListPath(path)}`
+}
+
+// 旧文档里的音视频是 siyuan-cloud:// 协议，浏览器不认识；换成可直接加载的 /p 地址
+export const CLOUD_MEDIA_SELECTOR = `video[src^="${CLOUD_SCHEME}"], audio[src^="${CLOUD_SCHEME}"], source[src^="${CLOUD_SCHEME}"]`
+export const rewriteCloudMedia = (element: HTMLMediaElement | HTMLSourceElement) => {
+  const raw = element.getAttribute('src') || ''
+  if (!raw.startsWith(CLOUD_SCHEME)) return
+  element.setAttribute('src', proxyPreviewUrl(raw.slice(CLOUD_SCHEME.length), false))
+  const media = (element.tagName === 'SOURCE' ? element.parentElement : element) as HTMLMediaElement | null
+  media?.load?.()
 }
 
 export function normalizeOpenListPath(path: string) {

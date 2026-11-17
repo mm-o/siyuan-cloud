@@ -8,7 +8,6 @@ import { fsRemove, resolveOpenListFile } from '@/utils/api'
 import {
   escapeHtml,
   itemStableUrl,
-  mediaProtocolUrl,
   normalizeOpenListPath,
   openListFileKind,
   openListPluginOpenUrl,
@@ -431,7 +430,8 @@ export function openListDocumentLink<T extends OpenListUrlItem & { name: string;
   if (kind === 'image')
     return `![${name}](${itemStableUrl(options.item, options.path)})`
   if (kind === 'audio' || kind === 'video')
-    return `<${kind} controls src="${escapeHtml(mediaProtocolUrl(options.path))}"></${kind}>`
+    // 文档里必须是浏览器能直接加载的地址，siyuan-cloud:// 只有思播的 playItem 认识
+    return `<${kind} controls src="${escapeHtml(itemStableUrl(options.item, options.path))}"></${kind}>`
   return `[${name}](${openListPluginOpenUrl(options.path)})`
 }
 

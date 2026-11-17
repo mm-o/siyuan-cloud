@@ -2,6 +2,7 @@ import type { Protyle } from 'siyuan'
 import { Plugin, showMessage } from 'siyuan'
 import { destroy, init } from '@/main'
 import { openListDocumentLink } from '@/utils/file_actions'
+import { CLOUD_MEDIA_SELECTOR, rewriteCloudMedia } from '@/utils/file_ui'
 import {
   openFilePicker,
   registerFileListBlock,
@@ -105,12 +106,36 @@ export default class SiyuanCloudPlugin extends Plugin {
 
     this.openSiyuanUrlHandler = event => this.openSiyuanCloudUrl(event.detail?.url || '')
     this.siyuanUrlEventBus().on('open-siyuan-url-plugin', this.openSiyuanUrlHandler)
+
+    // 旧文档里的音视频块用 siyuan-cloud:// 协议，浏览器不认识；启动扫一遍 + 观察新渲染 + 加载失败兜底
+    document.addEventListener('error', this.onMediaError, true)
+    this.fixCloudMedia()
+    this.mediaObserver = new MutationObserver(() => {
+      if (this.mediaScheduled) return
+      this.mediaScheduled = true
+      requestAnimationFrame(() => { this.mediaScheduled = false; this.fixCloudMedia() })
+    })
+    this.mediaObserver.observe(document.body, { childList: true, subtree: true })
+  }
+
+  private mediaObserver?: MutationObserver
+  private mediaScheduled = false
+
+  private fixCloudMedia = () =>
+    document.querySelectorAll<HTMLMediaElement>(CLOUD_MEDIA_SELECTOR).forEach(rewriteCloudMedia)
+
+  private onMediaError = (event: Event) => {
+    if (event.target instanceof HTMLElement)
+      rewriteCloudMedia(event.target as HTMLMediaElement)
   }
 
   onunload() {
     this.closeFilePicker?.()
     this.destroyFileListBlock?.()
     this.destroyFileListBlock = undefined
+    this.mediaObserver?.disconnect()
+    this.mediaObserver = undefined
+    document.removeEventListener('error', this.onMediaError, true)
     if (this.openSiyuanUrlHandler)
       this.siyuanUrlEventBus().off('open-siyuan-url-plugin', this.openSiyuanUrlHandler)
     destroy()

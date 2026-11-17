@@ -4,6 +4,12 @@
 
 ## Recent Updates
 
+### 0.8.6（2026/11/17）
+
+#### Fixed
+
+- Fixed audio/video inserted with "Copy Link" not playing in documents: embedded media now uses the `/p` proxy address (browser-loadable, Range supported), and old blocks are rewritten on load, render, and media errors — no re-insert needed.
+
 ### 0.8.5（2026/11/17）
 
 #### Added
